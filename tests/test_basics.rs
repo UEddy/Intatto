@@ -1,285 +1,15 @@
 // `TestEnv` holds a sandbox slot (a semaphore permit) for the whole test on purpose.
 #![allow(clippy::significant_drop_tightening)]
 
-use std::sync::{Arc, OnceLock};
+mod common;
 
-use intatto::{Policy, Spend, Vault, WINDOW_NS};
-use near_api::types::transaction::result::TransactionResult;
+use common::*;
+use intatto::{Policy, WINDOW_NS};
 use near_api::types::{AccessKeyPermission, transaction::actions::FunctionCallPermission};
-use near_api::{AccountId, NearToken, NetworkConfig, Signer};
-use near_sdk::base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use near_api::{AccountId, NearToken, Signer};
 use near_sdk::json_types::U64;
-use near_sdk::serde_json::{self, Value, json};
+use near_sdk::serde_json::{Value, json};
 use testresult::TestResult;
-use tokio::sync::{Semaphore, SemaphorePermit};
-
-const NO_DEPOSIT: NearToken = NearToken::from_yoctonear(0);
-const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
-const SECOND_NS: u64 = 1_000_000_000;
-const HOUR_NS: u64 = 60 * 60 * SECOND_NS;
-
-/// Each test boots its own sandbox node (~0.5 GB); cap how many run at once.
-static SANDBOX_SLOTS: Semaphore = Semaphore::const_new(4);
-static CONTRACT_WASM: OnceLock<Vec<u8>> = OnceLock::new();
-
-/// Built once and shared by every test in this binary.
-fn contract_wasm() -> Vec<u8> {
-    CONTRACT_WASM
-        .get_or_init(|| {
-            let path = cargo_near_build::build_with_cli(Default::default())
-                .expect("contract should build");
-            std::fs::read(path).expect("built wasm should be readable")
-        })
-        .clone()
-}
-
-const fn near(amount: u128) -> NearToken {
-    NearToken::from_near(amount)
-}
-
-const fn millinear(amount: u128) -> NearToken {
-    NearToken::from_millinear(amount)
-}
-
-/// What one entry in `Vault::recent_spends` costs in storage, which the vault pays.
-fn spend_record_cost() -> NearToken {
-    let spend = Spend {
-        spend_id: U64(0),
-        timestamp: U64(0),
-        amount: near(1),
-    };
-    let bytes = near_sdk::borsh::to_vec(&spend)
-        .expect("spend serializes")
-        .len() as u128;
-    near_sdk::env::storage_byte_cost().saturating_mul(bytes)
-}
-
-fn amounts(vault: &Vault) -> Vec<NearToken> {
-    vault
-        .recent_spends
-        .iter()
-        .map(|spend| spend.amount)
-        .collect()
-}
-
-/// A fresh sandbox with the vault deployed (no init call needed) and four funded accounts.
-struct TestEnv {
-    sandbox: near_sandbox::Sandbox,
-    network: NetworkConfig,
-    signer: Arc<Signer>,
-    contract: near_api::Contract,
-    owner: AccountId,
-    agent: AccountId,
-    merchant: AccountId,
-    stranger: AccountId,
-    // Declared last so the slot is released only after the sandbox above is dropped.
-    _slot: SemaphorePermit<'static>,
-}
-
-impl TestEnv {
-    async fn new() -> TestResult<Self> {
-        let wasm = contract_wasm();
-        let slot = SANDBOX_SLOTS.acquire().await?;
-        let sandbox = near_sandbox::Sandbox::start_sandbox().await?;
-        let network = NetworkConfig::from_rpc_url("sandbox", sandbox.rpc_addr.parse()?);
-        let signer = Signer::from_secret_key(
-            near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY.parse()?,
-        )?;
-
-        let contract_id = create_account(&sandbox, "vault.sandbox").await?;
-        near_api::Contract::deploy(contract_id.clone())
-            .use_code(wasm)
-            .without_init_call()
-            .with_signer(signer.clone())
-            .send_to(&network)
-            .await?
-            .assert_success();
-
-        Ok(Self {
-            owner: create_account(&sandbox, "owner.sandbox").await?,
-            agent: create_account(&sandbox, "agent.sandbox").await?,
-            merchant: create_account(&sandbox, "merchant.sandbox").await?,
-            stranger: create_account(&sandbox, "stranger.sandbox").await?,
-            contract: near_api::Contract(contract_id),
-            sandbox,
-            network,
-            signer,
-            _slot: slot,
-        })
-    }
-
-    /// `new()` plus a 10 NEAR vault for `owner` with `agent` registered under `standard_policy`.
-    async fn with_vault() -> TestResult<Self> {
-        let env = Self::new().await?;
-        env.deposit(&env.owner, near(10)).await?.assert_success();
-        env.set_agent(&env.owner, &env.agent, &env.standard_policy())
-            .await?
-            .assert_success();
-        Ok(env)
-    }
-
-    /// 1 NEAR per transaction, 3 NEAR and 5 spends per 24 hours, merchant only.
-    fn standard_policy(&self) -> Policy {
-        Policy {
-            per_tx_cap: near(1),
-            daily_cap: near(3),
-            max_spends_per_24h: 5,
-            allowlist: vec![self.merchant.clone()],
-        }
-    }
-
-    async fn call(
-        &self,
-        signer_id: &AccountId,
-        method: &str,
-        args: Value,
-        deposit: NearToken,
-    ) -> TestResult<TransactionResult> {
-        Ok(self
-            .contract
-            .call_function(method, args)
-            .transaction()
-            .deposit(deposit)
-            .with_signer(signer_id.clone(), self.signer.clone())
-            .send_to(&self.network)
-            .await?)
-    }
-
-    async fn deposit(&self, who: &AccountId, amount: NearToken) -> TestResult<TransactionResult> {
-        self.call(who, "deposit", json!({}), amount).await
-    }
-
-    async fn set_agent(
-        &self,
-        who: &AccountId,
-        agent: &AccountId,
-        policy: &Policy,
-    ) -> TestResult<TransactionResult> {
-        let args = json!({ "agent_id": agent, "policy": policy });
-        self.call(who, "set_agent", args, ONE_YOCTO).await
-    }
-
-    async fn agent_spend(
-        &self,
-        caller: &AccountId,
-        receiver: &AccountId,
-        amount: NearToken,
-    ) -> TestResult<TransactionResult> {
-        let args = json!({ "owner_id": self.owner, "receiver_id": receiver, "amount": amount });
-        self.call(caller, "agent_spend", args, NO_DEPOSIT).await
-    }
-
-    /// An `agent_spend` from the registered agent to the merchant that must go through.
-    async fn spend_ok(&self, amount: NearToken) -> TestResult {
-        let result = self
-            .agent_spend(&self.agent, &self.merchant, amount)
-            .await?;
-        assert!(result.assert_success().json::<bool>()?);
-        Ok(())
-    }
-
-    async fn vault(&self, owner: &AccountId) -> TestResult<Vault> {
-        let vault: Option<Vault> = self
-            .contract
-            .call_function("get_vault", json!({ "owner_id": owner }))
-            .read_only()
-            .fetch_from(&self.network)
-            .await?
-            .data;
-        Ok(vault.expect("vault should exist"))
-    }
-
-    async fn policy(&self, owner: &AccountId) -> TestResult<Option<Policy>> {
-        Ok(self
-            .contract
-            .call_function("get_policy", json!({ "owner_id": owner }))
-            .read_only()
-            .fetch_from(&self.network)
-            .await?
-            .data)
-    }
-
-    async fn near_balance(&self, account: &AccountId) -> TestResult<NearToken> {
-        Ok(near_api::Account(account.clone())
-            .tokens()
-            .near_balance()
-            .fetch_from(&self.network)
-            .await?
-            .total)
-    }
-
-    async fn block_timestamp(&self) -> TestResult<u64> {
-        Ok(near_api::Chain::block()
-            .fetch_from(&self.network)
-            .await?
-            .header
-            .timestamp)
-    }
-
-    /// Fast-forwards the sandbox until block time is past `timestamp_ns`. Each sandbox block adds
-    /// ~0.3s of block time, so this is only practical for minutes, not hours.
-    async fn advance_past(&self, timestamp_ns: u64) -> TestResult<()> {
-        while self.block_timestamp().await? <= timestamp_ns {
-            self.sandbox.fast_forward(200).await?;
-        }
-        Ok(())
-    }
-
-    /// Overwrites `owner`'s stored vault record, e.g. to age its spends. Mirrors the contract's
-    /// storage layout: `LookupMap` prefix `b"v"` + Borsh owner id as key, Borsh vault as value.
-    async fn patch_vault(&self, owner: &AccountId, vault: &Vault) -> TestResult<()> {
-        let mut key = b"v".to_vec();
-        key.extend(near_sdk::borsh::to_vec(owner)?);
-        let value = near_sdk::borsh::to_vec(vault)?;
-        self.sandbox
-            .patch_state(self.contract.account_id().clone())
-            .storage(BASE64.encode(key), BASE64.encode(value))
-            .send()
-            .await?;
-        Ok(())
-    }
-}
-
-async fn create_account(sandbox: &near_sandbox::Sandbox, name: &str) -> TestResult<AccountId> {
-    let account_id: AccountId = name.parse()?;
-    sandbox
-        .create_account(account_id.clone())
-        .initial_balance(near(100))
-        .send()
-        .await?;
-    Ok(account_id)
-}
-
-/// The `data` of every `intatto` event called `name` in the transaction's logs, including logs
-/// from receipts that failed.
-fn events(result: &TransactionResult, name: &str) -> Vec<Value> {
-    result
-        .logs()
-        .iter()
-        .filter_map(|log| log.strip_prefix("EVENT_JSON:"))
-        .map(|event| serde_json::from_str::<Value>(event).expect("event should be valid JSON"))
-        .filter(|event| event["standard"] == "intatto" && event["event"] == name)
-        .map(|event| event["data"].clone())
-        .collect()
-}
-
-#[track_caller]
-fn assert_fails_with(result: TransactionResult, message: &str) {
-    let failure = result.assert_failure().to_string();
-    assert!(
-        failure.contains(message),
-        "expected failure containing {message:?}, got: {failure}"
-    );
-}
-
-/// A rejected spend fails with `message` and still leaves a `spend_rejected` event in the logs.
-#[track_caller]
-fn assert_spend_rejected(result: TransactionResult, reason: &str, message: &str) {
-    let rejections = events(&result, "spend_rejected");
-    assert_eq!(rejections.len(), 1, "logs: {:?}", result.logs());
-    assert_eq!(rejections[0]["reason"], reason);
-    assert_fails_with(result, message);
-}
 
 #[tokio::test]
 async fn happy_path_deposit_set_agent_and_spend_within_caps() -> TestResult {
@@ -574,6 +304,7 @@ async fn agent_cannot_call_owner_methods() -> TestResult {
         daily_cap: near(100),
         max_spends_per_24h: 100,
         allowlist: vec![env.agent.clone()],
+        ..Default::default()
     };
     assert_fails_with(
         env.set_agent(&env.agent, &env.agent, &loose_policy).await?,
@@ -583,6 +314,14 @@ async fn agent_cannot_call_owner_methods() -> TestResult {
         ("unfreeze", json!({})),
         ("remove_agent", json!({})),
         ("withdraw", json!({ "amount": near(1) })),
+        (
+            "withdraw_token",
+            json!({ "token_id": "wnear.sandbox", "amount": "1" }),
+        ),
+        (
+            "reclaim_from_exchange",
+            json!({ "token_id": "wnear.sandbox" }),
+        ),
     ] {
         assert_fails_with(
             env.call(&env.agent, method, args, ONE_YOCTO).await?,
@@ -629,7 +368,7 @@ async fn function_call_key_on_owner_account_can_only_freeze() -> TestResult {
     let fc_key = near_api::signer::generate_secret_key()?;
     let permission = AccessKeyPermission::FunctionCall(FunctionCallPermission {
         allowance: None,
-        receiver_id: env.contract.account_id().to_string(),
+        receiver_id: env.vault_id().to_string(),
         method_names: vec![],
     });
     near_api::Account(env.owner.clone())
@@ -661,6 +400,14 @@ async fn function_call_key_on_owner_account_can_only_freeze() -> TestResult {
         ("withdraw", json!({ "amount": near(1) })),
         ("set_agent", policy_args),
         ("remove_agent", json!({})),
+        (
+            "withdraw_token",
+            json!({ "token_id": "wnear.sandbox", "amount": "1" }),
+        ),
+        (
+            "reclaim_from_exchange",
+            json!({ "token_id": "wnear.sandbox" }),
+        ),
     ] {
         // Without the deposit the contract refuses...
         let result = call_with_fc_key(method, args.clone(), NO_DEPOSIT).await?;
