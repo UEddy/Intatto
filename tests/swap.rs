@@ -10,7 +10,8 @@ mod common;
 use std::collections::HashMap;
 
 use common::*;
-use intatto::{AGENT_SWAP_TGAS, Policy, PoolPolicy, TokenPolicy};
+use intatto::{AGENT_SWAP_TGAS, ExchangeLedger, Policy, PoolPolicy, RECLAIM_TGAS, TokenPolicy};
+use near_api::types::transaction::actions::{Action, FunctionCallAction, TransferAction};
 use near_api::types::transaction::result::TransactionResult;
 use near_api::{AccountId, NearGas, NearToken};
 use near_sdk::json_types::U128;
@@ -18,12 +19,9 @@ use near_sdk::serde_json::json;
 use testresult::TestResult;
 
 const EXCHANGE_SHA256: &str = "AEAm8sQ5KYZRgnpq2CN2NhX6d8QV76iRtiDpy5Ai6zDX";
-const W_NEAR_SHA256: &str = "DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa";
 const POOL_ID: u64 = 0;
 /// Slippage the policy allows on the pool: 0.5%.
 const MAX_SLIPPAGE_BPS: u16 = 50;
-/// `storage_balance_bounds().min` of the w_near contract.
-const TOKEN_STORAGE: NearToken = NearToken::from_micronear(1_250);
 
 const fn tgas(amount: u64) -> NearGas {
     NearGas::from_tgas(amount)
@@ -56,7 +54,12 @@ impl SwapEnv {
     /// The vault from `TestEnv::with_vault` next to the real exchange with one simple pool of
     /// 100 wNEAR / 125 USDT. The owner's vault holds 5 wNEAR and the agent has `swap_policy`.
     async fn new(registered: Registered) -> TestResult<Self> {
-        let env = TestEnv::with_vault().await?;
+        Self::on_code(contract_wasm(), registered).await
+    }
+
+    /// `new()`, with `wasm` as the vault contract.
+    async fn on_code(wasm: Vec<u8>, registered: Registered) -> TestResult<Self> {
+        let env = TestEnv::with_vault_on(wasm).await?;
         let dex_owner = env.create_account("dex-owner.sandbox", near(50)).await?;
         let exchange_args = json!({
             "owner_id": dex_owner,
@@ -343,6 +346,174 @@ impl SwapEnv {
         self.assert_nothing_left_on_exchange().await
     }
 
+    /// `owner`'s (balance, on_exchange) of a token in the vault.
+    async fn token_of(&self, owner: &AccountId, token_id: &AccountId) -> TestResult<(u128, u128)> {
+        let vault = self.env.vault(owner).await?;
+        Ok(vault
+            .tokens
+            .iter()
+            .find(|token| &token.token_id == token_id)
+            .map_or((0, 0), |token| (token.balance.0, token.on_exchange.0)))
+    }
+
+    /// A second vault, for `owner`: 10 NEAR, `swap_policy` for the same agent, and 5 wNEAR.
+    async fn add_owner(&self, owner: &AccountId) -> TestResult {
+        self.env.deposit(owner, near(10)).await?.assert_success();
+        self.env
+            .set_agent(owner, &self.env.agent, &self.swap_policy())
+            .await?
+            .assert_success();
+        self.register(&self.wnear, owner).await?;
+        self.mint(&self.wnear, owner, near(5)).await?;
+        let vault = self.env.vault_id().clone();
+        let used = self
+            .transfer_call(&self.wnear, owner, &vault, units(near(5)))
+            .await?;
+        assert_eq!(used, units(near(5)));
+        Ok(())
+    }
+
+    /// The agent sells `amount_in` wNEAR of `owner`'s for USDT at exactly the quote.
+    async fn swap_at_quote(&self, owner: &AccountId, amount_in: u128) -> TestResult<u128> {
+        let quote = self.quote(amount_in).await?;
+        let args = json!({
+            "owner_id": owner,
+            "pool_id": POOL_ID,
+            "token_in": self.wnear,
+            "token_out": self.usdt,
+            "amount_in": amount_in.to_string(),
+            "min_amount_out": quote.to_string(),
+        });
+        let vault = self.env.vault_id();
+        let result = self
+            .env
+            .call_on(
+                vault,
+                &self.env.agent,
+                "agent_swap",
+                args,
+                NO_DEPOSIT,
+                tgas(300),
+            )
+            .await?;
+        assert_eq!(
+            events(&result, "swap_completed").len(),
+            1,
+            "logs: {:?}",
+            result.logs()
+        );
+        assert!(result.assert_success().json::<bool>()?);
+        Ok(quote)
+    }
+
+    async fn reclaim(&self, owner: &AccountId) -> TestResult<TransactionResult> {
+        let args = json!({ "token_id": self.usdt });
+        let vault = self.env.vault_id();
+        self.env
+            .call_on(
+                vault,
+                owner,
+                "reclaim_from_exchange",
+                args,
+                ONE_YOCTO,
+                tgas(RECLAIM_TGAS),
+            )
+            .await
+    }
+
+    async fn exchange_view(&self, method: &str, token: &AccountId) -> TestResult<u128> {
+        let args = json!({ "account_id": self.env.vault_id(), "token_id": token });
+        let amount: U128 = self.env.view_on(&self.exchange, method, args).await?;
+        Ok(amount.0)
+    }
+
+    async fn usdt_ledger(&self) -> TestResult<ExchangeLedger> {
+        let args = json!({ "token_id": self.usdt });
+        self.env
+            .view_on(self.env.vault_id(), "get_exchange_ledger", args)
+            .await
+    }
+
+    /// Moves the vault's `amount` USDT on the exchange into the exchange's lostfound, signed with
+    /// the vault account's own key (in the sandbox, every account has the genesis key).
+    ///
+    /// One transaction, two actions on the exchange, run in one receipt: `withdraw` with
+    /// `unregister: true` takes the USDT and removes its slot from the vault's exchange account,
+    /// then `storage_withdraw` takes back the storage that slot used. The vault is not registered
+    /// with USDT, so the transfer fails, and the exchange's callback cannot put the tokens back:
+    /// a new slot no longer fits the account's storage. ref-exchange 1.9.19 then credits them to
+    /// the vault's lostfound (`exchange_callback_post_withdraw` ->
+    /// `internal_handle_fail_in_withdraw_callback`).
+    async fn force_into_lostfound(&self, amount: u128) -> TestResult {
+        let call = |method: &str, args: near_sdk::serde_json::Value, gas: u64| {
+            Action::FunctionCall(Box::new(FunctionCallAction {
+                method_name: method.to_string(),
+                args: args.to_string().into_bytes(),
+                gas: tgas(gas),
+                deposit: ONE_YOCTO,
+            }))
+        };
+        // The exchange puts tokens in the user's own lostfound only while it has more than
+        // 100 NEAR (MIN_CONTRACT_FREE_BALANCE) free; otherwise they go to its owner's. Give it the
+        // free balance it has on testnet (~219 NEAR at the time of writing).
+        let whale = self.env.create_account("whale.sandbox", near(300)).await?;
+        near_api::Transaction::construct(whale, self.exchange.clone())
+            .add_action(Action::Transfer(TransferAction { deposit: near(200) }))
+            .with_signer(self.env.signer.clone())
+            .send_to(&self.env.network)
+            .await?
+            .assert_success();
+        let withdraw = json!({
+            "token_id": self.usdt,
+            "amount": amount.to_string(),
+            "unregister": true,
+            "skip_unwrap_near": true,
+        });
+        let result =
+            near_api::Transaction::construct(self.env.vault_id().clone(), self.exchange.clone())
+                .add_action(call("withdraw", withdraw, 150))
+                .add_action(call("storage_withdraw", json!({}), 30))
+                .with_signer(self.env.signer.clone())
+                .send_to(&self.env.network)
+                .await?;
+        assert!(
+            result
+                .logs()
+                .iter()
+                .any(|log| log.contains("Depositing to user lostfound account")),
+            "logs: {:?}",
+            result.logs()
+        );
+        result.assert_success();
+        assert_eq!(self.exchange_view("get_deposit", &self.usdt).await?, 0);
+        assert_eq!(
+            self.exchange_view("get_lostfound_token", &self.usdt)
+                .await?,
+            amount
+        );
+        Ok(())
+    }
+
+    /// Two owners with USDT held on the exchange, the first owner's moved into lostfound: the
+    /// vault account there holds only the second owner's. Returns both amounts.
+    async fn one_owner_in_lostfound(&self, other: &AccountId) -> TestResult<(u128, u128)> {
+        let owner = self.env.owner.clone();
+        self.add_owner(other).await?;
+        let lost = self.swap_at_quote(&owner, units(near(1))).await?;
+        assert_eq!(self.token_of(&owner, &self.usdt).await?, (0, lost));
+        self.force_into_lostfound(lost).await?;
+        // Give the vault's exchange account room for the USDT slot again.
+        self.register_on_exchange(&owner, self.env.vault_id())
+            .await?;
+        let kept = self.swap_at_quote(other, units(near(2))).await?;
+        assert!(kept > lost);
+        assert_eq!(self.token_of(other, &self.usdt).await?, (0, kept));
+        assert_eq!(self.exchange_view("get_deposit", &self.usdt).await?, kept);
+        // From here on, the vault can receive USDT, so a refusal is not a failed delivery.
+        self.register(&self.usdt, self.env.vault_id()).await?;
+        Ok((lost, kept))
+    }
+
     async fn assert_nothing_left_on_exchange(&self) -> TestResult {
         let deposits = self.exchange_deposits().await?;
         assert!(
@@ -471,11 +642,7 @@ async fn undelivered_output_is_held_then_reclaimed() -> TestResult {
     assert_eq!(deposits.get(s.usdt.as_str()), Some(&U128(quote)));
 
     s.register(&s.usdt, &vault).await?;
-    let args = json!({ "token_id": s.usdt });
-    let result = s
-        .env
-        .call(&s.env.owner, "reclaim_from_exchange", args, ONE_YOCTO)
-        .await?;
+    let result = s.reclaim(&s.env.owner).await?;
     let reclaimed = events(&result, "exchange_reclaim");
     assert_eq!(reclaimed[0]["succeeded"], true);
     assert!(result.assert_success().json::<bool>()?);
@@ -646,4 +813,301 @@ async fn failed_quote_is_rejected_and_deducts_nothing() -> TestResult {
         "The exchange could not quote pool 1 for wnear.sandbox to usdt.sandbox",
     );
     s.assert_untouched().await
+}
+
+/// Everything that holds the owner's funds, read straight from the chain.
+#[derive(Debug, PartialEq)]
+struct Holdings {
+    vault: near_sdk::serde_json::Value,
+    wnear_held: u128,
+    usdt_held: u128,
+    exchange_deposits: HashMap<String, U128>,
+}
+
+impl SwapEnv {
+    async fn holdings(&self) -> TestResult<Holdings> {
+        let vault = self.env.vault_id();
+        Ok(Holdings {
+            vault: self.env.vault_json(&self.env.owner).await?,
+            wnear_held: self.ft_balance(&self.wnear, vault).await?,
+            usdt_held: self.ft_balance(&self.usdt, vault).await?,
+            exchange_deposits: self.exchange_deposits().await?,
+        })
+    }
+
+    /// A call from the agent's account that must fail.
+    async fn agent_attempt(
+        &self,
+        method: &str,
+        args: near_sdk::serde_json::Value,
+        deposit: NearToken,
+        gas: NearGas,
+    ) -> TestResult<TransactionResult> {
+        let vault = self.env.vault_id();
+        let result = self
+            .env
+            .call_on(vault, &self.env.agent, method, args.clone(), deposit, gas)
+            .await?;
+        assert!(
+            result.is_failure(),
+            "{method}({args}) should fail, logs: {:?}",
+            result.logs()
+        );
+        for started in ["spend_initiated", "swap_initiated"] {
+            assert!(events(&result, started).is_empty(), "{method}({args})");
+        }
+        Ok(result)
+    }
+}
+
+#[tokio::test]
+async fn zero_outflow_policy_rejects_everything_the_agent_can_try() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let owner = s.env.owner.clone();
+    let vault = s.env.vault_id().clone();
+    let zero_outflow = Policy {
+        per_tx_cap: NO_DEPOSIT,
+        daily_cap: NO_DEPOSIT,
+        // The smallest count set_agent accepts; with every cap at zero it never matters.
+        max_spends_per_24h: 1,
+        allowlist: vec![],
+        tokens: vec![],
+        pools: vec![],
+    };
+    s.env
+        .set_agent(&owner, &s.env.agent, &zero_outflow)
+        .await?
+        .assert_success();
+    assert_eq!(s.env.policy(&owner).await?, Some(zero_outflow));
+    let before = s.holdings().await?;
+    let near_held = s.env.near_balance(&vault).await?;
+    let balance = s.env.vault(&owner).await?.balance.as_yoctonear();
+    let full = tgas(300);
+
+    // agent_spend: every receiver the agent might pick, every interesting amount.
+    let receivers = [
+        &s.env.merchant,
+        &owner,
+        &s.env.agent,
+        &s.env.stranger,
+        &vault,
+        &s.exchange,
+        &s.wnear,
+    ];
+    let amounts = [1, units(near(1)), balance, balance + 1, u128::MAX];
+    for receiver in receivers {
+        for amount in amounts {
+            let args =
+                json!({ "owner_id": owner, "receiver_id": receiver, "amount": amount.to_string() });
+            let result = s
+                .agent_attempt("agent_spend", args, NO_DEPOSIT, full)
+                .await?;
+            let rejected = events(&result, "spend_rejected");
+            assert_eq!(rejected[0]["reason"], "receiver_not_allowlisted");
+        }
+    }
+    let args = json!({ "owner_id": owner, "receiver_id": s.env.merchant, "amount": "0" });
+    let result = s
+        .agent_attempt("agent_spend", args, NO_DEPOSIT, full)
+        .await?;
+    assert_eq!(
+        events(&result, "spend_rejected")[0]["reason"],
+        "zero_amount"
+    );
+
+    // agent_swap: the real pool and pools that don't exist, every pair, amounts up to more than
+    // the vault holds, the loosest and tightest minimums.
+    let stranger = s.env.stranger.clone();
+    let pairs = [
+        (&s.wnear, &s.usdt),
+        (&s.usdt, &s.wnear),
+        (&s.wnear, &s.wnear),
+        (&s.wnear, &stranger),
+    ];
+    for pool_id in [POOL_ID, 1, u64::MAX] {
+        for (token_in, token_out) in pairs {
+            for amount_in in [1, units(near(5)), u128::MAX] {
+                for min_amount_out in [1, u128::MAX] {
+                    let args = json!({
+                        "owner_id": owner,
+                        "pool_id": pool_id,
+                        "token_in": token_in,
+                        "token_out": token_out,
+                        "amount_in": amount_in.to_string(),
+                        "min_amount_out": min_amount_out.to_string(),
+                    });
+                    let result = s
+                        .agent_attempt("agent_swap", args, NO_DEPOSIT, full)
+                        .await?;
+                    let rejected = events(&result, "swap_rejected");
+                    assert_eq!(rejected[0]["reason"], "pool_not_allowlisted");
+                }
+            }
+        }
+    }
+    for (amount_in, min_amount_out, gas, reason) in [
+        (0, 1, full, "zero_amount"),
+        (1, 0, full, "zero_min_amount_out"),
+        (1, 1, tgas(AGENT_SWAP_TGAS - 1), "insufficient_gas"),
+    ] {
+        let args = json!({
+            "owner_id": owner,
+            "pool_id": POOL_ID,
+            "token_in": s.wnear,
+            "token_out": s.usdt,
+            "amount_in": amount_in.to_string(),
+            "min_amount_out": min_amount_out.to_string(),
+        });
+        let result = s.agent_attempt("agent_swap", args, NO_DEPOSIT, gas).await?;
+        assert_eq!(events(&result, "swap_rejected")[0]["reason"], reason);
+    }
+
+    // The callbacks that credit balances, called directly with made-up results.
+    let ticket = json!({
+        "spend_id": "0",
+        "owner_id": owner,
+        "pool_id": POOL_ID,
+        "token_in": s.wnear,
+        "token_out": s.usdt,
+        "amount_in": units(near(1)).to_string(),
+        "min_amount_out": "1",
+    });
+    let big = units(near(1_000)).to_string();
+    let callbacks = [
+        (
+            "on_spend_complete",
+            json!({ "spend_id": "0", "owner_id": owner, "receiver_id": s.env.agent, "amount": big }),
+        ),
+        (
+            "on_withdraw_complete",
+            json!({ "owner_id": owner, "amount": big }),
+        ),
+        (
+            "on_token_withdraw_complete",
+            json!({ "owner_id": owner, "token_id": s.wnear, "amount": big }),
+        ),
+        (
+            "on_swap_quoted",
+            json!({ "caller_id": s.env.agent, "ticket": ticket }),
+        ),
+        ("on_swap_deposited", json!({ "ticket": ticket })),
+        ("on_swap_executed", json!({ "ticket": ticket })),
+        (
+            "on_swap_output_withdrawn",
+            json!({ "ticket": ticket, "amount_out": big }),
+        ),
+        (
+            "on_swap_refund_withdrawn",
+            json!({ "ticket": ticket, "amount": big, "failed_step": "swap" }),
+        ),
+        (
+            "on_reclaim_complete",
+            json!({ "owner_id": owner, "token_id": s.usdt, "amount": big }),
+        ),
+    ];
+    for (method, args) in callbacks {
+        let result = s.agent_attempt(method, args, NO_DEPOSIT, full).await?;
+        assert_fails_with(result, &format!("Method {method} is private"));
+    }
+
+    // Posing as a token that credits the owner.
+    let args = json!({ "sender_id": owner, "amount": big, "msg": "" });
+    let result = s
+        .agent_attempt("ft_on_transfer", args, NO_DEPOSIT, full)
+        .await?;
+    assert_fails_with(result, "is not allowlisted in this vault's policy");
+
+    // The owner's methods act on the caller's own vault, and the agent has none.
+    for (method, args) in [
+        ("withdraw", json!({ "amount": big })),
+        (
+            "withdraw_token",
+            json!({ "token_id": s.wnear, "amount": big }),
+        ),
+        ("reclaim_from_exchange", json!({ "token_id": s.wnear })),
+        (
+            "set_agent",
+            json!({ "agent_id": s.env.agent, "policy": s.swap_policy() }),
+        ),
+        ("remove_agent", json!({})),
+        ("unfreeze", json!({})),
+        ("lock_withdrawals_until", json!({ "timestamp_ns": "0" })),
+    ] {
+        let result = s.agent_attempt(method, args, ONE_YOCTO, full).await?;
+        assert_fails_with(result, "No vault found for agent.sandbox");
+    }
+
+    assert_eq!(s.holdings().await?, before);
+    // The contract account only gains (its share of the gas burnt); no NEAR left it.
+    assert!(s.env.near_balance(&vault).await? >= near_held);
+    Ok(())
+}
+
+#[tokio::test]
+async fn lostfound_shortfall_refuses_reclaims_and_leaves_the_other_owner_untouched() -> TestResult {
+    let s = SwapEnv::new(Registered {
+        on_exchange: true,
+        on_usdt: false,
+    })
+    .await?;
+    let owner = s.env.owner.clone();
+    let other = s.env.stranger.clone();
+    let (lost, kept) = s.one_owner_in_lostfound(&other).await?;
+    let ledger = s.usdt_ledger().await?;
+    assert_eq!((ledger.expected.0, ledger.in_flight), (lost + kept, 0));
+    let other_before = s.env.vault(&other).await?;
+
+    // Both reclaims are refused, with the shortfall on record, and nothing moves.
+    for who in [&owner, &other] {
+        let result = s.reclaim(who).await?;
+        let shortfall = events(&result, "exchange_shortfall");
+        assert_eq!(shortfall.len(), 1, "logs: {:?}", result.logs());
+        assert_eq!(shortfall[0]["owner_id"], json!(who));
+        assert_eq!(shortfall[0]["expected"], json!((lost + kept).to_string()));
+        assert_eq!(shortfall[0]["actual"], json!(kept.to_string()));
+        assert!(events(&result, "exchange_reclaim").is_empty());
+        assert_fails_with(
+            result,
+            &format!(
+                "The vault's exchange account holds {kept} of usdt.sandbox but owners are owed {}",
+                lost + kept
+            ),
+        );
+    }
+    assert_eq!(s.token_of(&owner, &s.usdt).await?, (0, lost));
+    assert_eq!(s.env.vault(&other).await?.tokens, other_before.tokens);
+    assert_eq!(s.exchange_view("get_deposit", &s.usdt).await?, kept);
+    assert_eq!(s.ft_balance(&s.usdt, s.env.vault_id()).await?, 0);
+    assert_eq!(s.usdt_ledger().await?, ledger);
+    Ok(())
+}
+
+/// The same situation on the v1 code now deployed on vault-v1.intatto-dev.testnet: the owner whose
+/// USDT went to lostfound reclaims it out of the other owner's, and the other owner is left with
+/// an `on_exchange` amount nothing backs. This is the bug the ledger fixes.
+#[tokio::test]
+async fn v1_lets_one_owner_reclaim_another_owners_tokens() -> TestResult {
+    let v1 = res_wasm("intatto_v1.wasm", V1_SHA256);
+    let s = SwapEnv::on_code(
+        v1,
+        Registered {
+            on_exchange: true,
+            on_usdt: false,
+        },
+    )
+    .await?;
+    let owner = s.env.owner.clone();
+    let other = s.env.stranger.clone();
+    let (lost, kept) = s.one_owner_in_lostfound(&other).await?;
+
+    let result = s.reclaim(&owner).await?;
+    assert!(result.assert_success().json::<bool>()?);
+    assert_eq!(s.token_of(&owner, &s.usdt).await?, (lost, 0));
+    assert_eq!(s.ft_balance(&s.usdt, s.env.vault_id()).await?, lost);
+    // The exchange account now holds less than the other owner's claim, so its reclaim fails.
+    assert_eq!(s.exchange_view("get_deposit", &s.usdt).await?, kept - lost);
+    let result = s.reclaim(&other).await?;
+    assert!(!result.assert_success().json::<bool>()?);
+    assert_eq!(s.token_of(&other, &s.usdt).await?, (0, kept));
+    Ok(())
 }

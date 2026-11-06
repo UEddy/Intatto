@@ -57,6 +57,20 @@ pub enum VaultEvent {
     Frozen { owner_id: AccountId },
     #[event_version("1.0.0")]
     Unfrozen { owner_id: AccountId },
+    /// `withdraw` and `withdraw_token` are blocked until `locked_until` (block timestamp, ns).
+    #[event_version("1.0.0")]
+    WithdrawalsLocked {
+        owner_id: AccountId,
+        locked_until: U64,
+    },
+    /// `set_agent` was refused because the owner's withdrawals are locked until `locked_until`.
+    /// Logged right before the panic, so it survives in the failed receipt's outcome.
+    #[event_version("1.0.0")]
+    SetAgentRejected {
+        owner_id: AccountId,
+        agent_id: AccountId,
+        locked_until: U64,
+    },
     #[event_version("1.0.0")]
     Withdraw {
         owner_id: AccountId,
@@ -154,6 +168,25 @@ pub enum VaultEvent {
         swap: SwapTicket,
         failed_step: SwapStep,
         held_on_exchange: bool,
+    },
+    /// A reclaim was refused because the vault's exchange account holds less of `token_id`
+    /// (`actual`) than owners are owed there (`expected`). Logged right before the panic, so it
+    /// survives in the failed receipt's outcome.
+    #[event_version("1.0.0")]
+    ExchangeShortfall {
+        owner_id: AccountId,
+        token_id: AccountId,
+        expected: U128,
+        actual: U128,
+    },
+    /// The exchange ledger was asked to remove more than it held, which means it was missing an
+    /// earlier step (for example a swap started before the ledger existed). It was clamped at 0.
+    #[event_version("1.0.0")]
+    ExchangeLedgerUnderflow {
+        token_id: AccountId,
+        field: String,
+        value: U128,
+        decrease: U128,
     },
     #[event_version("1.0.0")]
     ExchangeReclaim {

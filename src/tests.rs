@@ -138,9 +138,13 @@ fn swap(contract: &mut Contract, amount_in: u128, timestamp: u64) {
 
 /// The ticket of a `swap` accepted as spend `spend_id`, as its later callbacks receive it.
 fn ticket(spend_id: u64, amount_in: u128) -> SwapTicket {
+    ticket_for(owner(), spend_id, amount_in)
+}
+
+fn ticket_for(owner_id: AccountId, spend_id: u64, amount_in: u128) -> SwapTicket {
     SwapTicket {
         spend_id: U64(spend_id),
-        owner_id: owner(),
+        owner_id,
         pool_id: POOL,
         token_in: wnear(),
         token_out: usdt(),
@@ -167,7 +171,101 @@ fn fail_transfer(contract: &mut Contract, spend_id: u64, timestamp: u64) {
 }
 
 fn vault(contract: &Contract) -> Vault {
-    contract.get_vault(owner()).unwrap()
+    contract.get_vault(owner()).unwrap().vault
+}
+
+fn other() -> AccountId {
+    "other.near".parse().unwrap()
+}
+
+/// A second vault, for `other`, with the same policy and 1000 wNEAR.
+fn add_other_owner(contract: &mut Contract) {
+    set_context(other(), NearToken::from_near(10), T0);
+    contract.deposit();
+    set_context(other(), NearToken::from_yoctonear(1), T0);
+    contract.set_agent(agent(), policy(vec![merchant()]));
+    set_context(wnear(), NearToken::from_yoctonear(0), T0);
+    let _ = contract.ft_on_transfer(other(), U128(1_000), String::new());
+}
+
+/// A whole swap of `amount_in` wNEAR for `amount_out` USDT by `owner_id`'s agent, accepted as
+/// spend `spend_id`, whose output withdrawal is delivered or not.
+fn swap_to_output(
+    contract: &mut Contract,
+    owner_id: AccountId,
+    spend_id: u64,
+    amount_in: u128,
+    amount_out: u128,
+    delivered: bool,
+    timestamp: u64,
+) {
+    set_context(agent(), NearToken::from_yoctonear(0), timestamp);
+    contract
+        .agent_swap(
+            owner_id.clone(),
+            POOL,
+            wnear(),
+            usdt(),
+            U128(amount_in),
+            U128(amount_in),
+        )
+        .detach();
+    let ticket = ticket_for(owner_id, spend_id, amount_in);
+    set_context(contract_id(), NearToken::from_yoctonear(0), timestamp);
+    contract
+        .on_swap_quoted(agent(), ticket.clone(), Ok(U128(amount_in)))
+        .detach();
+    as_vault();
+    expect_promise(contract.on_swap_deposited(ticket.clone(), Ok(U128(amount_in))));
+    as_vault();
+    expect_promise(contract.on_swap_executed(ticket.clone(), Ok(U128(amount_out))));
+    as_vault();
+    let withdrawn = if delivered { amount_out } else { 0 };
+    assert!(contract.on_swap_output_withdrawn(ticket, U128(amount_out), Ok(U128(withdrawn))));
+}
+
+/// The ledger's (expected, in_flight) for `token_id`.
+fn ledger_of(contract: &Contract, token_id: &AccountId) -> (u128, u32) {
+    let entry = contract.get_exchange_ledger(token_id.clone());
+    (entry.expected.0, entry.in_flight)
+}
+
+/// `reclaim_from_exchange` of USDT by `owner_id`, then its check callback with the exchange
+/// reporting `actual` in the vault's account.
+fn reclaim(contract: &mut Contract, owner_id: AccountId, actual: u128, timestamp: u64) {
+    set_context(owner_id.clone(), NearToken::from_yoctonear(1), timestamp);
+    contract.reclaim_from_exchange(usdt()).detach();
+    let generation = contract.get_exchange_ledger(usdt()).generation;
+    set_context(contract_id(), NearToken::from_yoctonear(0), timestamp);
+    contract
+        .on_reclaim_checked(owner_id, usdt(), generation, Ok(U128(actual)))
+        .detach();
+}
+
+fn lock_until(contract: &mut Contract, until: u64, timestamp: u64) {
+    set_context(owner(), NearToken::from_yoctonear(1), timestamp);
+    contract.lock_withdrawals_until(U64(until));
+}
+
+fn locked_until(contract: &Contract) -> Option<u64> {
+    contract
+        .get_vault(owner())
+        .unwrap()
+        .withdrawals_locked_until
+        .map(|until| until.0)
+}
+
+/// No pools, no tokens, nobody to pay, zero NEAR caps. `max_spends_per_24h` cannot be 0, but with
+/// every cap at zero the count never matters.
+fn zero_outflow_policy() -> Policy {
+    Policy {
+        per_tx_cap: NearToken::from_yoctonear(0),
+        daily_cap: NearToken::from_yoctonear(0),
+        max_spends_per_24h: 1,
+        allowlist: vec![],
+        tokens: vec![],
+        pools: vec![],
+    }
 }
 
 fn token(contract: &Contract, token_id: &AccountId) -> TokenBalance {
@@ -188,6 +286,14 @@ fn spend_ids(contract: &Contract) -> Vec<u64> {
 
 fn borsh_cost<T: near_sdk::borsh::BorshSerialize>(value: &T) -> NearToken {
     storage_cost(near_sdk::borsh::to_vec(value).unwrap().len() as u64)
+}
+
+/// What a new exchange ledger entry costs: its own storage record (key, value and the runtime's
+/// 40 bytes of overhead per record).
+fn ledger_entry_cost(token_id: &AccountId) -> NearToken {
+    let key = [b"x".to_vec(), near_sdk::borsh::to_vec(token_id).unwrap()].concat();
+    let value = near_sdk::borsh::to_vec(&ExchangeLedger::default()).unwrap();
+    storage_cost((key.len() + value.len() + 40) as u64)
 }
 
 /// What one NEAR spend's entry in `recent_spends` costs in storage.
@@ -504,9 +610,12 @@ fn swap_deducts_records_and_pays_storage_once_quoted() {
         amount: U128(100),
     };
     assert_eq!(vault.recent_spends, std::slice::from_ref(&record));
-    // The swap's record and its output's new balance entry are both charged to the owner.
+    // The swap's record, its output's new balance entry and the first ledger entries of both
+    // tokens are all charged to the owner.
     let storage = borsh_cost(&record)
         .checked_add(borsh_cost(&token(&contract, &usdt())))
+        .and_then(|cost| cost.checked_add(ledger_entry_cost(&wnear())))
+        .and_then(|cost| cost.checked_add(ledger_entry_cost(&usdt())))
         .unwrap();
     assert_eq!(vault.balance, near_before.checked_sub(storage).unwrap());
 }
@@ -578,27 +687,27 @@ fn failed_deposit_refunds_without_touching_the_exchange() {
 #[test]
 fn undelivered_output_is_held_and_reclaimable() {
     let mut contract = setup();
-    swap(&mut contract, 100, T0);
-    as_vault();
     // The exchange's transfer to the vault failed, so it kept the output in our deposit account.
-    assert!(contract.on_swap_output_withdrawn(ticket(0, 100), U128(123), Ok(U128(0))));
+    swap_to_output(&mut contract, owner(), 0, 100, 123, false, T0);
     let output = token(&contract, &usdt());
     assert_eq!((output.balance, output.on_exchange), (U128(0), U128(123)));
+    assert_eq!(ledger_of(&contract, &usdt()), (123, 0));
 
     // A failed reclaim leaves it recorded; a successful one credits it.
-    set_context(owner(), NearToken::from_yoctonear(1), T0 + 20);
-    contract.reclaim_from_exchange(usdt()).detach();
+    reclaim(&mut contract, owner(), 123, T0 + 20);
     assert_eq!(token(&contract, &usdt()).on_exchange, U128(0));
+    assert_eq!(ledger_of(&contract, &usdt()), (123, 1));
     as_vault();
     assert!(!contract.on_reclaim_complete(owner(), usdt(), U128(123), Err(PromiseError::Failed)));
     assert_eq!(token(&contract, &usdt()).on_exchange, U128(123));
+    assert_eq!(ledger_of(&contract, &usdt()), (123, 0));
 
-    set_context(owner(), NearToken::from_yoctonear(1), T0 + 30);
-    contract.reclaim_from_exchange(usdt()).detach();
+    reclaim(&mut contract, owner(), 123, T0 + 30);
     as_vault();
     assert!(contract.on_reclaim_complete(owner(), usdt(), U128(123), Ok(U128(123))));
     let output = token(&contract, &usdt());
     assert_eq!((output.balance, output.on_exchange), (U128(123), U128(0)));
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 0));
 }
 
 #[test]
@@ -849,4 +958,365 @@ fn quote_callback_assigns_spend_ids_in_acceptance_order() {
     quote_swap(&mut contract, 10, 10, Ok(U128(10)), T0 + 2);
     assert_eq!(spend_ids(&contract), [0, 1]);
     assert_eq!(vault(&contract).recent_spends[1].token_id, Some(wnear()));
+}
+
+#[test]
+#[should_panic(expected = "Withdrawals are locked until 1700000000000000100 (block timestamp, ns)")]
+fn locked_withdraw_is_rejected_one_ns_before_the_lock_ends() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 99);
+    contract.withdraw(NearToken::from_near(1)).detach();
+}
+
+#[test]
+#[should_panic(expected = "Withdrawals are locked until")]
+fn locked_token_withdraw_is_rejected() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 50);
+    contract.withdraw_token(wnear(), U128(1)).detach();
+}
+
+#[test]
+fn withdrawals_work_again_exactly_when_the_lock_ends() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 100, T0);
+    let balance = vault(&contract).balance;
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 100);
+    contract.withdraw(NearToken::from_near(1)).detach();
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 100);
+    contract.withdraw_token(wnear(), U128(400)).detach();
+    assert_eq!(
+        vault(&contract).balance,
+        balance.checked_sub(NearToken::from_near(1)).unwrap()
+    );
+    assert_eq!(token(&contract, &wnear()).balance, U128(600));
+}
+
+#[test]
+fn lock_is_shown_extended_and_charged_for_once() {
+    let mut contract = setup();
+    assert_eq!(locked_until(&contract), None);
+    let before = vault(&contract).balance;
+    lock_until(&mut contract, T0 + 100, T0);
+    assert_eq!(locked_until(&contract), Some(T0 + 100));
+    let after_first = vault(&contract).balance;
+    assert!(after_first < before); // the lock's storage
+
+    lock_until(&mut contract, T0 + 100, T0 + 1); // the same value is allowed
+    lock_until(&mut contract, T0 + 500, T0 + 2);
+    assert_eq!(locked_until(&contract), Some(T0 + 500));
+    assert_eq!(vault(&contract).balance, after_first); // same entry, no new storage
+}
+
+#[test]
+#[should_panic(
+    expected = "Withdrawals are already locked until 1700000000000000500; a lock can only be extended"
+)]
+fn lock_cannot_be_shortened() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 500, T0);
+    lock_until(&mut contract, T0 + 499, T0 + 1);
+}
+
+#[test]
+#[should_panic(expected = "a lock can only be extended")]
+fn expired_lock_still_cannot_be_moved_earlier() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 500, T0);
+    lock_until(&mut contract, T0 + 10, T0 + 1_000);
+}
+
+#[test]
+#[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+fn lock_requires_one_yocto() {
+    let mut contract = setup();
+    set_context(owner(), NearToken::from_yoctonear(0), T0);
+    contract.lock_withdrawals_until(U64(T0 + 100));
+}
+
+#[test]
+#[should_panic(expected = "No vault found for stranger.near; call deposit first")]
+fn lock_requires_a_vault() {
+    let mut contract = setup();
+    set_context(
+        "stranger.near".parse().unwrap(),
+        NearToken::from_yoctonear(1),
+        T0,
+    );
+    contract.lock_withdrawals_until(U64(T0 + 100));
+}
+
+#[test]
+fn lock_leaves_the_agent_and_freeze_as_they_were() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + WINDOW_NS, T0);
+    // The agent still spends and swaps within its policy...
+    spend(&mut contract, T0 + 1);
+    swap(&mut contract, 100, T0 + 2);
+    assert_eq!(spend_ids(&contract), [0, 1]);
+    // ...and freeze and unfreeze work as before.
+    set_context(owner(), NearToken::from_yoctonear(0), T0 + 3);
+    contract.freeze();
+    assert!(vault(&contract).frozen);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 4);
+    contract.unfreeze();
+    assert!(!vault(&contract).frozen);
+}
+
+#[test]
+fn set_agent_accepts_a_zero_outflow_policy() {
+    let mut contract = setup();
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.set_agent(agent(), zero_outflow_policy());
+    assert_eq!(vault(&contract).policy, zero_outflow_policy());
+}
+
+#[test]
+#[should_panic(expected = "Receiver merchant.near is not on the vault's allowlist")]
+fn zero_outflow_policy_rejects_spends() {
+    let mut contract = setup();
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.set_agent(agent(), zero_outflow_policy());
+    set_context(agent(), NearToken::from_yoctonear(0), T0);
+    contract
+        .agent_spend(owner(), merchant(), NearToken::from_yoctonear(1))
+        .detach();
+}
+
+#[test]
+#[should_panic(expected = "Pool 7 is not on the vault's pool allowlist")]
+fn zero_outflow_policy_rejects_swaps() {
+    let mut contract = setup();
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.set_agent(agent(), zero_outflow_policy());
+    request_swap(&mut contract, 1, 1, T0);
+}
+
+#[test]
+#[should_panic(expected = "Pool 7 is not on the vault's pool allowlist")]
+fn zero_outflow_policy_rejects_a_quote_already_in_flight() {
+    let mut contract = setup();
+    // Requested under the old policy, quoted after the owner switched to zero outflow.
+    request_swap(&mut contract, 100, 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 1);
+    contract.set_agent(agent(), zero_outflow_policy());
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0 + 2);
+}
+
+#[test]
+#[should_panic(
+    expected = "Withdrawals are locked until 1700000000000000100 (block timestamp, ns); set_agent is disabled until then"
+)]
+fn set_agent_is_rejected_while_locked() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 99);
+    contract.set_agent(agent(), zero_outflow_policy());
+}
+
+#[test]
+fn set_agent_rejection_is_logged() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 99);
+    let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        contract.set_agent(agent(), zero_outflow_policy());
+    }));
+    assert!(rejected.is_err());
+    let logs = near_sdk::test_utils::get_logs();
+    assert!(
+        logs.iter()
+            .any(|log| log.contains(r#""event":"set_agent_rejected""#)
+                && log.contains(r#""locked_until":"1700000000000000100""#)),
+        "{logs:?}"
+    );
+}
+
+#[test]
+fn set_agent_works_again_once_the_lock_ends() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 100);
+    contract.set_agent(agent(), zero_outflow_policy());
+    assert_eq!(vault(&contract).policy, zero_outflow_policy());
+}
+
+#[test]
+fn remove_agent_freeze_and_unfreeze_work_while_locked() {
+    let mut contract = setup();
+    lock_until(&mut contract, T0 + WINDOW_NS, T0);
+    set_context(owner(), NearToken::from_yoctonear(0), T0 + 1);
+    contract.freeze();
+    assert!(vault(&contract).frozen);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 2);
+    contract.unfreeze();
+    assert!(!vault(&contract).frozen);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 3);
+    contract.remove_agent();
+    assert_eq!(vault(&contract).agent_id, None);
+    assert_eq!(vault(&contract).policy, Policy::default());
+}
+
+#[test]
+fn ledger_tracks_a_swap_in_flight_and_clears_when_it_settles() {
+    let mut contract = setup();
+    swap(&mut contract, 100, T0);
+    // wNEAR is on its way to the exchange; USDT will arrive there.
+    assert_eq!(ledger_of(&contract, &wnear()), (100, 1));
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 1));
+    as_vault();
+    expect_promise(contract.on_swap_deposited(ticket(0, 100), Ok(U128(100))));
+    as_vault();
+    expect_promise(contract.on_swap_executed(ticket(0, 100), Ok(U128(123))));
+    assert_eq!(ledger_of(&contract, &wnear()), (0, 1));
+    assert_eq!(ledger_of(&contract, &usdt()), (123, 1));
+    as_vault();
+    assert!(contract.on_swap_output_withdrawn(ticket(0, 100), U128(123), Ok(U128(123))));
+    assert_eq!(ledger_of(&contract, &wnear()), (0, 0));
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 0));
+}
+
+#[test]
+fn ledger_clears_on_every_refund_path() {
+    let mut contract = setup();
+    // The token refunded the deposit.
+    swap(&mut contract, 100, T0);
+    as_vault();
+    let _ = contract.on_swap_deposited(ticket(0, 100), Ok(U128(0)));
+    assert_eq!(ledger_of(&contract, &wnear()), (0, 0));
+    // The swap failed and its refund came back.
+    swap(&mut contract, 100, T0 + 1);
+    as_vault();
+    expect_promise(contract.on_swap_executed(ticket(1, 100), Err(PromiseError::Failed)));
+    as_vault();
+    contract.on_swap_refund_withdrawn(ticket(1, 100), U128(100), SwapStep::Swap, Ok(U128(100)));
+    assert_eq!(ledger_of(&contract, &wnear()), (0, 0));
+    // The exchange kept 60 of 100: 40 come back now, then 60 are withdrawn.
+    swap(&mut contract, 100, T0 + 2);
+    as_vault();
+    expect_promise(contract.on_swap_deposited(ticket(2, 100), Ok(U128(60))));
+    assert_eq!(ledger_of(&contract, &wnear()), (60, 1));
+    as_vault();
+    contract.on_swap_refund_withdrawn(ticket(2, 100), U128(60), SwapStep::Deposit, Ok(U128(60)));
+    assert_eq!(ledger_of(&contract, &wnear()), (0, 0));
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 0));
+    assert_eq!(token(&contract, &wnear()).balance, U128(1_000));
+}
+
+#[test]
+fn undelivered_refund_stays_expected_on_the_exchange() {
+    let mut contract = setup();
+    swap(&mut contract, 100, T0);
+    as_vault();
+    contract.on_swap_refund_withdrawn(ticket(0, 100), U128(100), SwapStep::Swap, Ok(U128(0)));
+    assert_eq!(token(&contract, &wnear()).on_exchange, U128(100));
+    assert_eq!(ledger_of(&contract, &wnear()), (100, 0));
+}
+
+#[test]
+#[should_panic(
+    expected = "The vault's exchange account holds 50 of usdt.near but owners are owed 173; reclaims of usdt.near are refused until the shortfall is resolved"
+)]
+fn reclaim_is_refused_when_the_exchange_holds_less_than_owners_are_owed() {
+    let mut contract = setup();
+    add_other_owner(&mut contract);
+    swap_to_output(&mut contract, owner(), 0, 100, 123, false, T0);
+    swap_to_output(&mut contract, other(), 1, 40, 50, false, T0 + 1);
+    assert_eq!(ledger_of(&contract, &usdt()), (173, 0));
+    // owner's 123 went to lostfound: the account only holds other's 50. other's reclaim is
+    // refused too, so owner's loss is never moved onto other.
+    reclaim(&mut contract, other(), 50, T0 + 2);
+}
+
+#[test]
+fn shortfall_is_logged_and_changes_nothing() {
+    let mut contract = setup();
+    add_other_owner(&mut contract);
+    swap_to_output(&mut contract, owner(), 0, 100, 123, false, T0);
+    swap_to_output(&mut contract, other(), 1, 40, 50, false, T0 + 1);
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        reclaim(&mut contract, owner(), 50, T0 + 2);
+    }));
+    assert!(refused.is_err());
+    let logs = near_sdk::test_utils::get_logs();
+    assert!(
+        logs.iter()
+            .any(|log| log.contains(r#""event":"exchange_shortfall""#)
+                && log.contains(r#""expected":"173""#)
+                && log.contains(r#""actual":"50""#)),
+        "{logs:?}"
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "Swaps or reclaims of usdt.near are in flight on the exchange; retry once they have settled"
+)]
+fn reclaim_is_refused_while_a_swap_of_the_token_is_in_flight() {
+    let mut contract = setup();
+    add_other_owner(&mut contract);
+    swap_to_output(&mut contract, owner(), 0, 100, 123, false, T0);
+    // other's swap paying out USDT has started.
+    set_context(agent(), NearToken::from_yoctonear(0), T0 + 1);
+    contract
+        .agent_swap(other(), POOL, wnear(), usdt(), U128(40), U128(40))
+        .detach();
+    set_context(contract_id(), NearToken::from_yoctonear(0), T0 + 1);
+    contract
+        .on_swap_quoted(agent(), ticket_for(other(), 1, 40), Ok(U128(40)))
+        .detach();
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 2);
+    contract.reclaim_from_exchange(usdt()).detach();
+}
+
+#[test]
+#[should_panic(expected = "Swaps or reclaims of usdt.near are in flight on the exchange")]
+fn reclaim_is_refused_if_a_swap_started_while_checking() {
+    let mut contract = setup();
+    add_other_owner(&mut contract);
+    swap_to_output(&mut contract, owner(), 0, 100, 123, false, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 1);
+    contract.reclaim_from_exchange(usdt()).detach();
+    let generation = contract.get_exchange_ledger(usdt()).generation;
+    // other's whole swap runs between the exchange's balance query and the check: the balance
+    // the query saw may include its output, which has left again by now.
+    swap_to_output(&mut contract, other(), 1, 40, 50, true, T0 + 2);
+    assert_eq!(ledger_of(&contract, &usdt()), (123, 0));
+    set_context(contract_id(), NearToken::from_yoctonear(0), T0 + 3);
+    contract
+        .on_reclaim_checked(owner(), usdt(), generation, Ok(U128(173)))
+        .detach();
+}
+
+#[test]
+#[should_panic(expected = "reclaim_from_exchange needs at least 115 TGas")]
+fn reclaim_needs_enough_gas() {
+    let mut contract = setup();
+    swap_to_output(&mut contract, owner(), 0, 100, 123, false, T0);
+    set_context_with_gas(
+        owner(),
+        NearToken::from_yoctonear(1),
+        T0 + 1,
+        Gas::from_tgas(100),
+    );
+    contract.reclaim_from_exchange(usdt()).detach();
+}
+
+#[test]
+fn ledger_underflow_is_logged_and_clamped_without_panicking() {
+    let mut contract = setup();
+    swap(&mut contract, 100, T0);
+    // A delivered output the ledger never saw arrive, as for a swap started before the ledger.
+    as_vault();
+    assert!(contract.on_swap_output_withdrawn(ticket(0, 100), U128(123), Ok(U128(123))));
+    assert_eq!(token(&contract, &usdt()).balance, U128(123));
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 0));
+    let logs = near_sdk::test_utils::get_logs();
+    assert!(
+        logs.iter()
+            .any(|log| log.contains(r#""event":"exchange_ledger_underflow""#)),
+        "{logs:?}"
+    );
 }

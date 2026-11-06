@@ -1,13 +1,16 @@
 //! `#[private]` callbacks that settle every transfer, withdrawal and swap step.
 use near_sdk::json_types::{U64, U128};
-use near_sdk::{AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, near};
+use near_sdk::{
+    AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, near, require,
+};
 
 use crate::events::{Attempt, RejectReason, VaultEvent};
+use crate::ledger;
 use crate::swap::{
     EXCHANGE_SWAP_TGAS, EXCHANGE_WITHDRAW_TGAS, ON_SWAP_EXECUTED_TGAS, ON_SWAP_WITHDRAWN_TGAS,
-    SwapAction, SwapStep, SwapTicket, ext_exchange, slippage_floor,
+    SwapAction, SwapStep, SwapTicket, busy_message, ext_exchange, slippage_floor,
 };
-use crate::{Contract, ContractExt, ONE_YOCTO, add_amounts, add_tokens, sub_amounts};
+use crate::{CALLBACK_GAS, Contract, ContractExt, ONE_YOCTO, add_amounts, add_tokens, sub_amounts};
 
 #[near]
 impl Contract {
@@ -173,10 +176,12 @@ impl Contract {
         }
         // A plain deposit is all or nothing, but if the exchange ever kept only part, return the
         // rest now and withdraw what it kept before refunding.
+        let returned = sub_amounts(amount_in, used);
         let entry = self
             .vault_mut(&ticket.owner_id)
             .swap_token(&ticket.token_in);
-        entry.balance = U128(add_amounts(entry.balance.0, sub_amounts(amount_in, used)));
+        entry.balance = U128(add_amounts(entry.balance.0, returned));
+        ledger::release(&ticket.token_in, returned);
         self.withdraw_refund(ticket, used, SwapStep::Deposit).into()
     }
 
@@ -189,24 +194,31 @@ impl Contract {
         #[callback_result] amount_out: Result<U128, PromiseError>,
     ) -> PromiseOrValue<bool> {
         match amount_out {
-            Ok(amount_out) if amount_out.0 > 0 => ext_exchange::ext(self.exchange_id.clone())
-                .with_attached_deposit(ONE_YOCTO)
-                .with_static_gas(Gas::from_tgas(EXCHANGE_WITHDRAW_TGAS))
-                .withdraw(
-                    ticket.token_out.clone(),
-                    amount_out,
-                    Some(false),
-                    Some(true),
-                )
-                .then(
-                    Self::ext_self()
-                        .with_static_gas(Gas::from_tgas(ON_SWAP_WITHDRAWN_TGAS))
-                        .on_swap_output_withdrawn(ticket, amount_out),
-                )
-                .into(),
+            Ok(amount_out) if amount_out.0 > 0 => {
+                // The exchange swapped token_in for token_out inside the vault's account.
+                ledger::release(&ticket.token_in, ticket.amount_in.0);
+                ledger::expect(&ticket.token_out, amount_out.0);
+                ext_exchange::ext(self.exchange_id.clone())
+                    .with_attached_deposit(ONE_YOCTO)
+                    .with_static_gas(Gas::from_tgas(EXCHANGE_WITHDRAW_TGAS))
+                    .withdraw(
+                        ticket.token_out.clone(),
+                        amount_out,
+                        Some(false),
+                        Some(true),
+                    )
+                    .then(
+                        Self::ext_self()
+                            .with_static_gas(Gas::from_tgas(ON_SWAP_WITHDRAWN_TGAS))
+                            .on_swap_output_withdrawn(ticket, amount_out),
+                    )
+                    .into()
+            }
             // Zero output needs a zero `min_amount_out`, which agent_swap rejects. Never withdraw
             // it: the exchange reads an amount of 0 as "everything".
             Ok(amount_out) => {
+                ledger::release(&ticket.token_in, ticket.amount_in.0);
+                Self::end_swap(&ticket);
                 VaultEvent::SwapCompleted {
                     swap: ticket,
                     amount_out,
@@ -238,9 +250,12 @@ impl Contract {
             .swap_token(&ticket.token_out);
         if delivered {
             entry.balance = U128(add_amounts(entry.balance.0, amount_out.0));
+            ledger::release(&ticket.token_out, amount_out.0);
         } else {
+            // Still owed to this owner on the exchange, so still expected there.
             entry.on_exchange = U128(add_amounts(entry.on_exchange.0, amount_out.0));
         }
+        Self::end_swap(&ticket);
 
         VaultEvent::SwapCompleted {
             swap: ticket,
@@ -266,7 +281,65 @@ impl Contract {
         false
     }
 
-    /// Settles `reclaim_from_exchange`.
+    /// Reclaim step 2: the exchange reported how much of `token_id` the vault's account holds.
+    /// Withdraws the owner's own `on_exchange` amount only if that covers everything the ledger
+    /// says owners are owed and nothing moved since `reclaim_from_exchange` read `generation`.
+    /// Every refusal panics before changing anything; a shortfall also logs `exchange_shortfall`.
+    #[private]
+    pub fn on_reclaim_checked(
+        &mut self,
+        owner_id: AccountId,
+        token_id: AccountId,
+        generation: U64,
+        #[callback_result] deposit: Result<U128, PromiseError>,
+    ) -> Promise {
+        let entry = ledger::ledger(&token_id);
+        // Anything that started since the query may have changed the account in between, which
+        // would make the balance below stale.
+        require!(
+            entry.generation == generation && entry.in_flight == 0,
+            busy_message(&token_id)
+        );
+        let Ok(actual) = deposit else {
+            env::panic_str(&format!(
+                "The exchange did not report the vault's {token_id} balance; retry"
+            ));
+        };
+        if actual.0 < entry.expected.0 {
+            VaultEvent::ExchangeShortfall {
+                owner_id,
+                token_id: token_id.clone(),
+                expected: entry.expected,
+                actual,
+            }
+            .emit();
+            env::panic_str(&format!(
+                "The vault's exchange account holds {} of {token_id} but owners are owed {}; reclaims of {token_id} are refused until the shortfall is resolved",
+                actual.0, entry.expected.0
+            ));
+        }
+        let held = self.vault_mut(&owner_id).swap_token(&token_id);
+        let amount = held.on_exchange;
+        require!(
+            amount.0 > 0,
+            format!("Vault has no {token_id} left on the exchange")
+        );
+        held.on_exchange = U128(0);
+        // Still expected on the exchange until the withdrawal is confirmed.
+        ledger::start(&token_id, 0);
+
+        ext_exchange::ext(self.exchange_id.clone())
+            .with_attached_deposit(ONE_YOCTO)
+            .with_static_gas(Gas::from_tgas(EXCHANGE_WITHDRAW_TGAS))
+            .withdraw(token_id.clone(), amount, Some(false), Some(true))
+            .then(
+                Self::ext_self()
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_reclaim_complete(owner_id, token_id, amount),
+            )
+    }
+
+    /// Reclaim step 3: settles the withdrawal `on_reclaim_checked` made.
     #[private]
     pub fn on_reclaim_complete(
         &mut self,
@@ -279,9 +352,11 @@ impl Contract {
         let entry = self.vault_mut(&owner_id).swap_token(&token_id);
         if delivered {
             entry.balance = U128(add_amounts(entry.balance.0, amount.0));
+            ledger::release(&token_id, amount.0);
         } else {
             entry.on_exchange = U128(add_amounts(entry.on_exchange.0, amount.0));
         }
+        ledger::finish(&token_id);
 
         VaultEvent::ExchangeReclaim {
             owner_id,

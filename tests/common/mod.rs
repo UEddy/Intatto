@@ -19,6 +19,12 @@ pub const SECOND_NS: u64 = 1_000_000_000;
 pub const HOUR_NS: u64 = 60 * 60 * SECOND_NS;
 /// The exchange every vault in these tests is initialized with. Only the swap tests deploy it.
 pub const EXCHANGE: &str = "exchange.sandbox";
+/// SHA-256 (base58) of tests/res/intatto_v1.wasm, the code deployed on vault-v1.intatto-dev.testnet.
+pub const V1_SHA256: &str = "HGa6MDknypEa691JxbEp95zCCW72NQ45MZsWXgy7MNot";
+/// SHA-256 (base58) of tests/res/w_near.wasm.
+pub const W_NEAR_SHA256: &str = "DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa";
+/// `storage_balance_bounds().min` of the w_near contract.
+pub const TOKEN_STORAGE: NearToken = NearToken::from_micronear(1_250);
 
 /// Each test boots its own sandbox node (~0.5 GB); cap how many run at once.
 static SANDBOX_SLOTS: Semaphore = Semaphore::const_new(4);
@@ -94,7 +100,11 @@ pub struct TestEnv {
 
 impl TestEnv {
     pub async fn new() -> TestResult<Self> {
-        let wasm = contract_wasm();
+        Self::with_code(contract_wasm()).await
+    }
+
+    /// `new()`, with `wasm` as the vault contract instead of this build.
+    pub async fn with_code(wasm: Vec<u8>) -> TestResult<Self> {
         let slot = SANDBOX_SLOTS.acquire().await?;
         let sandbox = near_sandbox::Sandbox::start_sandbox().await?;
         let network = NetworkConfig::from_rpc_url("sandbox", sandbox.rpc_addr.parse()?);
@@ -126,7 +136,12 @@ impl TestEnv {
 
     /// `new()` plus a 10 NEAR vault for `owner` with `agent` registered under `standard_policy`.
     pub async fn with_vault() -> TestResult<Self> {
-        let env = Self::new().await?;
+        Self::with_vault_on(contract_wasm()).await
+    }
+
+    /// `with_vault()`, with `wasm` as the vault contract.
+    pub async fn with_vault_on(wasm: Vec<u8>) -> TestResult<Self> {
+        let env = Self::with_code(wasm).await?;
         env.deposit(&env.owner, near(10)).await?.assert_success();
         env.set_agent(&env.owner, &env.agent, &env.standard_policy())
             .await?
@@ -238,6 +253,12 @@ impl TestEnv {
             .view_on(self.vault_id(), "get_vault", json!({ "owner_id": owner }))
             .await?;
         Ok(vault.expect("vault should exist"))
+    }
+
+    /// `get_vault` as raw JSON, including fields `Vault` doesn't have.
+    pub async fn vault_json(&self, owner: &AccountId) -> TestResult<Value> {
+        self.view_on(self.vault_id(), "get_vault", json!({ "owner_id": owner }))
+            .await
     }
 
     pub async fn policy(&self, owner: &AccountId) -> TestResult<Option<Policy>> {

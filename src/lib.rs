@@ -1,4 +1,5 @@
 // Find NEAR documentation at https://docs.near.org
+use near_sdk::json_types::U64;
 use near_sdk::store::LookupMap;
 use near_sdk::{
     AccountId, Gas, NearToken, PanicOnDefault, Promise, assert_one_yocto, env, near, require,
@@ -6,6 +7,8 @@ use near_sdk::{
 
 mod callbacks;
 mod events;
+mod ledger;
+mod lock;
 mod policy;
 mod spend;
 mod storage;
@@ -13,6 +16,7 @@ mod swap;
 mod tokens;
 
 pub use events::{RejectReason, VaultEvent};
+pub use ledger::ExchangeLedger;
 pub use policy::{
     MAX_ALLOWLIST_LEN, MAX_POLICY_POOLS, MAX_POLICY_TOKENS, MAX_SLIPPAGE_BPS,
     MAX_SPENDS_PER_24H_LIMIT, Policy, PoolPolicy, TokenPolicy,
@@ -20,13 +24,14 @@ pub use policy::{
 pub use spend::{Spend, WINDOW_NS};
 use storage::storage_cost;
 pub use swap::{
-    AGENT_SWAP_TGAS, Exchange, SwapAction, SwapStep, SwapTicket, ext_exchange, slippage_floor,
+    AGENT_SWAP_TGAS, Exchange, RECLAIM_TGAS, SwapAction, SwapStep, SwapTicket, ext_exchange,
+    slippage_floor,
 };
 pub use tokens::{FungibleToken, MAX_TOKEN_BALANCES, TokenBalance, ext_ft};
 
 // Names src/tests.rs reaches through `use super::*`, as it did when this was a single file.
 #[cfg(test)]
-use near_sdk::json_types::{U64, U128};
+use near_sdk::json_types::U128;
 #[cfg(test)]
 use near_sdk::{PromiseError, PromiseOrValue};
 
@@ -52,6 +57,17 @@ pub struct Vault {
     pub recent_spends: Vec<Spend>,
     /// One entry per token the vault has ever held for this owner.
     pub tokens: Vec<TokenBalance>,
+}
+
+/// What `get_vault` returns: the vault's fields, plus its withdrawal lock.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct VaultView {
+    #[serde(flatten)]
+    pub vault: Vault,
+    /// Block timestamp (ns) until which `withdraw` and `withdraw_token` are blocked; null if the
+    /// owner never set a lock. A value in the past means the lock has expired.
+    pub withdrawals_locked_until: Option<U64>,
 }
 
 #[near(contract_state)]
@@ -119,8 +135,8 @@ impl Contract {
         .emit();
     }
 
-    /// Sends `amount` from the caller's vault back to the caller. Works while frozen.
-    /// Requires exactly 1 yoctoNEAR (full-access key only).
+    /// Sends `amount` from the caller's vault back to the caller. Works while frozen, but not
+    /// while withdrawals are locked. Requires exactly 1 yoctoNEAR (full-access key only).
     #[payable]
     pub fn withdraw(&mut self, amount: NearToken) -> Promise {
         assert_one_yocto();
@@ -129,6 +145,7 @@ impl Contract {
             "Withdrawal amount must be greater than zero"
         );
         let owner_id = env::predecessor_account_id();
+        lock::require_withdrawals_unlocked(&owner_id);
         let vault = self.vault_mut(&owner_id);
         require!(
             amount <= vault.balance,
@@ -153,8 +170,11 @@ impl Contract {
         )
     }
 
-    pub fn get_vault(&self, owner_id: AccountId) -> Option<Vault> {
-        self.vaults.get(&owner_id).cloned()
+    pub fn get_vault(&self, owner_id: AccountId) -> Option<VaultView> {
+        self.vaults.get(&owner_id).map(|vault| VaultView {
+            vault: vault.clone(),
+            withdrawals_locked_until: lock::withdrawals_locked_until(&owner_id).map(U64),
+        })
     }
 
     pub fn get_exchange_id(&self) -> AccountId {

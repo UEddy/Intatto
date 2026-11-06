@@ -1,5 +1,5 @@
 //! The owner's rules for their agent, and the owner-only calls that set them or hit the brakes.
-use near_sdk::json_types::U128;
+use near_sdk::json_types::{U64, U128};
 use near_sdk::{AccountId, NearToken, assert_one_yocto, env, near, require};
 
 use crate::events::VaultEvent;
@@ -142,14 +142,28 @@ impl Contract {
     /// Registers (or replaces) the caller's agent and policy. Requires exactly 1 yoctoNEAR so it
     /// can only be signed with a full-access key, never a function-call key handed to an app or agent.
     ///
+    /// Rejected while the caller's withdrawals are locked: a new agent or policy would be a way
+    /// around the lock. `remove_agent`, `freeze` and `unfreeze` still work.
+    ///
     /// Leaves the frozen flag, token balances and the record of recent spends unchanged.
     #[payable]
     pub fn set_agent(&mut self, agent_id: AccountId, policy: Policy) {
         assert_one_yocto();
+        let owner_id = env::predecessor_account_id();
+        if let Some(locked_until) = crate::lock::active_lock(&owner_id) {
+            VaultEvent::SetAgentRejected {
+                owner_id,
+                agent_id,
+                locked_until: U64(locked_until),
+            }
+            .emit();
+            env::panic_str(&format!(
+                "Withdrawals are locked until {locked_until} (block timestamp, ns); set_agent is disabled until then"
+            ));
+        }
         let mut policy = policy;
         policy.validate();
 
-        let owner_id = env::predecessor_account_id();
         let usage_before = env::storage_usage();
         let vault = self.vault_mut(&owner_id);
         vault.agent_id = Some(agent_id.clone());

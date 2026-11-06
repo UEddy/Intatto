@@ -1,12 +1,20 @@
 //! Agent swaps through the Rhea (Ref) V1 exchange: the policy and slippage checks, and the
 //! promise chain that deposits, swaps and withdraws.
 use near_sdk::json_types::{U64, U128};
-use near_sdk::{AccountId, Gas, Promise, assert_one_yocto, env, ext_contract, near};
+use near_sdk::{AccountId, Gas, Promise, assert_one_yocto, env, ext_contract, near, require};
 
 use crate::events::{Attempt, RejectReason, VaultEvent};
+use crate::ledger::{self, ExchangeLedger};
 use crate::spend::Spend;
 use crate::tokens::{MAX_TOKEN_BALANCES, ext_ft};
 use crate::{CALLBACK_GAS, Contract, ContractExt, ONE_YOCTO, add_amounts, sub_amounts};
+
+/// Minimum gas an owner must attach to `reclaim_from_exchange`, in TGas: the call itself, the
+/// exchange's balance query and the check that follows it.
+pub const RECLAIM_TGAS: u64 = 20 + EXCHANGE_GET_DEPOSIT_TGAS + ON_RECLAIM_CHECKED_TGAS;
+pub const EXCHANGE_GET_DEPOSIT_TGAS: u64 = 10;
+/// The balance check, the withdrawal, and the callback that settles it.
+pub const ON_RECLAIM_CHECKED_TGAS: u64 = 15 + EXCHANGE_WITHDRAW_TGAS + CALLBACK_GAS.as_tgas();
 
 /// Basis points in a whole.
 const BPS_DENOMINATOR: u128 = 10_000;
@@ -70,6 +78,8 @@ pub struct SwapAction {
 /// deposit account on the exchange.
 #[ext_contract(ext_exchange)]
 pub trait Exchange {
+    /// View: how much of `token_id` the exchange holds for `account_id` (0 if none).
+    fn get_deposit(&self, account_id: AccountId, token_id: AccountId) -> U128;
     /// View: the amount of `token_out` that swapping `amount_in` of `token_in` through `pool_id`
     /// would return right now, after fees. Panics for an unknown pool or a pair it doesn't trade.
     fn get_return(
@@ -147,36 +157,73 @@ impl Contract {
     }
 
     /// Retries withdrawing the caller's `token_id` left in the vault's exchange account after an
-    /// earlier withdrawal from the exchange failed. Works while frozen. Requires exactly
-    /// 1 yoctoNEAR (full-access key only).
+    /// earlier withdrawal from the exchange failed. Works while frozen and while withdrawals are
+    /// locked (the tokens stay in the vault). Requires exactly 1 yoctoNEAR (full-access key only)
+    /// and at least `RECLAIM_TGAS` of gas.
+    ///
+    /// Every owner's tokens on the exchange share the vault's one account there, so this first
+    /// asks the exchange how much of `token_id` that account holds (`get_deposit`).
+    /// `on_reclaim_checked` withdraws the caller's own `on_exchange` amount only if the account
+    /// holds at least what the ledger says all owners are owed, and only if no swap or reclaim of
+    /// `token_id` started in the meantime. Otherwise it refuses and changes nothing.
     #[payable]
     pub fn reclaim_from_exchange(&mut self, token_id: AccountId) -> Promise {
         assert_one_yocto();
         let owner_id = env::predecessor_account_id();
-        let exchange_id = self.exchange_id.clone();
-        let vault = self.vault_mut(&owner_id);
-        let entry = vault
-            .token_mut(&token_id)
-            .filter(|entry| entry.on_exchange.0 > 0)
+        let held = self
+            .vaults
+            .get(&owner_id)
             .unwrap_or_else(|| {
-                env::panic_str(&format!("Vault has no {token_id} left on the exchange"))
-            });
-        let amount = entry.on_exchange;
-        entry.on_exchange = U128(0);
+                env::panic_str(&format!(
+                    "No vault found for {owner_id}; call deposit first"
+                ))
+            })
+            .tokens
+            .iter()
+            .find(|entry| entry.token_id == token_id)
+            .map_or(0, |entry| entry.on_exchange.0);
+        require!(
+            held > 0,
+            format!("Vault has no {token_id} left on the exchange")
+        );
+        require!(
+            env::prepaid_gas() >= Gas::from_tgas(RECLAIM_TGAS),
+            format!("reclaim_from_exchange needs at least {RECLAIM_TGAS} TGas")
+        );
+        let entry = ledger::ledger(&token_id);
+        require!(entry.in_flight == 0, busy_message(&token_id));
 
-        ext_exchange::ext(exchange_id)
-            .with_attached_deposit(ONE_YOCTO)
-            .with_static_gas(Gas::from_tgas(EXCHANGE_WITHDRAW_TGAS))
-            .withdraw(token_id.clone(), amount, Some(false), Some(true))
+        ext_exchange::ext(self.exchange_id.clone())
+            .with_static_gas(Gas::from_tgas(EXCHANGE_GET_DEPOSIT_TGAS))
+            .get_deposit(env::current_account_id(), token_id.clone())
             .then(
                 Self::ext_self()
-                    .with_static_gas(CALLBACK_GAS)
-                    .on_reclaim_complete(owner_id, token_id, amount),
+                    .with_static_gas(Gas::from_tgas(ON_RECLAIM_CHECKED_TGAS))
+                    .on_reclaim_checked(owner_id, token_id, entry.generation),
             )
+    }
+
+    /// The vault-wide ledger entry of `token_id`: what the vault's exchange account should hold
+    /// of it, and how many swaps and reclaims of it are in flight.
+    pub fn get_exchange_ledger(&self, token_id: AccountId) -> ExchangeLedger {
+        ledger::ledger(&token_id)
     }
 }
 
+/// Why a reclaim of `token_id` cannot go ahead right now.
+pub fn busy_message(token_id: &AccountId) -> String {
+    format!(
+        "Swaps or reclaims of {token_id} are in flight on the exchange; retry once they have settled"
+    )
+}
+
 impl Contract {
+    /// Marks a swap's two tokens as no longer in flight. Every swap ends here exactly once.
+    pub fn end_swap(ticket: &SwapTicket) {
+        ledger::finish(&ticket.token_in);
+        ledger::finish(&ticket.token_out);
+    }
+
     /// Every policy check of an agent swap, in order; rejects the attempt on the first that fails.
     /// Changes no state. `at_entry` adds the gas check, which only `agent_swap` itself can make.
     /// Returns the pool's `max_slippage_bps`.
@@ -335,6 +382,10 @@ impl Contract {
             amount: *amount_in,
         });
         self.advance_spend_id();
+        // token_in is about to go to the exchange, and token_out will arrive there. The first
+        // swap of a token creates its ledger entry, which this owner pays for below.
+        ledger::start(token_in, amount_in.0);
+        ledger::start(token_out, 0);
         if let Err(cost) = self.settle_storage(owner_id, usage_before) {
             attempt.reject(
                 RejectReason::InsufficientBalance,
@@ -409,6 +460,10 @@ impl Contract {
             .retain(|spend| spend.spend_id != ticket.spend_id);
         // Removing an entry only frees storage, so settling can only credit the vault.
         let _ = self.settle_storage(&ticket.owner_id, usage_before);
+        if delivered {
+            ledger::release(&ticket.token_in, amount);
+        }
+        Self::end_swap(ticket);
 
         VaultEvent::SwapRefunded {
             swap: ticket.clone(),

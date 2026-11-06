@@ -129,12 +129,14 @@ impl Contract {
     }
 
     /// Sends `amount` of `token_id` from the caller's vault to the caller, who must be registered
-    /// with the token. Works while frozen. Requires exactly 1 yoctoNEAR (full-access key only).
+    /// with the token. Works while frozen, but not while withdrawals are locked. Requires exactly
+    /// 1 yoctoNEAR (full-access key only).
     #[payable]
     pub fn withdraw_token(&mut self, token_id: AccountId, amount: U128) -> Promise {
         assert_one_yocto();
         require!(amount.0 > 0, "Withdrawal amount must be greater than zero");
         let owner_id = env::predecessor_account_id();
+        crate::lock::require_withdrawals_unlocked(&owner_id);
         let vault = self.vault_mut(&owner_id);
         let entry = vault
             .token_mut(&token_id)
