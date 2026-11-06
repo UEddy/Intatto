@@ -43,8 +43,10 @@ OTHER_POOL_ID=0
 # ref-exchange 1.9.19, the binary the sandbox tests run (tests/res/README.md).
 EXCHANGE_CODE_HASH=AEAm8sQ5KYZRgnpq2CN2NhX6d8QV76iRtiDpy5Ai6zDX
 WASM=${WASM:-target/near/intatto.wasm}
-# rpc_url and explorer_transaction_url of the testnet connection in `near config show-connections`.
-RPC_URL=${RPC_URL:-https://archival-rpc.testnet.fastnear.com/}
+# Read-only RPC goes to exactly the node near CLI uses for $NETWORK: scripts/lib/near_rpc.py reads
+# it (and any API key) from near CLI's config.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+RPC_CLIENT="$SCRIPT_DIR/lib/near_rpc.py"
 EXPLORER=https://explorer.testnet.near.org/transactions/
 KEYCHAIN="$HOME/.near-credentials/$NETWORK"
 
@@ -108,11 +110,44 @@ def strip_ansi(text):
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
+def load_response(path):
+    """A response scripts/lib/near_rpc.py printed: one JSON-RPC object holding a result, or an
+    error the node gave as an answer. Anything else stops the run instead of being read."""
+    with open(path) as file:
+        raw = file.read()
+    try:
+        response = json.loads(raw)
+    except ValueError as error:
+        sys.exit(f"RPC response in {path} is not JSON ({error}): {raw[:2000]!r}")
+    if not isinstance(response, dict) or ("result" in response) == ("error" in response):
+        sys.exit(f"RPC response in {path} is neither a result nor an error: {raw[:2000]!r}")
+    return response
+
+
+def error_name(response):
+    error = response.get("error")
+    cause = error.get("cause") if isinstance(error, dict) else None
+    return cause.get("name") if isinstance(cause, dict) else None
+
+
 def rpc_result(path):
-    response = json.load(open(path))
+    response = load_response(path)
     if "error" in response:
-        raise LookupError(json.dumps(response["error"]))
+        sys.exit(f"RPC error in {path}: {json.dumps(response['error'])}")
     return response["result"]
+
+
+def unknown_account(path):
+    """True only for the node's UNKNOWN_ACCOUNT answer; any other error stops the run."""
+    response = load_response(path)
+    if "error" not in response:
+        return False
+    if error_name(response) == "UNKNOWN_ACCOUNT":
+        return True
+    sys.exit(
+        f"RPC error in {path} says nothing about whether the account exists: "
+        f"{json.dumps(response['error'])}"
+    )
 
 
 def find(obj, key):
@@ -208,15 +243,10 @@ elif cmd == "tx-id":  # tx-id <output of a plain `near ... send`>
     print(ids[-1] if ids else "(not printed)")
 
 elif cmd == "account-amount":  # account-amount <view_account response>: yoctoNEAR, or "missing"
-    response = json.load(open(args[0]))
-    if response.get("error", {}).get("cause", {}).get("name") == "UNKNOWN_ACCOUNT":
-        print("missing")
-    else:
-        print(rpc_result(args[0])["amount"])
+    print("missing" if unknown_account(args[0]) else rpc_result(args[0])["amount"])
 
 elif cmd == "code-hash":  # code-hash <view_account response>: the hash, "none", or "missing"
-    response = json.load(open(args[0]))
-    if response.get("error", {}).get("cause", {}).get("name") == "UNKNOWN_ACCOUNT":
+    if unknown_account(args[0]):
         print("missing")
     else:
         code_hash = rpc_result(args[0])["code_hash"]
@@ -315,12 +345,16 @@ elif cmd == "outcome":  # outcome <tx response> <expected> <expected signer key 
     print(f"    tx:        {tx_hash}")
     print(f"    explorer:  {explorer}{tx_hash}")
     print(f"    expected:  {expectation(expected)}")
-    try:
-        result = rpc_result(path)
-    except LookupError as error:
-        print(f"    actual:    transaction not found on chain: {error}")
+    response = load_response(path)
+    if "error" in response:
+        # near_rpc.py passes an error through only when it is the node's answer; for a
+        # transaction that means UNKNOWN_TRANSACTION on every attempt.
+        known = error_name(response) == "UNKNOWN_TRANSACTION"
+        what = "transaction not found on chain" if known else "RPC error"
+        print(f"    actual:    {what}: {json.dumps(response['error'])}")
         print("    result:    FAIL")
         sys.exit(1)
+    result = response["result"]
     passed = True
     signer_key = result["transaction"]["public_key"]
     if want_key != "-":
@@ -404,11 +438,11 @@ check() {
   fi
 }
 
-# rpc <method> <params json>: raw JSON-RPC response, used only for read-only queries.
-rpc() {
-  curl -sS --retry 3 --max-time 90 -X POST -H 'Content-Type: application/json' \
-    --data "{\"jsonrpc\":\"2.0\",\"id\":\"smoke\",\"method\":\"$1\",\"params\":$2}" "$RPC_URL"
-}
+# rpc <method> <params json>: one JSON-RPC response, either a result or an error that is the node's
+# answer (UNKNOWN_ACCOUNT, ...). Rate limits and unusable responses are retried with backoff; if no
+# usable response comes, scripts/lib/near_rpc.py prints why and the raw response and fails, which
+# ends the run. Its output is never a guess.
+rpc() { python3 -I "$RPC_CLIENT" call "$NETWORK" "$1" "$2"; }
 query() { rpc query "{\"request_type\":\"$1\",\"finality\":\"final\",\"account_id\":\"$2\"}"; }
 balance_of() { query view_account "$1" >"$WORK/account.json" && helper account-amount "$WORK/account.json"; }
 code_hash_of() { query view_account "$1" >"$WORK/account.json" && helper code-hash "$WORK/account.json"; }
@@ -457,7 +491,8 @@ call() {
   near_cli transaction send-signed-transaction base64-signed-transaction "$signed" \
     network-config "$NETWORK" send >"$WORK/send.log" 2>&1 || true
   rpc tx "{\"tx_hash\":\"$tx_hash\",\"sender_account_id\":\"$signer\",\"wait_until\":\"FINAL\"}" \
-    >"$WORK/outcome.json"
+    >"$WORK/outcome.json" ||
+    die "could not read the outcome of $tx_hash over RPC; check $EXPLORER$tx_hash before re-running"
   local status=0
   helper outcome "$WORK/outcome.json" "$expected" "$want_key" "$tx_hash" "$EXPLORER" || status=$?
   if [ "$status" != 0 ]; then sed 's/^/    | /' "$WORK/send.log" | tail -n 20; fi
@@ -493,7 +528,10 @@ register() {
 }
 
 echo "== Preflight"
-for tool in near python3 curl; do command -v "$tool" >/dev/null || die "$tool is not installed"; done
+for tool in near python3; do command -v "$tool" >/dev/null || die "$tool is not installed"; done
+python3 -I -c 'import tomllib' 2>/dev/null || die "python3 3.11 or later is needed (tomllib)"
+RPC_URL=$(python3 -I "$RPC_CLIENT" endpoint "$NETWORK")
+echo "    rpc:       $RPC_URL (near CLI's $NETWORK connection)"
 echo "    near CLI:  $(near --version 2>/dev/null | tail -n 1)"
 for account in "$OWNER" "$AGENT"; do
   [ -e "$KEYCHAIN/$account.json" ] || [ -d "$KEYCHAIN/$account" ] ||
@@ -530,7 +568,8 @@ missing)
   echo "── create $VAULT with $VAULT_FUNDING"
   send_setup account create-account fund-myself "$VAULT" "$VAULT_FUNDING" autogenerate-new-keypair \
     save-to-legacy-keychain sign-as "$OWNER" network-config "$NETWORK" sign-with-legacy-keychain send
-  [ "$(code_hash_of "$VAULT")" = none ] || die "$VAULT was not created"
+  CREATED_HASH=$(code_hash_of "$VAULT")
+  [ "$CREATED_HASH" = none ] || die "$VAULT was not created (code hash: $CREATED_HASH)"
   DEPLOY=yes
   ;;
 none) DEPLOY=yes ;;
@@ -652,7 +691,8 @@ echo "    quote:     $(helper near "$QUOTE") USDT; agent asks for at least $(hel
 vault_view
 read -r USDT_BEFORE _ < <(helper token-balance "$WORK/get_vault.json" "$USDT")
 read -r WNEAR_BEFORE _ < <(helper token-balance "$WORK/get_vault.json" "$WNEAR")
-PREDICTION=$(helper predict-swap "$WORK/get_vault.json" "$(block_time)" "$WNEAR" "$AMOUNT" swap-ok)
+NOW=$(block_time)
+PREDICTION=$(helper predict-swap "$WORK/get_vault.json" "$NOW" "$WNEAR" "$AMOUNT" swap-ok)
 SWAP_EXPECTED=${PREDICTION%%$'\n'*}
 echo "    note:      ${PREDICTION#*$'\n'}"
 agent_swap "$SWAP_EXPECTED" "$POOL_ID" "$AMOUNT" "$MIN_OUT"
@@ -682,7 +722,8 @@ echo "── pool #$OTHER_POOL_ID, not on the policy's pool allowlist"
 agent_swap reject:pool_not_allowlisted "$OTHER_POOL_ID" "$AMOUNT" "$MIN_OUT"
 echo "── min_amount_out of 1, far looser than the quote less $MAX_SLIPPAGE_BPS bps"
 vault_view
-PREDICTION=$(helper predict-swap "$WORK/get_vault.json" "$(block_time)" "$WNEAR" "$AMOUNT" reject:slippage_too_loose)
+NOW=$(block_time)
+PREDICTION=$(helper predict-swap "$WORK/get_vault.json" "$NOW" "$WNEAR" "$AMOUNT" reject:slippage_too_loose)
 echo "    note:      ${PREDICTION#*$'\n'}"
 [ "${PREDICTION%%$'\n'*}" = reject:slippage_too_loose ] ||
   echo "    note:      the 24-hour limits now reject before the quote is checked; this case cannot test slippage until they free up"
@@ -699,7 +740,8 @@ echo
 echo "== 7. Final state"
 echo "── get_vault($OWNER)"
 vault_view
-helper show-vault "$WORK/get_vault.json" "$(block_time)" | sed 's/^/    /'
+NOW=$(block_time)
+helper show-vault "$WORK/get_vault.json" "$NOW" | sed 's/^/    /'
 echo "── the vault's deposits on the exchange (all zero: nothing is stuck there)"
 view "$EXCHANGE" get_deposits "{\"account_id\":\"$VAULT\"}" deposits
 echo "    actual:    $(helper json "$WORK/deposits.json" 'v')"

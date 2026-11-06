@@ -29,7 +29,10 @@ OWNER=canary.intatto-dev.testnet
 AGENT=canary-agent.intatto-dev.testnet
 VAULT=vault-v1.intatto-dev.testnet
 WASM=${WASM:-target/near/intatto.wasm}
-RPC_URL=${RPC_URL:-https://archival-rpc.testnet.fastnear.com/}
+# Read-only RPC goes to exactly the node near CLI uses for $NETWORK: scripts/lib/near_rpc.py reads
+# it (and any API key) from near CLI's config.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+RPC_CLIENT="$SCRIPT_DIR/lib/near_rpc.py"
 EXPLORER=https://explorer.testnet.near.org/transactions/
 KEYCHAIN="$HOME/.near-credentials/$NETWORK"
 GAS='30 Tgas'
@@ -82,15 +85,44 @@ def near(yocto):
     return f"{whole}{'.' + frac if frac else ''} NEAR"
 
 
+def load_response(path):
+    """A response scripts/lib/near_rpc.py printed: one JSON-RPC object holding a result, or an
+    error the node gave as an answer. Anything else stops the run instead of being read."""
+    with open(path) as file:
+        raw = file.read()
+    try:
+        response = json.loads(raw)
+    except ValueError as error:
+        sys.exit(f"RPC response in {path} is not JSON ({error}): {raw[:2000]!r}")
+    if not isinstance(response, dict) or ("result" in response) == ("error" in response):
+        sys.exit(f"RPC response in {path} is neither a result nor an error: {raw[:2000]!r}")
+    return response
+
+
+def error_name(response):
+    error = response.get("error")
+    cause = error.get("cause") if isinstance(error, dict) else None
+    return cause.get("name") if isinstance(cause, dict) else None
+
+
 def rpc_result(path):
-    response = json.load(open(path))
+    response = load_response(path)
     if "error" in response:
-        raise LookupError(json.dumps(response["error"]))
+        sys.exit(f"RPC error in {path}: {json.dumps(response['error'])}")
     return response["result"]
 
 
 def unknown_account(path):
-    return json.load(open(path)).get("error", {}).get("cause", {}).get("name") == "UNKNOWN_ACCOUNT"
+    """True only for the node's UNKNOWN_ACCOUNT answer; any other error stops the run."""
+    response = load_response(path)
+    if "error" not in response:
+        return False
+    if error_name(response) == "UNKNOWN_ACCOUNT":
+        return True
+    sys.exit(
+        f"RPC error in {path} says nothing about whether the account exists: "
+        f"{json.dumps(response['error'])}"
+    )
 
 
 def find(obj, key):
@@ -222,11 +254,15 @@ elif cmd == "outcome":  # outcome <tx response> <tx hash> <explorer>: success ex
     path, tx_hash, explorer = args
     print(f"    tx:        {tx_hash}")
     print(f"    explorer:  {explorer}{tx_hash}")
-    try:
-        status = rpc_result(path)["status"]
-    except LookupError as error:
-        print(f"    result:    FAIL (transaction not found on chain: {error})")
+    response = load_response(path)
+    if "error" in response:
+        # near_rpc.py passes an error through only when it is the node's answer; for a
+        # transaction that means UNKNOWN_TRANSACTION on every attempt.
+        known = error_name(response) == "UNKNOWN_TRANSACTION"
+        what = "transaction not found on chain" if known else "RPC error"
+        print(f"    result:    FAIL ({what}: {json.dumps(response['error'])})")
         sys.exit(1)
+    status = response["result"]["status"]
     if "SuccessValue" in status:
         print("    result:    PASS")
         sys.exit(0)
@@ -260,10 +296,11 @@ check() {
   fi
 }
 
-rpc() {
-  curl -sS --retry 3 --max-time 90 -X POST -H 'Content-Type: application/json' \
-    --data "{\"jsonrpc\":\"2.0\",\"id\":\"canary\",\"method\":\"$1\",\"params\":$2}" "$RPC_URL"
-}
+# rpc <method> <params json>: one JSON-RPC response, either a result or an error that is the node's
+# answer (UNKNOWN_ACCOUNT, ...). Rate limits and unusable responses are retried with backoff; if no
+# usable response comes, scripts/lib/near_rpc.py prints why and the raw response and fails, which
+# ends the run. Its output is never a guess.
+rpc() { python3 -I "$RPC_CLIENT" call "$NETWORK" "$1" "$2"; }
 query() { rpc query "{\"request_type\":\"$1\",\"finality\":\"final\",\"account_id\":\"$2\"}"; }
 balance_of() { query view_account "$1" >"$WORK/account.json" && helper account-amount "$WORK/account.json"; }
 code_hash_of() { query view_account "$1" >"$WORK/account.json" && helper code-hash "$WORK/account.json"; }
@@ -302,13 +339,17 @@ owner_call() {
   near_cli transaction send-signed-transaction base64-signed-transaction "$signed" \
     network-config "$NETWORK" send >"$WORK/send.log" 2>&1 || true
   rpc tx "{\"tx_hash\":\"$tx_hash\",\"sender_account_id\":\"$OWNER\",\"wait_until\":\"FINAL\"}" \
-    >"$WORK/outcome.json"
+    >"$WORK/outcome.json" ||
+    die "could not read the outcome of $tx_hash over RPC; check $EXPLORER$tx_hash before re-running"
   helper outcome "$WORK/outcome.json" "$tx_hash" "$EXPLORER" ||
     { sed 's/^/    | /' "$WORK/send.log" | tail -n 20; die "$1 failed"; }
 }
 
 echo "== Preflight"
-for tool in near python3 curl; do command -v "$tool" >/dev/null || die "$tool is not installed"; done
+for tool in near python3; do command -v "$tool" >/dev/null || die "$tool is not installed"; done
+python3 -I -c 'import tomllib' 2>/dev/null || die "python3 3.11 or later is needed (tomllib)"
+RPC_URL=$(python3 -I "$RPC_CLIENT" endpoint "$NETWORK")
+echo "    rpc:       $RPC_URL (near CLI's $NETWORK connection)"
 has_keychain_entry "$FUNDER" || die "no legacy keychain entry for $FUNDER"
 [ -f "$WASM" ] || die "$WASM not found; build it with: cargo near build non-reproducible-wasm"
 WASM_HASH=$(helper file-hash "$WASM")
@@ -334,7 +375,8 @@ for pair in "$OWNER=$OWNER_FUNDING" "$AGENT=$AGENT_FUNDING"; do
   fi
   send_setup account create-account fund-myself "$account" "$funding" autogenerate-new-keypair \
     save-to-legacy-keychain sign-as "$FUNDER" network-config "$NETWORK" sign-with-legacy-keychain send
-  [ "$(balance_of "$account")" != missing ] || die "$account was not created"
+  created=$(balance_of "$account")
+  [ "$created" != missing ] || die "$account was not created"
   echo "    created with $funding"
 done
 
@@ -362,8 +404,9 @@ record "$status"
 vault_view
 LOCKED=$(helper json "$WORK/get_vault.json" 'v["withdrawals_locked_until"] or ""')
 if [ -z "$LOCKED" ]; then
+  NOW=$(block_time)
   LOCK_UNTIL=$(python3 -I -c 'import sys; print(int(sys.argv[1]) + int(sys.argv[2]) * 86400 * 10**9)' \
-    "$(block_time)" "$LOCK_DAYS")
+    "$NOW" "$LOCK_DAYS")
   echo "── lock_withdrawals_until($LOCK_UNTIL = $(helper utc "$LOCK_UNTIL"))"
   owner_call lock_withdrawals_until "{\"timestamp_ns\":\"$LOCK_UNTIL\"}" '1 yoctoNEAR'
 else
