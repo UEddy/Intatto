@@ -20,6 +20,8 @@ use testresult::TestResult;
 const EXCHANGE_SHA256: &str = "AEAm8sQ5KYZRgnpq2CN2NhX6d8QV76iRtiDpy5Ai6zDX";
 const W_NEAR_SHA256: &str = "DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa";
 const POOL_ID: u64 = 0;
+/// Slippage the policy allows on the pool: 0.5%.
+const MAX_SLIPPAGE_BPS: u16 = 50;
 /// `storage_balance_bounds().min` of the w_near contract.
 const TOKEN_STORAGE: NearToken = NearToken::from_micronear(1_250);
 
@@ -163,7 +165,7 @@ impl SwapEnv {
     }
 
     /// `standard_policy` plus: sell up to 2 wNEAR per swap and 3 per 24 hours, receive USDT, and
-    /// trade through the wNEAR/USDT pool.
+    /// trade through the wNEAR/USDT pool with up to 0.5% slippage.
     fn swap_policy(&self) -> Policy {
         Policy {
             tokens: vec![
@@ -181,6 +183,7 @@ impl SwapEnv {
             pools: vec![PoolPolicy {
                 pool_id: POOL_ID,
                 token_ids: [self.wnear.clone(), self.usdt.clone()],
+                max_slippage_bps: MAX_SLIPPAGE_BPS,
             }],
             ..self.env.standard_policy()
         }
@@ -322,6 +325,24 @@ impl SwapEnv {
         .await
     }
 
+    /// Nothing moved: the owner still has the 5 wNEAR from setup and no recorded swap, the vault
+    /// still holds them, and its exchange account is empty.
+    async fn assert_untouched(&self) -> TestResult {
+        assert_eq!(self.token(&self.wnear).await?, (units(near(5)), 0));
+        assert!(
+            self.env
+                .vault(&self.env.owner)
+                .await?
+                .recent_spends
+                .is_empty()
+        );
+        assert_eq!(
+            self.ft_balance(&self.wnear, self.env.vault_id()).await?,
+            units(near(5))
+        );
+        self.assert_nothing_left_on_exchange().await
+    }
+
     async fn assert_nothing_left_on_exchange(&self) -> TestResult {
         let deposits = self.exchange_deposits().await?;
         assert!(
@@ -408,7 +429,10 @@ async fn swap_whose_deposit_fails_is_refunded() -> TestResult {
     })
     .await?;
 
-    let result = s.agent_swap(units(near(1)), 1).await?;
+    let amount_in = units(near(1));
+    let quote = s.quote(amount_in).await?;
+
+    let result = s.agent_swap(amount_in, quote).await?;
     let refunded = events(&result, "swap_refunded");
     assert_eq!(refunded.len(), 1, "logs: {:?}", result.logs());
     assert_eq!(refunded[0]["failed_step"], "deposit");
@@ -537,4 +561,89 @@ async fn swap_rejections_are_logged_and_change_nothing() -> TestResult {
     assert_eq!(used, 0);
     assert_eq!(s.ft_balance(&s.wnear, &s.env.stranger).await?, one);
     Ok(())
+}
+
+#[tokio::test]
+async fn min_amount_out_of_1_is_rejected_as_slippage_too_loose() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let amount_in = units(near(1));
+    let quote = s.quote(amount_in).await?;
+    let floor = quote * (10_000 - u128::from(MAX_SLIPPAGE_BPS)) / 10_000;
+
+    let result = s.agent_swap(amount_in, 1).await?;
+    assert!(events(&result, "swap_initiated").is_empty());
+    assert_rejected(
+        result,
+        "swap_rejected",
+        "slippage_too_loose",
+        &format!(
+            "Minimum amount out 1 is below {floor}: the exchange quotes {quote} and pool 0 allows 50 bps of slippage"
+        ),
+    );
+    s.assert_untouched().await
+}
+
+#[tokio::test]
+async fn min_amount_out_at_the_slippage_floor_is_accepted() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let amount_in = units(near(1));
+    let quote = s.quote(amount_in).await?;
+    let floor = quote * (10_000 - u128::from(MAX_SLIPPAGE_BPS)) / 10_000;
+
+    // One unit looser than the policy allows is rejected...
+    let result = s.agent_swap(amount_in, floor - 1).await?;
+    assert_rejected(result, "swap_rejected", "slippage_too_loose", "is below");
+    s.assert_untouched().await?;
+
+    // ...and exactly the floor goes through. Nothing traded in between, so the pool pays the quote.
+    let result = s.agent_swap(amount_in, floor).await?;
+    let completed = events(&result, "swap_completed");
+    assert_eq!(completed.len(), 1, "logs: {:?}", result.logs());
+    assert_eq!(completed[0]["amount_out"], json!(quote.to_string()));
+    assert!(result.assert_success().json::<bool>()?);
+    assert_eq!(s.token(&s.wnear).await?, (units(near(4)), 0));
+    assert_eq!(s.token(&s.usdt).await?, (quote, 0));
+    assert_eq!(s.env.vault(&s.env.owner).await?.recent_spends.len(), 1);
+    s.assert_nothing_left_on_exchange().await
+}
+
+#[tokio::test]
+async fn failed_quote_is_rejected_and_deducts_nothing() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    // The owner allowlists pool 1, which doesn't exist on the exchange, so get_return panics.
+    let mut policy = s.swap_policy();
+    policy.pools.push(PoolPolicy {
+        pool_id: 1,
+        ..policy.pools[0].clone()
+    });
+    s.env
+        .set_agent(&s.env.owner, &s.env.agent, &policy)
+        .await?
+        .assert_success();
+
+    let args = json!({
+        "pool_id": 1,
+        "token_in": s.wnear,
+        "amount_in": units(near(1)).to_string(),
+        "token_out": s.usdt,
+    });
+    let direct = near_api::Contract(s.exchange.clone())
+        .call_function("get_return", args)
+        .read_only::<U128>()
+        .fetch_from(&s.env.network)
+        .await;
+    let error = format!("{:?}", direct.expect_err("the exchange has no pool 1"));
+    assert!(error.contains("E85: invalid pool id"), "{error}");
+
+    let result = s
+        .agent_swap_as(&s.env.agent, 1, &s.usdt, units(near(1)), 1, tgas(300))
+        .await?;
+    assert!(events(&result, "swap_initiated").is_empty());
+    assert_rejected(
+        result,
+        "swap_rejected",
+        "quote_failed",
+        "The exchange could not quote pool 1 for wnear.sandbox to usdt.sandbox",
+    );
+    s.assert_untouched().await
 }

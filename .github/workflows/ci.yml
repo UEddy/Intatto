@@ -1,0 +1,54 @@
+# Formatting, lints and the full test suite (unit tests plus sandbox tests against the real
+# exchange binary) on every push to any branch and on every pull request.
+#
+# There is deliberately no deploy workflow. The cargo-near template's deploy-staging and
+# deploy-production workflows deployed with `without-init-call`, which leaves this contract
+# uninitialized (its state needs `new(exchange_id)`), and redeployed code over existing state,
+# which this contract has no migration for. Deploy by hand to a fresh account with
+# `with-init-call new`; see scripts/smoke-testnet-v1.sh.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain, components and target pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - run: cargo fmt --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-features --workspace --tests -- --warn clippy::all --warn clippy::nursery
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The sandbox tests build the contract through cargo-near-build, which runs this binary.
+      - name: Install cargo-near
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      - run: cargo test

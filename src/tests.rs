@@ -46,7 +46,7 @@ fn set_context_with_gas(predecessor: AccountId, deposit: NearToken, timestamp: u
 }
 
 /// 1 NEAR per spend and 3 NEAR per 24h; up to 100 wNEAR per swap and 250 per 24h; usdt
-/// allowed as an output; pool 7 trades wNEAR/usdt; 5 agent actions per 24h.
+/// allowed as an output; pool 7 trades wNEAR/usdt with up to 1% slippage; 5 agent actions per 24h.
 fn policy(allowlist: Vec<AccountId>) -> Policy {
     Policy {
         per_tx_cap: NearToken::from_near(1),
@@ -68,6 +68,7 @@ fn policy(allowlist: Vec<AccountId>) -> Policy {
         pools: vec![PoolPolicy {
             pool_id: POOL,
             token_ids: [wnear(), usdt()],
+            max_slippage_bps: 100,
         }],
     }
 }
@@ -91,14 +92,51 @@ fn spend(contract: &mut Contract, timestamp: u64) {
         .detach();
 }
 
-fn swap(contract: &mut Contract, amount_in: u128, timestamp: u64) {
+/// `agent_swap` asking for at least `min_amount_out`, without its quote callback.
+fn request_swap(contract: &mut Contract, amount_in: u128, min_amount_out: u128, timestamp: u64) {
     set_context(agent(), NearToken::from_yoctonear(0), timestamp);
     contract
-        .agent_swap(owner(), POOL, wnear(), usdt(), U128(amount_in), U128(1))
+        .agent_swap(
+            owner(),
+            POOL,
+            wnear(),
+            usdt(),
+            U128(amount_in),
+            U128(min_amount_out),
+        )
         .detach();
 }
 
-/// The ticket `agent_swap` built for spend `spend_id`, as its callbacks receive it.
+/// The exchange's quote reaching `on_swap_quoted` at `timestamp`.
+fn quote_swap(
+    contract: &mut Contract,
+    amount_in: u128,
+    min_amount_out: u128,
+    quote: Result<U128, PromiseError>,
+    timestamp: u64,
+) {
+    set_context(contract_id(), NearToken::from_yoctonear(0), timestamp);
+    let request = SwapTicket {
+        min_amount_out: U128(min_amount_out),
+        ..ticket(0, amount_in)
+    };
+    contract.on_swap_quoted(agent(), request, quote).detach();
+}
+
+/// A swap the exchange quotes 1:1 and the agent asks for exactly the quote, through to the
+/// deposit: `agent_swap` and its quote callback.
+fn swap(contract: &mut Contract, amount_in: u128, timestamp: u64) {
+    request_swap(contract, amount_in, amount_in, timestamp);
+    quote_swap(
+        contract,
+        amount_in,
+        amount_in,
+        Ok(U128(amount_in)),
+        timestamp,
+    );
+}
+
+/// The ticket of a `swap` accepted as spend `spend_id`, as its later callbacks receive it.
 fn ticket(spend_id: u64, amount_in: u128) -> SwapTicket {
     SwapTicket {
         spend_id: U64(spend_id),
@@ -107,7 +145,7 @@ fn ticket(spend_id: u64, amount_in: u128) -> SwapTicket {
         token_in: wnear(),
         token_out: usdt(),
         amount_in: U128(amount_in),
-        min_amount_out: U128(1),
+        min_amount_out: U128(amount_in),
     }
 }
 
@@ -443,11 +481,18 @@ fn failed_token_withdrawal_is_credited_back() {
 }
 
 #[test]
-fn swap_deducts_records_and_pays_storage_before_any_promise() {
+fn swap_deducts_records_and_pays_storage_once_quoted() {
     let mut contract = setup();
     let near_before = vault(&contract).balance;
 
-    swap(&mut contract, 100, T0);
+    // agent_swap itself only asks for the quote.
+    request_swap(&mut contract, 100, 100, T0);
+    assert_eq!(token(&contract, &wnear()).balance, U128(1_000));
+    assert!(vault(&contract).tokens.iter().all(|t| t.token_id != usdt()));
+    assert!(spend_ids(&contract).is_empty());
+    assert_eq!(vault(&contract).balance, near_before);
+
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0);
 
     let vault = vault(&contract);
     assert_eq!(token(&contract, &wnear()).balance, U128(900));
@@ -645,7 +690,7 @@ fn swap_rejects_over_the_per_tx_cap() {
 }
 
 #[test]
-#[should_panic(expected = "agent_swap needs at least 225 TGas")]
+#[should_panic(expected = "agent_swap needs at least 255 TGas")]
 fn swap_rejects_too_little_gas() {
     let mut contract = setup();
     set_context_with_gas(
@@ -680,4 +725,128 @@ fn swap_rejects_anyone_but_the_agent() {
     contract
         .agent_swap(owner(), POOL, wnear(), usdt(), U128(10), U128(1))
         .detach();
+}
+
+#[test]
+fn slippage_floor_matches_the_direct_formula_and_never_overflows() {
+    for quote in [0, 1, 9_999, 10_000, 10_001, 123_456_789, 10u128.pow(30) + 7] {
+        for bps in [1, 37, 100, 999, MAX_SLIPPAGE_BPS] {
+            let direct = quote * (10_000 - u128::from(bps)) / 10_000;
+            assert_eq!(
+                slippage_floor(quote, bps),
+                direct,
+                "quote {quote}, bps {bps}"
+            );
+        }
+    }
+    // The direct formula would overflow here.
+    let expected = u128::MAX / 10_000 * 9_000 + (u128::MAX % 10_000) * 9_000 / 10_000;
+    assert_eq!(slippage_floor(u128::MAX, MAX_SLIPPAGE_BPS), expected);
+    assert!(slippage_floor(u128::MAX, 1) < u128::MAX);
+}
+
+#[test]
+#[should_panic(expected = "max_slippage_bps of pool 7 must be between 1 and 1000")]
+fn set_agent_rejects_zero_slippage() {
+    let mut contract = setup();
+    let mut policy = policy(vec![]);
+    policy.pools[0].max_slippage_bps = 0;
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.set_agent(agent(), policy);
+}
+
+#[test]
+#[should_panic(expected = "max_slippage_bps of pool 7 must be between 1 and 1000")]
+fn set_agent_rejects_more_than_1000_bps_slippage() {
+    let mut contract = setup();
+    let mut policy = policy(vec![]);
+    policy.pools[0].max_slippage_bps = 1_001;
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.set_agent(agent(), policy);
+}
+
+#[test]
+fn set_agent_accepts_the_slippage_bounds() {
+    let mut contract = setup();
+    for bps in [1, MAX_SLIPPAGE_BPS] {
+        let mut policy = policy(vec![]);
+        policy.pools[0].max_slippage_bps = bps;
+        set_context(owner(), NearToken::from_yoctonear(1), T0);
+        contract.set_agent(agent(), policy);
+        assert_eq!(vault(&contract).policy.pools[0].max_slippage_bps, bps);
+    }
+}
+
+#[test]
+fn min_amount_out_exactly_at_the_slippage_floor_is_accepted() {
+    let mut contract = setup();
+    // Quote 10_000 with 1% allowed: the floor is 9_900.
+    request_swap(&mut contract, 100, 9_900, T0);
+    quote_swap(&mut contract, 100, 9_900, Ok(U128(10_000)), T0);
+    assert_eq!(token(&contract, &wnear()).balance, U128(900));
+    assert_eq!(spend_ids(&contract), [0]);
+}
+
+#[test]
+#[should_panic(
+    expected = "Minimum amount out 9899 is below 9900: the exchange quotes 10000 and pool 7 allows 100 bps of slippage"
+)]
+fn min_amount_out_below_the_slippage_floor_is_rejected() {
+    let mut contract = setup();
+    request_swap(&mut contract, 100, 9_899, T0);
+    quote_swap(&mut contract, 100, 9_899, Ok(U128(10_000)), T0);
+}
+
+#[test]
+#[should_panic(expected = "The exchange could not quote pool 7 for wnear.near to usdt.near")]
+fn failed_quote_is_rejected() {
+    let mut contract = setup();
+    request_swap(&mut contract, 100, 100, T0);
+    quote_swap(&mut contract, 100, 100, Err(PromiseError::Failed), T0);
+}
+
+#[test]
+#[should_panic(expected = "Vault is frozen; agent swapping is disabled")]
+fn freeze_while_the_quote_is_in_flight_rejects_the_swap() {
+    let mut contract = setup();
+    request_swap(&mut contract, 100, 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(0), T0 + 1);
+    contract.freeze();
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0 + 2);
+}
+
+#[test]
+#[should_panic(expected = "agent.near is not the registered agent for owner.near's vault")]
+fn agent_removed_while_the_quote_is_in_flight_rejects_the_swap() {
+    let mut contract = setup();
+    request_swap(&mut contract, 100, 100, T0);
+    set_context(owner(), NearToken::from_yoctonear(1), T0 + 1);
+    contract.remove_agent();
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0 + 2);
+}
+
+#[test]
+#[should_panic(
+    expected = "would exceed its 24-hour cap of 250 (200 already sold in the last 24 hours)"
+)]
+fn caps_are_checked_again_when_two_quotes_race() {
+    let mut contract = setup();
+    // Both pass agent_swap's own checks while nothing is deducted yet...
+    request_swap(&mut contract, 100, 100, T0);
+    request_swap(&mut contract, 100, 100, T0 + 1);
+    request_swap(&mut contract, 100, 100, T0 + 2);
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0 + 3);
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0 + 4);
+    // ...but the third quote callback sees the first two.
+    quote_swap(&mut contract, 100, 100, Ok(U128(100)), T0 + 5);
+}
+
+#[test]
+fn quote_callback_assigns_spend_ids_in_acceptance_order() {
+    let mut contract = setup();
+    request_swap(&mut contract, 10, 10, T0);
+    spend(&mut contract, T0 + 1); // takes spend id 0 while the swap's quote is in flight
+    quote_swap(&mut contract, 10, 10, Ok(U128(10)), T0 + 2);
+    assert_eq!(spend_ids(&contract), [0, 1]);
+    assert_eq!(vault(&contract).recent_spends[1].token_id, Some(wnear()));
 }
