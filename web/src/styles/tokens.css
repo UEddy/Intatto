@@ -1,0 +1,107 @@
+/*
+ * The notary's ledger. Warm laid paper and iron-gall ink; one saturated colour, sealing wax,
+ * used only for the seal and the kill switch (and for CODE CHANGED, which deserves it).
+ * Verdigris means intact / ok. Contrast pairs are WCAG AA or better in both themes.
+ */
+:root {
+  color-scheme: light;
+  --paper: #f4efe6;
+  --paper-raised: #faf6ef;
+  --paper-sunk: #ece5d8;
+  --ink: #1c1a17;
+  --ink-2: #4a453d;
+  --ink-3: #6b645a;
+  --rule: #dcd3c4;
+  --rule-strong: #b9ad99;
+  --wax: #8e1b1b;
+  --wax-deep: #6e1212;
+  --wax-glow: #b8382c;
+  --on-wax: #fbf3ea;
+  --verdigris: #2f5d50;
+  --verdigris-soft: #dbe5df;
+  --frost: #5f6b76;
+  --frost-soft: #dde1e4;
+  --amber: #8a5a12;
+  --amber-soft: #f1e4c8;
+  --focus: #1d4ed8;
+  --laid: rgba(60, 45, 20, 0.035);
+  --grain: rgba(70, 50, 25, 0.07);
+  --grain-soft: rgba(70, 50, 25, 0.05);
+  --shadow: 0 1px 0 rgba(28, 26, 23, 0.04), 0 8px 24px -12px rgba(28, 26, 23, 0.18);
+
+  --font-display: "Bodoni Moda Variable", "Bodoni 72", "Didot", Georgia, serif;
+  --font-text: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --gutter: 16px;
+  --max: 1360px;
+  --radius: 3px;
+  --tap: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #141311;
+    --paper-raised: #1c1a17;
+    --paper-sunk: #0e0d0b;
+    --ink: #ede6da;
+    --ink-2: #bdb4a6;
+    --ink-3: #958c7f;
+    --rule: #2e2b26;
+    --rule-strong: #4a443c;
+    --wax: #c2412f;
+    --wax-deep: #9c2f20;
+    --wax-glow: #e0644f;
+    --on-wax: #fff6ef;
+    --verdigris: #7fb5a2;
+    --verdigris-soft: #1d2b26;
+    --frost: #9aa6b1;
+    --frost-soft: #22272b;
+    --amber: #e0b062;
+    --amber-soft: #2b2416;
+    --focus: #8ab4ff;
+    --laid: rgba(255, 240, 210, 0.025);
+    --grain: rgba(255, 240, 215, 0.045);
+    --grain-soft: rgba(255, 240, 215, 0.03);
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #141311;
+  --paper-raised: #1c1a17;
+  --paper-sunk: #0e0d0b;
+  --ink: #ede6da;
+  --ink-2: #bdb4a6;
+  --ink-3: #958c7f;
+  --rule: #2e2b26;
+  --rule-strong: #4a443c;
+  --wax: #c2412f;
+  --wax-deep: #9c2f20;
+  --wax-glow: #e0644f;
+  --on-wax: #fff6ef;
+  --verdigris: #7fb5a2;
+  --verdigris-soft: #1d2b26;
+  --frost: #9aa6b1;
+  --frost-soft: #22272b;
+  --amber: #e0b062;
+  --amber-soft: #2b2416;
+  --focus: #8ab4ff;
+  --laid: rgba(255, 240, 210, 0.025);
+  --grain: rgba(255, 240, 215, 0.045);
+  --grain-soft: rgba(255, 240, 215, 0.03);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 32px;
+  }
+}
+@media (min-width: 1280px) {
+  :root {
+    --gutter: 48px;
+  }
+}

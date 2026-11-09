@@ -1,0 +1,154 @@
+/**
+ * NearBlocks API v3 (api-testnet.nearblocks.io / api.nearblocks.io), keyless fallback.
+ *
+ *   GET /v3/accounts/{id}/receipts?limit=&next=   receipts to or from the account (feed)
+ *   GET /v3/accounts/{id}/txns?limit=&next=       transactions signed by or sent to it (attempts)
+ *   GET /v3/txns/{hash}/receipts                  the receipt tree with logs and outcomes
+ *
+ * Keyless limits, from its source: 6 per minute, 1 per second, 333 per day, 10,000 per month, per
+ * IP. Attribution is required wherever its data is shown. Cursors are opaque (meta.next_page).
+ */
+import { z } from "zod";
+import { getJson, type HttpOptions } from "./http";
+import { failureText } from "./fastnear";
+import { IndexerError, type ActivitySource, type IndexedReceipt, type IndexedTx, type TxAction, type TxPage } from "./types";
+
+const block = z.object({ block_height: z.string().regex(/^\d+$/), block_timestamp: z.string().regex(/^\d+$/) });
+
+const listResponse = z.object({
+  data: z.array(z.object({ transaction_hash: z.string().min(1), block, signer_account_id: z.string().optional() })),
+  meta: z.object({ next_page: z.string().nullable().optional() }).optional(),
+});
+
+const nbAction = z.object({
+  action: z.string(),
+  method: z.string().nullable().optional(),
+  args: z
+    .object({
+      gas: z.union([z.number(), z.string()]).optional(),
+      deposit: z.string().optional(),
+      args_json: z.unknown().optional(),
+      method_name: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
+});
+
+interface NbReceipt {
+  receipt_id: string;
+  predecessor_account_id: string;
+  receiver_account_id: string;
+  public_key?: string | null | undefined;
+  actions: z.infer<typeof nbAction>[];
+  block: z.infer<typeof block>;
+  outcome: { executor_account_id: string; logs: string[]; status: boolean; result?: unknown };
+  receipts: NbReceipt[];
+}
+
+const receiptTree: z.ZodType<NbReceipt> = z.lazy(() =>
+  z.object({
+    receipt_id: z.string(),
+    predecessor_account_id: z.string(),
+    receiver_account_id: z.string(),
+    public_key: z.string().nullable().optional(),
+    actions: z.array(nbAction),
+    block,
+    outcome: z.object({
+      executor_account_id: z.string(),
+      logs: z.array(z.string()),
+      status: z.boolean(),
+      result: z.unknown().optional(),
+    }),
+    receipts: z.array(receiptTree),
+  }),
+);
+
+const treeResponse = z.object({ data: receiptTree });
+
+export class NearBlocksSource implements ActivitySource {
+  readonly id = "nearblocks" as const;
+  readonly attribution = { text: "Powered by Nearblocks.io APIs", url: "https://nearblocks.io" };
+
+  constructor(
+    readonly baseUrl: string,
+    private readonly http: HttpOptions = {},
+  ) {}
+
+  async listTxs(accountId: string, options: { limit: number; cursor?: string | null; signerOnly?: boolean }): Promise<TxPage> {
+    const kind = options.signerOnly ? "txns" : "receipts";
+    const params = new URLSearchParams({ limit: String(Math.min(options.limit, 25)) });
+    if (options.signerOnly) params.set("signer", accountId);
+    if (options.cursor) params.set("next", options.cursor);
+    const url = `${this.baseUrl}/v3/accounts/${encodeURIComponent(accountId)}/${kind}?${params}`;
+    const json = await getJson(this.id, url, { method: "GET" }, this.http);
+    const parsed = listResponse.safeParse(json);
+    if (!parsed.success) throw new IndexerError(this.id, `unexpected /${kind} response`, false, JSON.stringify(json).slice(0, 2000));
+    const seen = new Set<string>();
+    const txs = [];
+    for (const row of parsed.data.data) {
+      if (options.signerOnly && row.signer_account_id !== undefined && row.signer_account_id !== accountId) continue;
+      if (seen.has(row.transaction_hash)) continue;
+      seen.add(row.transaction_hash);
+      txs.push({ hash: row.transaction_hash, blockHeight: Number(row.block.block_height), blockTimestampNs: row.block.block_timestamp });
+    }
+    return { txs, next: parsed.data.meta?.next_page ?? null };
+  }
+
+  async getTxs(hashes: readonly string[]): Promise<IndexedTx[]> {
+    const out: IndexedTx[] = [];
+    // One request per transaction, sequentially: the keyless limit is 1 per second.
+    for (const hash of hashes) {
+      const json = await getJson(this.id, `${this.baseUrl}/v3/txns/${encodeURIComponent(hash)}/receipts`, { method: "GET" }, this.http);
+      out.push(parseNearBlocksTree(hash, json));
+    }
+    return out;
+  }
+}
+
+export function parseNearBlocksTree(hash: string, json: unknown): IndexedTx {
+  const parsed = treeResponse.safeParse(json);
+  if (!parsed.success) throw new IndexerError("nearblocks", "unexpected /receipts tree", false, JSON.stringify(json).slice(0, 2000));
+  const root = parsed.data.data;
+  const receipts: IndexedReceipt[] = [];
+  const walk = (r: NbReceipt) => {
+    receipts.push({
+      receiptId: r.receipt_id,
+      predecessorId: r.predecessor_account_id,
+      executorId: r.outcome.executor_account_id,
+      blockHeight: Number(r.block.block_height),
+      blockTimestampNs: r.block.block_timestamp,
+      logs: r.outcome.logs,
+      status: r.outcome.status ? "success" : "failure",
+      failureMessage: r.outcome.status ? null : failureText(r.outcome.result),
+    });
+    r.receipts.forEach(walk);
+  };
+  walk(root);
+  return {
+    source: "nearblocks",
+    hash,
+    // The first receipt of a transaction comes from its signer, with the signing key.
+    signerId: root.predecessor_account_id,
+    publicKey: root.public_key ?? "",
+    receiverId: root.receiver_account_id,
+    // NearBlocks' tree starts at the first receipt, one block after the transaction itself.
+    blockHeight: Number(root.block.block_height),
+    blockTimestampNs: root.block.block_timestamp,
+    actions: root.actions.map(parseNbAction),
+    receipts,
+  };
+}
+
+function parseNbAction(a: z.infer<typeof nbAction>): TxAction {
+  if (a.action === "FUNCTION_CALL") {
+    return {
+      kind: "FunctionCall",
+      methodName: a.args?.method_name ?? a.method ?? "",
+      args: a.args?.args_json ?? null,
+      gas: String(a.args?.gas ?? "0"),
+      deposit: a.args?.deposit ?? "0",
+    };
+  }
+  if (a.action === "TRANSFER") return { kind: "Transfer", deposit: a.args?.deposit ?? "0" };
+  return { kind: "Other", type: a.action };
+}

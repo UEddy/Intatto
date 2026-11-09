@@ -152,6 +152,96 @@ exchange beyond rejected calls.
   holds it can deploy any code to the vault account, including code that sends every owner's
   funds anywhere, or delete the account. See the limitations below.
 
+## Frontend
+
+The site in `web/` (served from GitHub Pages) holds no keys and enforces nothing. **Every rule is
+enforced by the vault contract on chain;** the page reads state and asks the user's wallet to
+sign. A compromised page can show wrong figures or ask the wallet to sign something other than
+what it shows, so the wallet's own confirmation, and the chain itself, are what to trust.
+
+What the page does to keep its own part honest:
+
+- Every figure is read over the configured RPC (`test.rpc.fastnear.com` / `rpc.mainnet.fastnear.com`)
+  and shown with its source: method, arguments, raw value and block.
+- Indexer data (FastNEAR, NearBlocks) only lists transactions. Vault events are parsed only from
+  receipts the vault contract itself executed, so another contract cannot forge them.
+- The board verifies the canary's setup transaction and the current run's deployment transaction
+  on load (signer, receiver, logged event or deployed code hash) before counting from them.
+- Before every signature, a review sheet shows each action's receiver, method, arguments,
+  deposit and gas.
+
+### Wallet executors
+
+Wallets connect through near-connect (`@hot-labs/near-connect` 0.12.0). The page offers four,
+from a pinned copy of near-connect's manifest (`web/src/wallet/manifest.pinned.json`, from
+manifest 1.1.0, sha256 `a90e85a7…`, 2026-11-09), so a change to the remote manifest cannot add or
+swap a wallet. On testnet only Meteor and Intear appear; HOT and MyNearWallet declare mainnet only.
+
+Each wallet's executor, the code that talks to the wallet, is **not** pinned. near-connect
+fetches it at connect time from the URL in the manifest, and these URLs are mutable:
+
+| Wallet | Executor URL |
+|---|---|
+| Meteor | `raw.githubusercontent.com/Meteor-Wallet/meteor_wallet_sdk/data-storage/storage/meteor-near-connect-latest.js` |
+| Intear | `wallet.intear.tech/near-selector.js` |
+| HOT | `raw.githubusercontent.com/hot-dao/near-selector/refs/heads/main/repository/hotwallet.js` |
+| MyNearWallet | `raw.githubusercontent.com/hot-dao/near-selector/refs/heads/main/repository/mnw.js` |
+
+Whoever can change those files can change what runs. near-connect contains them: each executor
+runs in an `<iframe sandbox="allow-scripts">` built from `srcdoc`, with no `allow-same-origin`, so
+it has an opaque origin and cannot read the page, its storage or its cookies. It talks to the page
+only through near-connect's `postMessage` protocol, which lets it open the wallet's windows and
+return results. A malicious executor could still lie about a result or ask the wallet to sign a
+different transaction, which is why the wallet's own confirmation screen is the last check, and
+the contract's policy the real one.
+
+### Content security policy
+
+GitHub Pages cannot set headers, so the policy is a `<meta>` tag. `boot.js`, the first script on
+the page, inserts it together with a nonce that is random on every page load
+(`crypto.getRandomValues`, 18 bytes) and never appears in the served HTML. Only `boot.js` runs
+before the policy exists.
+
+- **`script-src 'self' 'nonce-…'`.** The executors' `srcdoc` iframes inherit the page's policy,
+  and near-connect gives their inline scripts this nonce (`cspNonce`). Injected markup cannot
+  know it.
+- **`style-src 'self' 'unsafe-inline'`.** near-connect's wallet picker and the executors' documents
+  use inline `<style>` without a nonce. The page keeps no secrets in its DOM for CSS to leak.
+- **`img-src 'self' data:`, `font-src 'self'`.** Wallet icons are embedded in the pinned manifest.
+- **`frame-src https://wallet.intear.tech`.** Intear's "choose how to connect" page, which its
+  executor loads inside its own iframe.
+- **`connect-src`.** Exactly these, and nothing else:
+
+| Origin | Why |
+|---|---|
+| `test.rpc.fastnear.com`, `rpc.mainnet.fastnear.com` | Live view calls and transaction status |
+| `archival-rpc.testnet.fastnear.com`, `archival-rpc.mainnet.fastnear.com` | Old transactions only (canary setup and run start) |
+| `tx.test.fastnear.com`, `tx.main.fastnear.com` | Transaction lists (FastNEAR, primary) |
+| `api-testnet.nearblocks.io`, `api.nearblocks.io` | Transaction lists (NearBlocks, fallback) |
+| `raw.githubusercontent.com` | Executor code of Meteor, HOT and MyNearWallet |
+| `wallet.intear.tech` | Executor code of Intear |
+| `mc.meteorwallet.app` (https and wss) | Meteor Connect bridge: `/api/action`, `/api/bridge/…` and its WebSocket, used for the web-wallet handoff and mobile QR pairing |
+| `wss://logout-bridge-service.intear.tech` | Intear's bridge for its App connection method and logout notices |
+
+The wallet entries were measured on testnet on 2026-11-09. The Meteor and Intear connect and sign
+flows were driven to the wallet's own window, recording every request the page and the executors
+made (`web/e2e/harness`); Intear's WebSocket comes from its executor code, since the Web method
+does not open it. `web/e2e/wallets.spec.ts` repeats both flows under the enforced policy and
+fails on any blocked load other than these cosmetic ones, which stay blocked: Meteor's loader
+image (`meteorwallet.app`), its font stylesheets (`rsms.me`, `fonts.cdnfonts.com`) and an inline
+`data:` font. Its picker falls back to system fonts.
+
+Limits of this measurement:
+
+- Signing was measured up to the wallet's window; completing it needs a logged-in wallet. Both
+  wallets sign and broadcast in their own window and return the result by `postMessage` or the
+  bridge above.
+- HOT and MyNearWallet were not measured, because they do not run on testnet. Their executors
+  call other backends (HOT: `h4n.app`, `api0.herewallet.app`, `storage.herewallet.app`), which the
+  policy blocks. They must be measured, and their backends listed here, before the mainnet demo.
+- Meteor's executor defaults to `free.rpc.fastnear.com` for mainnet. It made no RPC call in the
+  testnet flows; recheck on mainnet.
+
 ## Known limitations
 
 - **Sandwiching and price manipulation, within the caps.**

@@ -30,13 +30,38 @@ pub const TOKEN_STORAGE: NearToken = NearToken::from_micronear(1_250);
 static SANDBOX_SLOTS: Semaphore = Semaphore::const_new(4);
 static CONTRACT_WASM: OnceLock<Vec<u8>> = OnceLock::new();
 
-/// Built once and shared by every test in this binary.
+/// Path of a prebuilt contract binary to test instead of building this crate, e.g. the
+/// reproducible build that is about to be deployed:
+///
+/// ```text
+/// INTATTO_TEST_WASM=/path/to/intatto.wasm \
+/// INTATTO_TEST_WASM_SHA256=J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL cargo test
+/// ```
+pub const TEST_WASM_ENV: &str = "INTATTO_TEST_WASM";
+/// Optional SHA-256 (base58, as NEAR reports code hashes) the binary must have.
+pub const TEST_WASM_SHA256_ENV: &str = "INTATTO_TEST_WASM_SHA256";
+
+/// The contract under test, loaded once and shared by every test in this binary: the file named
+/// by `INTATTO_TEST_WASM` if set, otherwise a fresh build of this crate.
 pub fn contract_wasm() -> Vec<u8> {
     CONTRACT_WASM
         .get_or_init(|| {
-            let path = cargo_near_build::build_with_cli(Default::default())
-                .expect("contract should build");
-            std::fs::read(path).expect("built wasm should be readable")
+            let Some(path) = std::env::var_os(TEST_WASM_ENV) else {
+                let path = cargo_near_build::build_with_cli(Default::default())
+                    .expect("contract should build");
+                return std::fs::read(path).expect("built wasm should be readable");
+            };
+            let wasm = std::fs::read(&path)
+                .unwrap_or_else(|err| panic!("reading {TEST_WASM_ENV}={path:?}: {err}"));
+            let hash = CryptoHash::hash(&wasm).to_string();
+            eprintln!("testing prebuilt contract {path:?}, sha256 (base58) {hash}");
+            if let Ok(expected) = std::env::var(TEST_WASM_SHA256_ENV) {
+                assert_eq!(
+                    hash, expected,
+                    "{TEST_WASM_ENV} does not have the {TEST_WASM_SHA256_ENV} hash"
+                );
+            }
+            wasm
         })
         .clone()
 }

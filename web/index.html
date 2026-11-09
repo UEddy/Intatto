@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- boot.js must stay the first script: it inserts the CSP with this page load's nonce (vite.config.ts). -->
+    <script src="./boot.js"></script>
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f4efe6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)" />
+    <meta name="description" content="Intatto: a vault your AI agent can spend from only within rules the contract enforces. Your money stays intact." />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>Intatto</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
