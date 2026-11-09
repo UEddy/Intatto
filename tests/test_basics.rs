@@ -377,6 +377,7 @@ async fn function_call_key_on_owner_account_can_only_freeze() -> TestResult {
         .send_to(&env.network)
         .await?
         .assert_success();
+    wait_for_access_key(&env.network, &env.owner, fc_key.public_key()).await?;
     let fc_signer = Signer::from_secret_key(fc_key)?;
     let call_with_fc_key = async |method: &str, args: Value, deposit: NearToken| {
         env.contract

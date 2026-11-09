@@ -110,12 +110,17 @@ function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLoo
       };
     case "swap_initiated":
       return null; // swap_completed or swap_refunded follows
-    case "swap_completed":
-      return {
-        tone: "agent",
-        label: "Swapped",
-        text: `Agent swapped ${amountOf(tokens, e.data.swap.token_in, e.data.swap.amount_in)} for ${amountOf(tokens, e.data.swap.token_out, e.data.amount_out)} in pool #${e.data.swap.pool_id}.${e.data.held_on_exchange ? " The output is still on the exchange; reclaim it." : ""}`,
-      };
+    case "swap_completed": {
+      const out = (raw: string) => amountOf(tokens, e.data.swap.token_out, raw);
+      const swapped = `Agent swapped ${amountOf(tokens, e.data.swap.token_in, e.data.swap.amount_in)} for ${out(e.data.amount_out)} in pool #${e.data.swap.pool_id}`;
+      // From swap_completed 1.1.0 on: gross output, the protocol fee, and what the owner got.
+      const split =
+        e.data.fee !== undefined && e.data.net !== undefined && !e.data.held_on_exchange
+          ? `: ${out(e.data.net)} to the vault, ${out(e.data.fee)} protocol fee`
+          : "";
+      const held = e.data.held_on_exchange ? " The output is still on the exchange; reclaim it." : "";
+      return { tone: "agent", label: "Swapped", text: `${swapped}${split}.${held}` };
+    }
     case "swap_refunded":
       return { tone: "alert", label: "Returned", text: `A swap of ${amountOf(tokens, e.data.swap.token_in, e.data.swap.amount_in)} failed at its ${e.data.failed_step} step; ${e.data.held_on_exchange ? "it is on the exchange, reclaimable" : "it is back in the vault"}.` };
     case "exchange_shortfall":
@@ -125,7 +130,9 @@ function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLoo
         ? { tone: "owner", label: "Reclaimed", text: `Reclaimed ${amountOf(tokens, e.data.token_id, e.data.amount)} from the exchange.` }
         : { tone: "alert", label: "Returned", text: `Reclaiming ${amountOf(tokens, e.data.token_id, e.data.amount)} failed; it stays on the exchange.` };
     case "exchange_ledger_underflow":
-      return null;
+    case "fees_withdrawn":
+    case "fees_withdraw_refunded":
+      return null; // not about an owner's vault
   }
 }
 

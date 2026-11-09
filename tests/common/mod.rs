@@ -5,7 +5,9 @@ use std::sync::{Arc, OnceLock};
 
 use intatto::{Policy, Spend, Vault};
 use near_api::types::transaction::result::TransactionResult;
-use near_api::{AccountId, CryptoHash, NearGas, NearToken, NetworkConfig, Signer};
+use near_api::{
+    AccountId, CryptoHash, NearGas, NearToken, NetworkConfig, PublicKey, Reference, Signer,
+};
 use near_sdk::base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use near_sdk::json_types::{U64, U128};
 use near_sdk::serde::de::DeserializeOwned;
@@ -19,8 +21,13 @@ pub const SECOND_NS: u64 = 1_000_000_000;
 pub const HOUR_NS: u64 = 60 * 60 * SECOND_NS;
 /// The exchange every vault in these tests is initialized with. Only the swap tests deploy it.
 pub const EXCHANGE: &str = "exchange.sandbox";
+/// The treasury every vault in these tests is initialized with.
+pub const TREASURY: &str = "treasury.sandbox";
 /// SHA-256 (base58) of tests/res/intatto_v1.wasm, the code deployed on vault-v1.intatto-dev.testnet.
 pub const V1_SHA256: &str = "HGa6MDknypEa691JxbEp95zCCW72NQ45MZsWXgy7MNot";
+/// SHA-256 (base58) of tests/res/intatto_j5mo.wasm, the reproducible build of commit b85cece that
+/// vault-v1.intatto-dev.testnet runs since 2026-11-08.
+pub const J5MO_SHA256: &str = "J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL";
 /// SHA-256 (base58) of tests/res/w_near.wasm.
 pub const W_NEAR_SHA256: &str = "DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa";
 /// `storage_balance_bounds().min` of the w_near contract.
@@ -119,6 +126,8 @@ pub struct TestEnv {
     pub agent: AccountId,
     pub merchant: AccountId,
     pub stranger: AccountId,
+    /// The vault's treasury: the only account that can withdraw swap fees.
+    pub treasury: AccountId,
     // Declared last so the slot is released only after the sandbox above is dropped.
     _slot: SemaphorePermit<'static>,
 }
@@ -137,20 +146,24 @@ impl TestEnv {
             near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY.parse()?,
         )?;
 
-        let contract_id = create_account(&sandbox, "vault.sandbox", near(100)).await?;
+        let contract_id = create_account(&sandbox, &network, "vault.sandbox", near(100)).await?;
+        let treasury = create_account(&sandbox, &network, TREASURY, near(100)).await?;
+        // Code from before the fee (v1, J5Mo) takes only `exchange_id` and ignores the rest.
+        let init = json!({ "exchange_id": EXCHANGE, "treasury_id": treasury });
         near_api::Contract::deploy(contract_id.clone())
             .use_code(wasm)
-            .with_init_call("new", json!({ "exchange_id": EXCHANGE }))?
+            .with_init_call("new", init)?
             .with_signer(signer.clone())
             .send_to(&network)
             .await?
             .assert_success();
 
         Ok(Self {
-            owner: create_account(&sandbox, "owner.sandbox", near(100)).await?,
-            agent: create_account(&sandbox, "agent.sandbox", near(100)).await?,
-            merchant: create_account(&sandbox, "merchant.sandbox", near(100)).await?,
-            stranger: create_account(&sandbox, "stranger.sandbox", near(100)).await?,
+            owner: create_account(&sandbox, &network, "owner.sandbox", near(100)).await?,
+            agent: create_account(&sandbox, &network, "agent.sandbox", near(100)).await?,
+            merchant: create_account(&sandbox, &network, "merchant.sandbox", near(100)).await?,
+            stranger: create_account(&sandbox, &network, "stranger.sandbox", near(100)).await?,
+            treasury,
             contract: near_api::Contract(contract_id),
             sandbox,
             network,
@@ -333,7 +346,7 @@ impl TestEnv {
 
     /// Creates an account funded from the sandbox genesis account.
     pub async fn create_account(&self, name: &str, balance: NearToken) -> TestResult<AccountId> {
-        create_account(&self.sandbox, name, balance).await
+        create_account(&self.sandbox, &self.network, name, balance).await
     }
 
     /// Creates `name` and deploys `wasm` there with an init call.
@@ -356,8 +369,15 @@ impl TestEnv {
     }
 }
 
+/// Creates an account funded from the sandbox genesis account, with the genesis key as its
+/// full-access key, and returns once that key can sign.
+///
+/// The sandbox applies the account as a state patch in a later block. Signing right away races
+/// it: near_api reads the key's nonce at the final block, which may not have the key yet ("access
+/// key does not exist"), so this waits for that first.
 pub async fn create_account(
     sandbox: &near_sandbox::Sandbox,
+    network: &NetworkConfig,
     name: &str,
     balance: NearToken,
 ) -> TestResult<AccountId> {
@@ -367,7 +387,41 @@ pub async fn create_account(
         .initial_balance(balance)
         .send()
         .await?;
+    let genesis_key: PublicKey =
+        near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PUBLIC_KEY.parse()?;
+    wait_for_access_key(network, &account_id, genesis_key).await?;
     Ok(account_id)
+}
+
+/// How long `wait_for_access_key` keeps trying: 100 tries, 100 ms apart. A sandbox block takes
+/// well under a second, and a key reaches the final block two blocks after it was added.
+const KEY_WAIT_TRIES: u32 = 100;
+const KEY_WAIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Returns once `public_key` on `account_id` is visible at the final block, which is where
+/// near_api's signer reads the nonce from. Call it after creating an account or adding a key,
+/// before signing with that key. Panics after `KEY_WAIT_TRIES` attempts with the last error.
+pub async fn wait_for_access_key(
+    network: &NetworkConfig,
+    account_id: &AccountId,
+    public_key: PublicKey,
+) -> TestResult {
+    let mut last_error = String::new();
+    for _ in 0..KEY_WAIT_TRIES {
+        match near_api::Account(account_id.clone())
+            .access_key(public_key)
+            .at(Reference::Final)
+            .fetch_from(network)
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(err) => last_error = err.to_string(),
+        }
+        tokio::time::sleep(KEY_WAIT_INTERVAL).await;
+    }
+    panic!(
+        "access key {public_key} on {account_id} was not visible at the final block after {KEY_WAIT_TRIES} tries: {last_error}"
+    )
 }
 
 /// The `data` of every `intatto` event called `name` in the transaction's logs, including logs

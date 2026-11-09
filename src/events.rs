@@ -153,12 +153,16 @@ pub enum VaultEvent {
         agent_id: AccountId,
         swap: SwapTicket,
     },
-    /// The exchange swapped `amount_in` for exactly `amount_out`, now credited to the owner (or
-    /// recorded as `on_exchange` if withdrawing it from the exchange failed).
-    #[event_version("1.0.0")]
+    /// The exchange swapped `amount_in` for exactly `amount_out` (gross). The owner was credited
+    /// `net` and the treasury `fee`, and `net + fee == amount_out`. If withdrawing the output
+    /// from the exchange failed (`held_on_exchange`), all of it is recorded as the owner's
+    /// `on_exchange`, `fee` is 0 and `net` is `amount_out`. Version 1.0.0 had no `fee` or `net`.
+    #[event_version("1.1.0")]
     SwapCompleted {
         swap: SwapTicket,
         amount_out: U128,
+        fee: U128,
+        net: U128,
         held_on_exchange: bool,
     },
     /// The swap did not happen; `amount_in` went back to the owner (or is recorded as
@@ -194,6 +198,21 @@ pub enum VaultEvent {
         token_id: AccountId,
         amount: U128,
         succeeded: bool,
+    },
+    /// `amount` of accrued `token_id` fees was deducted from the treasury balance and its transfer
+    /// to `treasury_id` is in flight.
+    #[event_version("1.0.0")]
+    FeesWithdrawn {
+        treasury_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// The transfer of a fee withdrawal failed; `amount` went back to the treasury balance.
+    #[event_version("1.0.0")]
+    FeesWithdrawRefunded {
+        treasury_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
     },
 }
 

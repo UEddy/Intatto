@@ -7,6 +7,7 @@ use near_sdk::{
 
 mod callbacks;
 mod events;
+mod fees;
 mod ledger;
 mod lock;
 mod policy;
@@ -16,6 +17,7 @@ mod swap;
 mod tokens;
 
 pub use events::{RejectReason, VaultEvent};
+pub use fees::{FEE_BPS, MAX_FEE_BPS, split_fee};
 pub use ledger::ExchangeLedger;
 pub use policy::{
     MAX_ALLOWLIST_LEN, MAX_POLICY_POOLS, MAX_POLICY_TOKENS, MAX_SLIPPAGE_BPS,
@@ -83,10 +85,13 @@ pub struct Contract {
 
 #[near]
 impl Contract {
+    /// `exchange_id` is the exchange every swap goes through; `treasury_id` is the only account
+    /// that can withdraw the swap fees. Neither can be changed afterwards.
     #[init]
     // near-sdk's ABI codegen re-spans `Self` here, which trips clippy::use_self.
     #[allow(clippy::use_self)]
-    pub fn new(exchange_id: AccountId) -> Self {
+    pub fn new(exchange_id: AccountId, treasury_id: AccountId) -> Self {
+        fees::init_treasury(treasury_id);
         Self {
             vaults: LookupMap::new(b"v"),
             next_spend_id: 0,

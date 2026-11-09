@@ -7,7 +7,7 @@
       "compiler": "rustc 1.93.0",
       "builder": "cargo-near cargo-near-build 0.11.5"
     },
-    "wasm_hash": "FevckYG3RhhFYhj21xvC2nufv1z5vYmuG6P9nrK3hHCa"
+    "wasm_hash": "7aiNbHTnDs4irAQaaGuudHmEgcQvjuMDRzxUSGrZHHiR"
   },
   "body": {
     "functions": [
@@ -191,6 +191,42 @@
         }
       },
       {
+        "name": "get_fee_bps",
+        "doc": " The fee on agent swap output, in basis points.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
+        "name": "get_fees",
+        "doc": " The treasury's accrued fees in `token_id` (0 if none).",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "string"
+          }
+        }
+      },
+      {
         "name": "get_policy",
         "kind": "view",
         "params": {
@@ -215,6 +251,21 @@
               {
                 "type": "null"
               }
+            ]
+          }
+        }
+      },
+      {
+        "name": "get_treasury_id",
+        "doc": " The account that may withdraw accrued fees; null on a vault upgraded from code without one.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+            "type": [
+              "string",
+              "null"
             ]
           }
         }
@@ -269,6 +320,7 @@
       },
       {
         "name": "new",
+        "doc": " `exchange_id` is the exchange every swap goes through; `treasury_id` is the only account\n that can withdraw the swap fees. Neither can be changed afterwards.",
         "kind": "call",
         "modifiers": [
           "init"
@@ -282,8 +334,62 @@
                 "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
                 "type": "string"
               }
+            },
+            {
+              "name": "treasury_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
             }
           ]
+        }
+      },
+      {
+        "name": "on_fees_withdraw_complete",
+        "doc": " Settles a `withdraw_fees` transfer, crediting the treasury back if it failed.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "treasury_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
+            {
+              "name": "token_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
+            {
+              "name": "amount",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "type": "null"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "boolean"
+          }
         }
       },
       {
@@ -501,7 +607,7 @@
       },
       {
         "name": "on_swap_output_withdrawn",
-        "doc": " Swap step 4: the output's withdrawal from the exchange resolved to `amount_out` if it\n reached the vault. Credits the owner exactly that, or records it as left on the exchange.",
+        "doc": " Swap step 4: the output's withdrawal from the exchange resolved to `amount_out` if it\n reached the vault. Then the owner is credited `amount_out` less the protocol fee, and the\n treasury the fee: together exactly `amount_out`. If it did not arrive, the whole amount is\n recorded as the owner's, left on the exchange, with no fee.",
         "kind": "call",
         "modifiers": [
           "private"
@@ -788,6 +894,38 @@
         "params": {
           "serialization_type": "json",
           "args": [
+            {
+              "name": "amount",
+              "type_schema": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/Promise"
+          }
+        }
+      },
+      {
+        "name": "withdraw_fees",
+        "doc": " Sends `amount` of the treasury's accrued `token_id` fees to the treasury account. Only the\n treasury may call it, with exactly 1 yoctoNEAR (full-access key only). It can never take\n more than the fees accrued in that token, and touches no owner's balance. If the transfer\n fails (for example, the treasury is not registered with the token), the amount is credited\n back to the treasury's balance.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "token_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            },
             {
               "name": "amount",
               "type_schema": {

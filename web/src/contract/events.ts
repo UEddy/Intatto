@@ -12,7 +12,16 @@ import { z } from "zod";
 import { PolicySchema, SwapStepSchema, SwapTicketSchema, accountId, uintString } from "./abi.gen";
 
 export const EVENT_STANDARD = "intatto";
+/** The version every event is logged at, unless EVENT_VERSIONS lists others for it. */
 export const EVENT_VERSION = "1.0.0";
+/**
+ * Versions this UI parses, per event. swap_completed 1.1.0 (from the fee build on) adds `fee`
+ * and `net`; 1.0.0 logs from earlier builds have neither, and stay readable.
+ */
+export const EVENT_VERSIONS: Readonly<Record<string, readonly string[]>> = {
+  swap_completed: ["1.0.0", "1.1.0"],
+};
+const versionsOf = (event: string) => EVENT_VERSIONS[event] ?? [EVENT_VERSION];
 
 export const RejectReasonSchema = z.enum([
   "no_vault",
@@ -71,11 +80,20 @@ export const VaultEventSchema = z.discriminatedUnion("event", [
     reason: RejectReasonSchema,
   }),
   ev("swap_initiated", { agent_id: accountId, swap: SwapTicketSchema }),
-  ev("swap_completed", { swap: SwapTicketSchema, amount_out: uintString, held_on_exchange: z.boolean() }),
+  // `fee` and `net` are present from 1.1.0 on; parseLog checks which version has them.
+  ev("swap_completed", {
+    swap: SwapTicketSchema,
+    amount_out: uintString,
+    fee: uintString.optional(),
+    net: uintString.optional(),
+    held_on_exchange: z.boolean(),
+  }),
   ev("swap_refunded", { swap: SwapTicketSchema, failed_step: SwapStepSchema, held_on_exchange: z.boolean() }),
   ev("exchange_shortfall", { owner_id: accountId, token_id: accountId, expected: uintString, actual: uintString }),
   ev("exchange_ledger_underflow", { token_id: accountId, field: z.string(), value: uintString, decrease: uintString }),
   ev("exchange_reclaim", { owner_id: accountId, token_id: accountId, amount: uintString, succeeded: z.boolean() }),
+  ev("fees_withdrawn", { treasury_id: accountId, token_id: accountId, amount: uintString }),
+  ev("fees_withdraw_refunded", { treasury_id: accountId, token_id: accountId, amount: uintString }),
 ]);
 export type VaultEvent = z.infer<typeof VaultEventSchema>;
 export type VaultEventName = VaultEvent["event"];
@@ -100,12 +118,22 @@ export function parseLog(log: string): ParsedLog {
   }
   const env = envelope.safeParse(json);
   if (!env.success || env.data.standard !== EVENT_STANDARD) return { kind: "other", raw: log };
-  if (env.data.version !== EVENT_VERSION) {
-    return { kind: "unrecognised", event: env.data.event, version: env.data.version, raw: log };
-  }
+  const unrecognised = { kind: "unrecognised", event: env.data.event, version: env.data.version, raw: log } as const;
+  if (!versionsOf(env.data.event).includes(env.data.version)) return unrecognised;
   const parsed = VaultEventSchema.safeParse({ event: env.data.event, data: env.data.data });
-  if (!parsed.success) return { kind: "unrecognised", event: env.data.event, version: env.data.version, raw: log };
+  if (!parsed.success) return unrecognised;
+  if (parsed.data.event === "swap_completed" && !swapCompletedFits(parsed.data.data, env.data.version)) return unrecognised;
   return { kind: "event", event: parsed.data };
+}
+
+/**
+ * swap_completed 1.0.0 has no fee fields. 1.1.0 has both, and the contract guarantees
+ * `net + fee == amount_out`, so a log that breaks that is not trusted as this event.
+ */
+function swapCompletedFits(d: Extract<VaultEvent, { event: "swap_completed" }>["data"], version: string): boolean {
+  if (version === "1.0.0") return d.fee === undefined && d.net === undefined;
+  if (d.fee === undefined || d.net === undefined) return false;
+  return BigInt(d.fee) + BigInt(d.net) === BigInt(d.amount_out);
 }
 
 /** The owner an event is about, so the feed can keep only the connected owner's events. */
@@ -115,7 +143,10 @@ export function eventOwner(event: VaultEvent): string | null {
     case "swap_completed":
     case "swap_refunded":
       return event.data.swap.owner_id;
+    // Vault-wide, or about the treasury rather than an owner.
     case "exchange_ledger_underflow":
+    case "fees_withdrawn":
+    case "fees_withdraw_refunded":
       return null;
     default:
       return event.data.owner_id;

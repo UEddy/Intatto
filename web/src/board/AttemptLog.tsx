@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { REASON_SHORT, REASON_TEXT } from "../activity/reasons";
 import type { Attempt } from "../canary/attempts";
-import type { CanaryConfig } from "../config/networks";
+import type { CanaryConfig, DemoConfig } from "../config/networks";
 import { useServices } from "../app/services";
 import { IndexerUnavailableError } from "../indexer/resilient";
 import type { ActivitySource } from "../indexer/types";
@@ -14,7 +14,20 @@ import { useNow } from "../ui/useNow";
 
 type Data = { attempts: Attempt[]; sources: ReadonlySet<ActivitySource["id"]>; more: boolean };
 
-export function AttemptLog({ query, canary }: { query: UseQueryResult<Data>; canary: CanaryConfig }) {
+/**
+ * Whose published key a log follows. The canary pays nobody, so any attempt that goes through is
+ * an alarm. The demo agent may pay its merchant within the caps, so those payments are expected.
+ */
+export type LogSubject =
+  | { readonly kind: "canary"; readonly ownerId: string; readonly agentId: string }
+  | { readonly kind: "demo"; readonly ownerId: string; readonly agentId: string; readonly merchantId: string };
+
+export const canarySubject = (c: CanaryConfig): LogSubject => ({ kind: "canary", ownerId: c.ownerId, agentId: c.agentId });
+export const demoSubject = (d: DemoConfig): LogSubject => ({ kind: "demo", ownerId: d.ownerId, agentId: d.agentId, merchantId: d.merchantId });
+
+export function AttemptLog({ query, subject }: { query: UseQueryResult<Data>; subject: LogSubject }) {
+  const canary = subject;
+  const titleId = `attempts-title-${subject.kind}`;
   const { indexer } = useServices();
   const now = useNow(15_000);
   const data = query.data;
@@ -22,12 +35,12 @@ export function AttemptLog({ query, canary }: { query: UseQueryResult<Data>; can
   const sources = data ? [...data.sources].map((id) => indexer.sourceById(id)).filter((s): s is ActivitySource => !!s) : [];
 
   return (
-    <section className="card attempt-log" aria-labelledby="attempts-title">
+    <section className="card attempt-log" aria-labelledby={titleId}>
       <header className="card-head">
         <div>
-          <SectionMark>Live log</SectionMark>
-          <h2 id="attempts-title" className="card-title">
-            Attempts with the published key
+          <SectionMark>{subject.kind === "demo" ? "Prompt-injection demo" : "Live log"}</SectionMark>
+          <h2 id={titleId} className="card-title">
+            {subject.kind === "demo" ? "The demo agent's payments and blocked attempts" : "Attempts with the published key"}
           </h2>
         </div>
         <span className="live-dot" aria-hidden={!query.isFetching}>
@@ -55,6 +68,7 @@ export function AttemptLog({ query, canary }: { query: UseQueryResult<Data>; can
           <p>
             Every transaction signed with <span className="mono">{canary.agentId}</span>'s published key appears here within half a minute, with the reason the vault gave
             for refusing it.
+            {subject.kind === "demo" ? <> Run <span className="mono">node agent/injection-demo.mjs --compromised</span> to add some.</> : null}
           </p>
         </div>
       ) : (
@@ -107,15 +121,15 @@ function Call({ attempt }: { attempt: Attempt }) {
   );
 }
 
-function verdict(o: Attempt["outcome"]): { label: string; tone: "rejected" | "failed" | "through" } {
+export function verdict(o: Attempt["outcome"], subject: LogSubject["kind"]): { label: string; tone: "rejected" | "failed" | "through" | "allowed" } {
   if (o.kind === "rejected") return { label: `Rejected · ${REASON_SHORT[o.reason]}`, tone: "rejected" };
   if (o.kind === "failed") return { label: "Failed · before policy", tone: "failed" };
-  return { label: "Went through", tone: "through" };
+  return subject === "demo" ? { label: "Paid · within policy", tone: "allowed" } : { label: "Went through", tone: "through" };
 }
 
-function LedgerEntry({ attempt, canary, number, fresh }: { attempt: Attempt; canary: CanaryConfig; number: number | null; fresh: boolean }) {
+function LedgerEntry({ attempt, canary, number, fresh }: { attempt: Attempt; canary: LogSubject; number: number | null; fresh: boolean }) {
   const o = attempt.outcome;
-  const v = verdict(o);
+  const v = verdict(o, canary.kind);
   const owner = attempt.args && typeof attempt.args === "object" ? (attempt.args as Record<string, unknown>).owner_id : null;
   return (
     <li className={`entry entry--${v.tone}${fresh ? " is-new" : ""}`}>
@@ -134,8 +148,10 @@ function LedgerEntry({ attempt, canary, number, fresh }: { attempt: Attempt; can
             ? `Refused by the contract: ${REASON_TEXT[o.reason]}.`
             : o.kind === "failed"
               ? `Failed before any policy check: ${o.message}`
-              : "Every receipt succeeded. Check the vault balance above."}
-          {typeof owner === "string" && owner !== canary.ownerId ? <> Aimed at {owner}'s vault, not the canary.</> : null}{" "}
+              : canary.kind === "demo"
+                ? `Allowed: ${canary.merchantId} is on the allowlist and the amount is within the caps.`
+                : "Every receipt succeeded. Check the vault balance above."}
+          {typeof owner === "string" && owner !== canary.ownerId ? <> Aimed at {owner}'s vault, not the {canary.kind}.</> : null}{" "}
           <TxLink hash={attempt.hash} />
         </p>
       </div>

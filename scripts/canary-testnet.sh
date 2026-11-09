@@ -20,14 +20,18 @@
 #
 # Signing and outcome checks work as in scripts/smoke-testnet-v1.sh: calls are signed with
 # `display`, sent with `transaction send-signed-transaction`, and read back by hash over RPC.
+#
+# PROFILE=demo sets up the prompt-injection demo vault instead (agent/README.md), on vault-v2 (the
+# fee build): demo-owner.intatto-dev.testnet deposits 0.1 NEAR; its agent
+# demo-agent.intatto-dev.testnet may pay only demo-merchant.intatto-dev.testnet, at most 0.01 NEAR
+# per payment, 0.03 NEAR and 5 payments per 24 hours; no lock. The agent's function-call key
+# (agent_spend only, 0.5 NEAR allowance) is printed for publishing, like the canary's.
 set -euo pipefail
 shopt -s inherit_errexit
 
 NETWORK=testnet
 FUNDER=intatto-dev.testnet
-OWNER=canary.intatto-dev.testnet
-AGENT=canary-agent.intatto-dev.testnet
-VAULT=vault-v1.intatto-dev.testnet
+PROFILE=${PROFILE:-canary}
 WASM=${WASM:-target/near/intatto.wasm}
 # Read-only RPC goes to exactly the node near CLI uses for $NETWORK: scripts/lib/near_rpc.py reads
 # it (and any API key) from near CLI's config.
@@ -37,18 +41,44 @@ EXPLORER=https://explorer.testnet.near.org/transactions/
 KEYCHAIN="$HOME/.near-credentials/$NETWORK"
 GAS='30 Tgas'
 
-# The owner deposits 1 NEAR; the rest pays the account's own storage and gas.
-OWNER_FUNDING='1.2 NEAR'
-DEPOSIT='1 NEAR'
-# Gas for calls signed with the published key comes out of the agent account's balance, at most
-# the key's allowance.
-AGENT_FUNDING='1.1 NEAR'
-FC_ALLOWANCE='1 NEAR'
-FC_METHODS=agent_spend,agent_swap
-LOCK_DAYS=30
-# The smallest max_spends_per_24h set_agent accepts (1 to 100); with every cap at zero it never
-# matters.
-POLICY='{"per_tx_cap":"0","daily_cap":"0","max_spends_per_24h":1,"allowlist":[],"tokens":[],"pools":[]}'
+case "$PROFILE" in
+canary)
+  OWNER=canary.intatto-dev.testnet
+  AGENT=canary-agent.intatto-dev.testnet
+  VAULT=vault-v1.intatto-dev.testnet
+  MERCHANT=
+  # The owner deposits 1 NEAR; the rest pays the account's own storage and gas.
+  OWNER_FUNDING='1.2 NEAR'
+  DEPOSIT='1 NEAR'
+  # Gas for calls signed with the published key comes out of the agent account's balance, at most
+  # the key's allowance.
+  AGENT_FUNDING='1.1 NEAR'
+  FC_ALLOWANCE='1 NEAR'
+  FC_METHODS=agent_spend,agent_swap
+  LOCK_DAYS=30
+  # The smallest max_spends_per_24h set_agent accepts (1 to 100); with every cap at zero it never
+  # matters.
+  POLICY='{"per_tx_cap":"0","daily_cap":"0","max_spends_per_24h":1,"allowlist":[],"tokens":[],"pools":[]}'
+  ;;
+demo)
+  OWNER=demo-owner.intatto-dev.testnet
+  AGENT=demo-agent.intatto-dev.testnet
+  VAULT=${VAULT:-vault-v2.intatto-dev.testnet}
+  MERCHANT=demo-merchant.intatto-dev.testnet
+  OWNER_FUNDING='0.3 NEAR'
+  DEPOSIT='0.1 NEAR'
+  AGENT_FUNDING='0.6 NEAR'
+  FC_ALLOWANCE='0.5 NEAR'
+  FC_METHODS=agent_spend
+  LOCK_DAYS=0
+  # 0.01 NEAR per payment, 0.03 NEAR and 5 payments per 24 hours, to the merchant only.
+  POLICY='{"per_tx_cap":"10000000000000000000000","daily_cap":"30000000000000000000000","max_spends_per_24h":5,"allowlist":["demo-merchant.intatto-dev.testnet"],"tokens":[],"pools":[]}'
+  ;;
+*)
+  echo "PROFILE must be canary or demo" >&2
+  exit 2
+  ;;
+esac
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -363,7 +393,9 @@ echo "    funder:    $FUNDER, balance $(helper near "$FUNDER_BALANCE")"
 
 echo
 echo "== 1. Accounts"
-for pair in "$OWNER=$OWNER_FUNDING" "$AGENT=$AGENT_FUNDING"; do
+ACCOUNTS=("$OWNER=$OWNER_FUNDING" "$AGENT=$AGENT_FUNDING")
+[ -z "$MERCHANT" ] || ACCOUNTS+=("$MERCHANT=0.05 NEAR")
+for pair in "${ACCOUNTS[@]}"; do
   account=${pair%%=*}
   funding=${pair#*=}
   echo "── $account"
@@ -381,7 +413,7 @@ for pair in "$OWNER=$OWNER_FUNDING" "$AGENT=$AGENT_FUNDING"; do
 done
 
 echo
-echo "== 2. Canary vault: $DEPOSIT, zero-outflow policy for $AGENT, withdrawals locked $LOCK_DAYS days"
+echo "== 2. $PROFILE vault: $DEPOSIT, policy for $AGENT, withdrawals locked $LOCK_DAYS days"
 vault_view
 if [ "$(helper json "$WORK/get_vault.json" 'v is None')" = true ]; then
   echo "── deposit $DEPOSIT"
@@ -392,9 +424,9 @@ fi
 vault_view
 # set_agent is refused while withdrawals are locked, so a re-run keeps what an earlier run set.
 if [ "$(helper json "$WORK/get_vault.json" "v[\"agent_id\"] == \"$AGENT\" and v[\"policy\"] == $POLICY")" = true ]; then
-  echo "── $AGENT is already registered with the zero-outflow policy"
+  echo "── $AGENT is already registered with the $PROFILE policy"
 else
-  echo "── set_agent($AGENT, zero-outflow policy)"
+  echo "── set_agent($AGENT, $PROFILE policy)"
   owner_call set_agent "{\"agent_id\":\"$AGENT\",\"policy\":$POLICY}" '1 yoctoNEAR'
 fi
 view get_policy "{\"owner_id\":\"$OWNER\"}"
@@ -403,7 +435,9 @@ helper policy-check "$WORK/get_policy.json" "$POLICY" || status=$?
 record "$status"
 vault_view
 LOCKED=$(helper json "$WORK/get_vault.json" 'v["withdrawals_locked_until"] or ""')
-if [ -z "$LOCKED" ]; then
+if [ "$LOCK_DAYS" = 0 ]; then
+  echo "── no withdrawal lock for the $PROFILE vault"
+elif [ -z "$LOCKED" ]; then
   NOW=$(block_time)
   LOCK_UNTIL=$(python3 -I -c 'import sys; print(int(sys.argv[1]) + int(sys.argv[2]) * 86400 * 10**9)' \
     "$NOW" "$LOCK_DAYS")
@@ -448,22 +482,42 @@ echo "    actual:    $([ "$IMPLICIT_STATE" = missing ] && echo "does not exist" 
 check "implicit account unused" [ "$IMPLICIT_STATE" = missing ]
 
 echo
-echo "== 4. Canary baseline"
+echo "== 4. $PROFILE baseline"
 vault_view
 echo "── get_vault($OWNER)"
 sed 's/^/    /' "$WORK/get_vault.json"
 echo
 check "agent is $AGENT" [ "$(helper json "$WORK/get_vault.json" 'v["agent_id"]')" = "$AGENT" ]
 check "not frozen" [ "$(helper json "$WORK/get_vault.json" 'v["frozen"]')" = false ]
-check "withdrawals locked" [ -n "$(helper json "$WORK/get_vault.json" 'v["withdrawals_locked_until"] or ""')" ]
+[ "$LOCK_DAYS" = 0 ] ||
+  check "withdrawals locked" [ -n "$(helper json "$WORK/get_vault.json" 'v["withdrawals_locked_until"] or ""')" ]
 BASELINE=$(helper json "$WORK/get_vault.json" 'v["balance"]')
-LOCKED=$(helper json "$WORK/get_vault.json" 'v["withdrawals_locked_until"]')
+LOCKED=$(helper json "$WORK/get_vault.json" 'v["withdrawals_locked_until"] or 0')
 echo "    baseline:  vault balance $BASELINE yoctoNEAR ($(helper near "$BASELINE")), no tokens"
-echo "    locked:    until $LOCKED ($(helper utc "$LOCKED"))"
+[ "$LOCK_DAYS" = 0 ] || echo "    locked:    until $LOCKED ($(helper utc "$LOCKED"))"
 
 echo
 echo "== Summary: $PASSED passed, $FAILED failed"
-[ "$FAILED" = 0 ] || die "not publishing a key for a canary that failed its checks"
+[ "$FAILED" = 0 ] || die "not publishing a key for a $PROFILE vault that failed its checks"
+
+if [ "$PROFILE" = demo ]; then
+  cat <<EOF
+
+================================================================================================
+DEMO AGENT KEY, FOR PUBLISHING (agent/README.md)
+
+  account:     $AGENT
+  public key:  $PUBLIC_KEY
+  private key: $PRIVATE_KEY
+
+The key can call only $FC_METHODS on $VAULT and spend at most $FC_ALLOWANCE on gas. Through
+the vault's policy it can pay only $MERCHANT, at most 0.01 NEAR per payment and 0.03 NEAR per
+24 hours. $OWNER's vault holds $(helper near "$BASELINE").
+Never send anything to $IMPLICIT_ACCOUNT, the implicit account this key also controls.
+================================================================================================
+EOF
+  exit 0
+fi
 
 cat <<EOF
 

@@ -6,7 +6,7 @@ import { Badge, Icon, RawRow, SectionMark, Skeleton, Traceable, TxLink } from ".
 import { Seal } from "../ui/Seal";
 import { useChainNow } from "../ui/useNow";
 import { AgentKeyCard } from "./AgentKeyCard";
-import { AttemptLog } from "./AttemptLog";
+import { AttemptLog, canarySubject, demoSubject } from "./AttemptLog";
 import { IntegrityCheck } from "./IntegrityCheck";
 import { RulesPanel } from "./RulesPanel";
 import { TryItSnippet } from "./TryItSnippet";
@@ -207,7 +207,8 @@ export function BoardPage() {
 
       <div className="board-grid">
         <div className="board-main">
-          <AttemptLog query={b.attempts} canary={canary} />
+          <AttemptLog query={b.attempts} subject={canarySubject(canary)} />
+          {b.demo && <AttemptLog query={b.demoAttempts} subject={demoSubject(b.demo)} />}
           {attempts !== undefined && attempts.length === 0 && <RulesPanel canary={canary} rulesUrl={canary.privateKeyUrl} />}
         </div>
         <div className="board-side">

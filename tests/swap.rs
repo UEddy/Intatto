@@ -10,7 +10,10 @@ mod common;
 use std::collections::HashMap;
 
 use common::*;
-use intatto::{AGENT_SWAP_TGAS, ExchangeLedger, Policy, PoolPolicy, RECLAIM_TGAS, TokenPolicy};
+use intatto::{
+    AGENT_SWAP_TGAS, ExchangeLedger, FEE_BPS, Policy, PoolPolicy, RECLAIM_TGAS, TokenPolicy,
+    split_fee,
+};
 use near_api::types::transaction::actions::{Action, FunctionCallAction, TransferAction};
 use near_api::types::transaction::result::TransactionResult;
 use near_api::{AccountId, NearGas, NearToken};
@@ -514,6 +517,52 @@ impl SwapEnv {
         Ok((lost, kept))
     }
 
+    /// The treasury's accrued fees in `token`.
+    async fn fees(&self, token: &AccountId) -> TestResult<u128> {
+        let fees: U128 = self
+            .env
+            .view_on(
+                self.env.vault_id(),
+                "get_fees",
+                json!({ "token_id": token }),
+            )
+            .await?;
+        Ok(fees.0)
+    }
+
+    /// `withdraw_fees` of `amount` USDT, signed by `caller` with `deposit` attached.
+    async fn withdraw_fees(
+        &self,
+        caller: &AccountId,
+        amount: u128,
+        deposit: NearToken,
+    ) -> TestResult<TransactionResult> {
+        let args = json!({ "token_id": self.usdt, "amount": amount.to_string() });
+        self.env
+            .call_on(
+                self.env.vault_id(),
+                caller,
+                "withdraw_fees",
+                args,
+                deposit,
+                tgas(100),
+            )
+            .await
+    }
+
+    /// The vault's own USDT holding is exactly the owners' balances plus the treasury's fees.
+    async fn assert_usdt_backed(&self, owners: &[&AccountId]) -> TestResult {
+        let mut owed = self.fees(&self.usdt).await?;
+        for owner in owners {
+            owed += self.token_of(owner, &self.usdt).await?.0;
+        }
+        assert_eq!(
+            self.ft_balance(&self.usdt, self.env.vault_id()).await?,
+            owed
+        );
+        Ok(())
+    }
+
     async fn assert_nothing_left_on_exchange(&self) -> TestResult {
         let deposits = self.exchange_deposits().await?;
         assert!(
@@ -535,13 +584,31 @@ async fn swap_through_the_real_exchange_credits_the_exact_output() -> TestResult
     assert_eq!(events(&result, "swap_initiated").len(), 1);
     let completed = events(&result, "swap_completed");
     assert_eq!(completed.len(), 1, "logs: {:?}", result.logs());
+    // The output, split into the owner's net and the 0.10% fee, which add up to it exactly.
+    let (net, fee) = split_fee(quote);
+    assert_eq!(fee, quote * u128::from(FEE_BPS) / 10_000);
+    assert!(fee > 0);
+    assert_eq!(net + fee, quote);
     assert_eq!(completed[0]["amount_out"], json!(quote.to_string()));
+    assert_eq!(completed[0]["fee"], json!(fee.to_string()));
+    assert_eq!(completed[0]["net"], json!(net.to_string()));
     assert_eq!(completed[0]["held_on_exchange"], false);
+    assert!(
+        result
+            .logs()
+            .iter()
+            .any(|log| log.contains(r#""version":"1.1.0","event":"swap_completed""#)),
+        "logs: {:?}",
+        result.logs()
+    );
     assert!(result.assert_success().json::<bool>()?);
 
-    // The owner is credited exactly what the exchange swapped, and the swap counts as a spend.
+    // The owner is credited the output less the fee, the treasury the fee, and the swap counts as
+    // a spend.
     assert_eq!(s.token(&s.wnear).await?, (units(near(4)), 0));
-    assert_eq!(s.token(&s.usdt).await?, (quote, 0));
+    assert_eq!(s.token(&s.usdt).await?, (net, 0));
+    assert_eq!(s.fees(&s.usdt).await?, fee);
+    assert_eq!(s.fees(&s.wnear).await?, 0);
     let spends = s.env.vault(&s.env.owner).await?.recent_spends;
     assert_eq!(spends.len(), 1);
     assert_eq!(spends[0].token_id.as_ref(), Some(&s.wnear));
@@ -549,6 +616,7 @@ async fn swap_through_the_real_exchange_credits_the_exact_output() -> TestResult
     // Nothing is left behind on the exchange, and the vault really holds what it credited.
     s.assert_nothing_left_on_exchange().await?;
     assert_eq!(s.ft_balance(&s.usdt, &vault).await?, quote);
+    s.assert_usdt_backed(&[&s.env.owner]).await?;
     assert_eq!(s.ft_balance(&s.wnear, &vault).await?, units(near(4)));
 
     // The owner can take the output out, even while frozen.
@@ -556,14 +624,25 @@ async fn swap_through_the_real_exchange_credits_the_exact_output() -> TestResult
         .call(&s.env.owner, "freeze", json!({}), NO_DEPOSIT)
         .await?
         .assert_success();
+    // The owner cannot withdraw the fee's share.
     let args = json!({ "token_id": s.usdt, "amount": quote.to_string() });
+    assert_fails_with(
+        s.env
+            .call(&s.env.owner, "withdraw_token", args, ONE_YOCTO)
+            .await?,
+        "exceeds the vault's",
+    );
+    let args = json!({ "token_id": s.usdt, "amount": net.to_string() });
     let result = s
         .env
         .call(&s.env.owner, "withdraw_token", args, ONE_YOCTO)
         .await?;
     assert!(result.assert_success().json::<bool>()?);
-    assert_eq!(s.ft_balance(&s.usdt, &s.env.owner).await?, quote);
+    assert_eq!(s.ft_balance(&s.usdt, &s.env.owner).await?, net);
     assert_eq!(s.token(&s.usdt).await?, (0, 0));
+    // What is left in the vault is exactly the fee.
+    assert_eq!(s.ft_balance(&s.usdt, &vault).await?, fee);
+    s.assert_usdt_backed(&[&s.env.owner]).await?;
     Ok(())
 }
 
@@ -581,6 +660,9 @@ async fn swap_below_min_amount_out_is_refunded() -> TestResult {
     assert!(events(&result, "swap_completed").is_empty());
     assert!(!result.assert_success().json::<bool>()?);
 
+    // No output, no fee.
+    assert_eq!(s.fees(&s.usdt).await?, 0);
+    assert_eq!(s.fees(&s.wnear).await?, 0);
     assert_eq!(s.token(&s.wnear).await?, (units(near(5)), 0));
     assert!(s.env.vault(&s.env.owner).await?.recent_spends.is_empty());
     s.assert_nothing_left_on_exchange().await?;
@@ -609,6 +691,8 @@ async fn swap_whose_deposit_fails_is_refunded() -> TestResult {
     assert_eq!(refunded[0]["failed_step"], "deposit");
     assert_eq!(refunded[0]["held_on_exchange"], false);
     assert!(!result.assert_success().json::<bool>()?);
+    assert_eq!(s.fees(&s.usdt).await?, 0);
+    assert_eq!(s.fees(&s.wnear).await?, 0);
 
     assert_eq!(s.token(&s.wnear).await?, (units(near(5)), 0));
     assert!(s.env.vault(&s.env.owner).await?.recent_spends.is_empty());
@@ -636,8 +720,12 @@ async fn undelivered_output_is_held_then_reclaimed() -> TestResult {
     let completed = events(&result, "swap_completed");
     assert_eq!(completed.len(), 1, "logs: {:?}", result.logs());
     assert_eq!(completed[0]["held_on_exchange"], true);
+    // Output the vault does not hold carries no fee: all of it is the owner's.
+    assert_eq!(completed[0]["fee"], "0");
+    assert_eq!(completed[0]["net"], json!(quote.to_string()));
     assert!(result.assert_success().json::<bool>()?);
     assert_eq!(s.token(&s.usdt).await?, (0, quote));
+    assert_eq!(s.fees(&s.usdt).await?, 0);
     let deposits = s.exchange_deposits().await?;
     assert_eq!(deposits.get(s.usdt.as_str()), Some(&U128(quote)));
 
@@ -647,9 +735,180 @@ async fn undelivered_output_is_held_then_reclaimed() -> TestResult {
     assert_eq!(reclaimed[0]["succeeded"], true);
     assert!(result.assert_success().json::<bool>()?);
 
+    // Reclaimed in full: still no fee.
     assert_eq!(s.token(&s.usdt).await?, (quote, 0));
+    assert_eq!(s.fees(&s.usdt).await?, 0);
     s.assert_nothing_left_on_exchange().await?;
     assert_eq!(s.ft_balance(&s.usdt, &vault).await?, quote);
+    s.assert_usdt_backed(&[&s.env.owner]).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn tiny_swap_output_carries_no_fee() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let amount_in = 500;
+    let quote = s.quote(amount_in).await?;
+    // An output under 1000 units: 10 bps of it rounds down to 0.
+    assert!(quote > 0 && quote < 1_000, "quote {quote}");
+    let result = s.agent_swap(amount_in, quote).await?;
+    let completed = events(&result, "swap_completed");
+    assert_eq!(completed.len(), 1, "logs: {:?}", result.logs());
+    assert_eq!(completed[0]["fee"], "0");
+    assert_eq!(completed[0]["net"], json!(quote.to_string()));
+    assert!(result.assert_success().json::<bool>()?);
+    assert_eq!(s.token(&s.usdt).await?, (quote, 0));
+    assert_eq!(s.fees(&s.usdt).await?, 0);
+    s.assert_usdt_backed(&[&s.env.owner]).await
+}
+
+#[tokio::test]
+async fn treasury_withdraws_only_accrued_fees_and_nobody_else_can() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let other = s.env.stranger.clone();
+    s.add_owner(&other).await?;
+    let first = s.swap_at_quote(&s.env.owner, units(near(1))).await?;
+    let second = s.swap_at_quote(&other, units(near(2))).await?;
+    let fee = split_fee(first).1 + split_fee(second).1;
+    assert_eq!(s.fees(&s.usdt).await?, fee);
+    let owners = [&s.env.owner, &other];
+    s.assert_usdt_backed(&owners).await?;
+    let before = (
+        s.token_of(&s.env.owner, &s.usdt).await?,
+        s.token_of(&other, &s.usdt).await?,
+    );
+
+    // Nobody but the treasury, and only with exactly 1 yoctoNEAR.
+    for caller in [&s.env.owner, &other, &s.env.agent, &s.env.merchant] {
+        assert_fails_with(
+            s.withdraw_fees(caller, 1, ONE_YOCTO).await?,
+            "Only the treasury account can withdraw fees",
+        );
+    }
+    let treasury = s.env.treasury.clone();
+    assert_fails_with(
+        s.withdraw_fees(&treasury, 1, NO_DEPOSIT).await?,
+        "Requires attached deposit of exactly 1 yoctoNEAR",
+    );
+    // Never more than accrued, though the vault holds both owners' USDT too.
+    assert!(s.ft_balance(&s.usdt, s.env.vault_id()).await? > fee + 1);
+    assert_fails_with(
+        s.withdraw_fees(&treasury, fee + 1, ONE_YOCTO).await?,
+        &format!("exceeds the accrued {} fees of {fee}", s.usdt),
+    );
+
+    // The treasury is not registered with USDT yet: the transfer fails and is credited back.
+    let result = s.withdraw_fees(&treasury, fee, ONE_YOCTO).await?;
+    assert_eq!(events(&result, "fees_withdrawn").len(), 1);
+    assert_eq!(
+        events(&result, "fees_withdraw_refunded").len(),
+        1,
+        "logs: {:?}",
+        result.logs()
+    );
+    assert!(!result.assert_success().json::<bool>()?);
+    assert_eq!(s.fees(&s.usdt).await?, fee);
+    s.assert_usdt_backed(&owners).await?;
+
+    // Registered, it receives exactly the fees, and no owner's balance moves.
+    s.register(&s.usdt, &treasury).await?;
+    let result = s.withdraw_fees(&treasury, fee, ONE_YOCTO).await?;
+    let withdrawn = events(&result, "fees_withdrawn");
+    assert_eq!(withdrawn.len(), 1, "logs: {:?}", result.logs());
+    assert_eq!(withdrawn[0]["treasury_id"], json!(treasury));
+    assert_eq!(withdrawn[0]["amount"], json!(fee.to_string()));
+    assert!(result.assert_success().json::<bool>()?);
+    assert_eq!(s.ft_balance(&s.usdt, &treasury).await?, fee);
+    assert_eq!(s.fees(&s.usdt).await?, 0);
+    let after = (
+        s.token_of(&s.env.owner, &s.usdt).await?,
+        s.token_of(&other, &s.usdt).await?,
+    );
+    assert_eq!(after, before);
+    s.assert_usdt_backed(&owners).await?;
+    // Nothing left to take.
+    assert_fails_with(
+        s.withdraw_fees(&treasury, 1, ONE_YOCTO).await?,
+        &format!("exceeds the accrued {} fees of 0", s.usdt),
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn fee_views_report_the_constant_and_the_treasury() -> TestResult {
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let vault = s.env.vault_id();
+    let bps: u16 = s.env.view_on(vault, "get_fee_bps", json!({})).await?;
+    assert_eq!(bps, 10);
+    let treasury: Option<AccountId> = s.env.view_on(vault, "get_treasury_id", json!({})).await?;
+    assert_eq!(treasury.as_ref(), Some(&s.env.treasury));
+    Ok(())
+}
+
+/// The code vault-v1 runs (J5Mo…, the reproducible build of b85cece), with a vault, a policy, a
+/// token balance, a completed swap and a withdrawal lock written by it, then replaced by this
+/// build. Everything reads back unchanged. The upgraded vault has no treasury (J5Mo's `new` had
+/// none, and nothing can set one), so fees from later swaps accrue but cannot be withdrawn.
+#[tokio::test]
+async fn j5mo_state_survives_a_code_upgrade_and_later_swaps_pay_the_fee() -> TestResult {
+    let j5mo = res_wasm("intatto_j5mo.wasm", J5MO_SHA256);
+    let s = SwapEnv::on_code(j5mo, FULLY_REGISTERED).await?;
+    let vault = s.env.vault_id().clone();
+    let owner = s.env.owner.clone();
+    let first = s.swap_at_quote(&owner, units(near(1))).await?;
+    assert_eq!(s.token(&s.usdt).await?, (first, 0)); // J5Mo charges no fee
+    let until = s.env.block_timestamp().await? + 30 * 24 * HOUR_NS;
+    s.env
+        .call(
+            &owner,
+            "lock_withdrawals_until",
+            json!({ "timestamp_ns": until.to_string() }),
+            ONE_YOCTO,
+        )
+        .await?
+        .assert_success();
+    let before = s.env.vault_json(&owner).await?;
+    let ledger_before = s.usdt_ledger().await?;
+
+    near_api::Contract::deploy(vault.clone())
+        .use_code(contract_wasm())
+        .without_init_call()
+        .with_signer(s.env.signer.clone())
+        .send_to(&s.env.network)
+        .await?
+        .assert_success();
+
+    assert_eq!(s.env.vault_json(&owner).await?, before);
+    assert_eq!(s.usdt_ledger().await?, ledger_before);
+    let exchange: AccountId = s.env.view_on(&vault, "get_exchange_id", json!({})).await?;
+    assert_eq!(exchange.as_str(), EXCHANGE);
+    let treasury: Option<AccountId> = s.env.view_on(&vault, "get_treasury_id", json!({})).await?;
+    assert_eq!(treasury, None);
+    assert_eq!(s.fees(&s.usdt).await?, 0);
+
+    // The agent keeps its policy, and the next swap pays the fee.
+    let second = s.swap_at_quote(&owner, units(near(1))).await?;
+    let (net, fee) = split_fee(second);
+    assert_eq!(s.token(&s.usdt).await?, (first + net, 0));
+    assert_eq!(s.fees(&s.usdt).await?, fee);
+    s.assert_usdt_backed(&[&owner]).await?;
+    // The lock still binds the owner, and nobody can withdraw the fees.
+    assert_fails_with(
+        s.env
+            .call(
+                &owner,
+                "withdraw_token",
+                json!({ "token_id": s.usdt, "amount": "1" }),
+                ONE_YOCTO,
+            )
+            .await?,
+        &format!("Withdrawals are locked until {until}"),
+    );
+    let treasury = s.env.treasury.clone();
+    assert_fails_with(
+        s.withdraw_fees(&treasury, 1, ONE_YOCTO).await?,
+        "This vault has no treasury account",
+    );
     Ok(())
 }
 
@@ -769,7 +1028,15 @@ async fn min_amount_out_at_the_slippage_floor_is_accepted() -> TestResult {
     assert_eq!(completed[0]["amount_out"], json!(quote.to_string()));
     assert!(result.assert_success().json::<bool>()?);
     assert_eq!(s.token(&s.wnear).await?, (units(near(4)), 0));
-    assert_eq!(s.token(&s.usdt).await?, (quote, 0));
+    // The floor bounds the gross output; the owner gets it less the 0.10% fee. At worst (output
+    // exactly at the floor) that is the floor less 10 bps: max_slippage_bps + 10 bps in all.
+    let (net, fee) = split_fee(quote);
+    assert_eq!(s.token(&s.usdt).await?, (net, 0));
+    assert_eq!(s.fees(&s.usdt).await?, fee);
+    let (worst_net, _) = split_fee(floor);
+    assert!(
+        worst_net >= quote * (10_000 - u128::from(MAX_SLIPPAGE_BPS) - u128::from(FEE_BPS)) / 10_000
+    );
     assert_eq!(s.env.vault(&s.env.owner).await?.recent_spends.len(), 1);
     s.assert_nothing_left_on_exchange().await
 }
@@ -1003,6 +1270,10 @@ async fn zero_outflow_policy_rejects_everything_the_agent_can_try() -> TestResul
         (
             "on_reclaim_complete",
             json!({ "owner_id": owner, "token_id": s.usdt, "amount": big }),
+        ),
+        (
+            "on_fees_withdraw_complete",
+            json!({ "treasury_id": s.env.agent, "token_id": s.usdt, "amount": big }),
         ),
     ];
     for (method, args) in callbacks {

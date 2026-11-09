@@ -34,6 +34,35 @@ describe("vault events", () => {
     } else throw new Error("expected swap_rejected");
   });
 
+  const ticket = { spend_id: "3", owner_id: "o.testnet", pool_id: 0, token_in: "wrap.testnet", token_out: "usdt.testnet", amount_in: "100", min_amount_out: "10000" };
+  const completed = (version: string, data: Record<string, unknown>) =>
+    `EVENT_JSON:${JSON.stringify({ standard: "intatto", version, event: "swap_completed", data: { swap: ticket, held_on_exchange: false, ...data } })}`;
+
+  it("read swap_completed 1.1.0 with its fee and net, and 1.0.0 without", () => {
+    const v11 = parseLog(completed("1.1.0", { amount_out: "10000", fee: "10", net: "9990" }));
+    expect(v11).toMatchObject({ kind: "event", event: { event: "swap_completed", data: { amount_out: "10000", fee: "10", net: "9990" } } });
+    const v10 = parseLog(completed("1.0.0", { amount_out: "10000" }));
+    expect(v10).toMatchObject({ kind: "event", event: { event: "swap_completed", data: { amount_out: "10000" } } });
+    if (v10.kind === "event" && v10.event.event === "swap_completed") expect(v10.event.data.fee).toBeUndefined();
+  });
+
+  it("refuse a swap_completed whose fields do not match its version, or whose split does not add up", () => {
+    expect(parseLog(completed("1.1.0", { amount_out: "10000" }))).toMatchObject({ kind: "unrecognised", version: "1.1.0" });
+    expect(parseLog(completed("1.0.0", { amount_out: "10000", fee: "10", net: "9990" }))).toMatchObject({ kind: "unrecognised" });
+    expect(parseLog(completed("1.1.0", { amount_out: "10000", fee: "10", net: "9991" }))).toMatchObject({ kind: "unrecognised" });
+    // Only swap_completed has a 1.1.0.
+    expect(parseLog('EVENT_JSON:{"standard":"intatto","version":"1.1.0","event":"frozen","data":{"owner_id":"a.testnet"}}')).toMatchObject({ kind: "unrecognised" });
+  });
+
+  it("read fee withdrawals as treasury events, not any owner's", () => {
+    const log = 'EVENT_JSON:{"standard":"intatto","version":"1.0.0","event":"fees_withdrawn","data":{"treasury_id":"t.testnet","token_id":"usdt.testnet","amount":"10"}}';
+    const p = parseLog(log);
+    expect(p).toMatchObject({ kind: "event", event: { event: "fees_withdrawn" } });
+    if (p.kind === "event") expect(eventOwner(p.event)).toBeNull();
+    const refunded = parseLog(log.replace("fees_withdrawn", "fees_withdraw_refunded"));
+    expect(refunded).toMatchObject({ kind: "event", event: { event: "fees_withdraw_refunded" } });
+  });
+
   it("keep intatto events it cannot read instead of dropping them", () => {
     expect(parseLog('EVENT_JSON:{"standard":"intatto","version":"2.0.0","event":"frozen","data":{}}')).toMatchObject({ kind: "unrecognised", version: "2.0.0" });
     expect(parseLog('EVENT_JSON:{"standard":"intatto","version":"1.0.0","event":"frozen","data":{"owner_id":5}}')).toMatchObject({ kind: "unrecognised" });

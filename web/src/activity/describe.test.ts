@@ -29,6 +29,28 @@ describe("activity feed lines", () => {
     expect(swap.text).toMatch(/^Agent swapped 0\.1 wNEAR for 0\.124161… USDT in pool #1084\.$/);
   });
 
+  it("shows the gross output, the owner's net and the protocol fee from swap_completed 1.1.0 on", () => {
+    // The real 5KeU… swap, its swap_completed log rewritten as the fee build logs it.
+    const gross = 124161233475233043857166n;
+    const fee = (gross * 10n) / 10000n;
+    const withFee = txs.map((tx) => ({
+      ...tx,
+      receipts: tx.receipts.map((r) => ({
+        ...r,
+        logs: r.logs.map((l) => {
+          if (!l.includes('"event":"swap_completed"')) return l;
+          const e = JSON.parse(l.slice("EVENT_JSON:".length));
+          e.version = "1.1.0";
+          e.data.fee = fee.toString();
+          e.data.net = (gross - fee).toString();
+          return `EVENT_JSON:${JSON.stringify(e)}`;
+        }),
+      })),
+    }));
+    const swap = describeActivity(withFee, "intatto-dev.testnet", VAULT, tokens).find((f) => f.label === "Swapped")!;
+    expect(swap.text).toMatch(/^Agent swapped 0\.1 wNEAR for 0\.124161… USDT in pool #1084: 0\.124037… USDT to the vault, 0\.000124… USDT protocol fee\.$/);
+  });
+
   it("does not quote caps it has not seen", () => {
     // Without the agent_set transaction in the loaded history, no cap is invented.
     const withoutSetAgent = txs.filter((t) => !t.actions.some((a) => a.kind === "FunctionCall" && a.methodName === "set_agent"));

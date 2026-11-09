@@ -40,6 +40,21 @@ export interface CanaryConfig {
   } | null;
 }
 
+/**
+ * The prompt-injection demo (agent/README.md): an owner whose agent may pay one merchant within
+ * small caps, with the agent's function-call key published so anyone can rerun the demo.
+ */
+export interface DemoConfig {
+  /** The vault contract the demo owner uses (the fee build, vault-v2). */
+  readonly vaultId: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  /** The agent's published function-call key. */
+  readonly agentPublicKey: string;
+  /** The only receiver the demo policy allows. */
+  readonly merchantId: string;
+}
+
 export interface ExpectedBuild {
   /** base58 sha256 of the published reproducible build, as NEAR reports `code_hash`. */
   readonly codeHash: string;
@@ -78,6 +93,8 @@ export interface NetworkConfig {
   readonly pool: { readonly id: number; readonly tokenIds: readonly [string, string] };
   readonly tokens: readonly TokenConfig[];
   readonly canary: CanaryConfig | null;
+  /** Null until the demo vault is set up (scripts/canary-testnet.sh with PROFILE=demo). */
+  readonly demo: DemoConfig | null;
   readonly expectedBuild: ExpectedBuild | null;
   readonly repoUrl: string;
   /** Average block time measured over 10k blocks, for "about N blocks" estimates only. */
@@ -131,6 +148,8 @@ export const TESTNET: NetworkConfig = {
       codeHash: "J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL",
     },
   },
+  // Set from the output of `PROFILE=demo scripts/canary-testnet.sh` once vault-v2 is deployed.
+  demo: null,
   // `cargo near build reproducible-wasm` of the pushed commit below, in a fresh clone
   // (2026-11-08); vault-v1 runs it since the upgrade in canary.run.
   expectedBuild: {
@@ -169,6 +188,7 @@ export const MAINNET: NetworkConfig = {
   ],
   // Not set up yet.
   canary: null,
+  demo: null,
   expectedBuild: null,
   repoUrl: REPO,
   blockTimeMs: 581,

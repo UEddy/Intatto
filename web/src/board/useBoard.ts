@@ -95,5 +95,17 @@ export function useBoard() {
     },
   });
 
-  return { enabled, canary, vaultId, block, vault, code, sourceMeta, baseline, run, agentKey, attempts };
+  // The prompt-injection demo's agent, on its own vault: every transaction its published key signed.
+  const demo = config.demo;
+  const demoAttempts = useQuery({
+    queryKey: [net, "attempts", demo?.agentId, demo?.vaultId],
+    enabled: demo !== null && block.data !== undefined,
+    refetchInterval: ATTEMPTS_POLL_MS,
+    queryFn: async () => {
+      const r = await indexer.activity(demo!.agentId, { limit: 50, signerOnly: true, finalBlockTimestampNs: block.data!.timestampNs });
+      return { attempts: attemptsFrom(r.txs, demo!, demo!.vaultId), sources: r.sources, more: r.next !== null };
+    },
+  });
+
+  return { enabled, canary, vaultId, block, vault, code, sourceMeta, baseline, run, agentKey, attempts, demo, demoAttempts };
 }

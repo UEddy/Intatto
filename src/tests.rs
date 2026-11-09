@@ -27,6 +27,9 @@ fn wnear() -> AccountId {
 fn usdt() -> AccountId {
     "usdt.near".parse().unwrap()
 }
+fn treasury() -> AccountId {
+    "treasury.near".parse().unwrap()
+}
 
 fn set_context(predecessor: AccountId, deposit: NearToken, timestamp: u64) {
     set_context_with_gas(predecessor, deposit, timestamp, Gas::from_tgas(300));
@@ -75,7 +78,7 @@ fn policy(allowlist: Vec<AccountId>) -> Policy {
 
 /// A vault holding ~10 NEAR and 1000 wNEAR, with `policy` for the agent.
 fn setup() -> Contract {
-    let mut contract = Contract::new(exchange());
+    let mut contract = Contract::new(exchange(), treasury());
     set_context(owner(), NearToken::from_near(10), T0);
     contract.deposit();
     set_context(owner(), NearToken::from_yoctonear(1), T0);
@@ -296,6 +299,13 @@ fn ledger_entry_cost(token_id: &AccountId) -> NearToken {
     storage_cost((key.len() + value.len() + 40) as u64)
 }
 
+/// What a new treasury fee entry costs: key `b"f"` + Borsh token id, a `U128` value, and the
+/// runtime's 40 bytes of overhead per record.
+fn fee_entry_cost(token_id: &AccountId) -> NearToken {
+    let key = [b"f".to_vec(), near_sdk::borsh::to_vec(token_id).unwrap()].concat();
+    storage_cost((key.len() + 16 + 40) as u64)
+}
+
 /// What one NEAR spend's entry in `recent_spends` costs in storage.
 fn spend_record_cost() -> NearToken {
     borsh_cost(&Spend {
@@ -439,7 +449,7 @@ fn refund_after_its_entry_aged_out_only_restores_the_balance() {
 
 #[test]
 fn policy_storage_is_charged_and_refunded_to_the_vault() {
-    let mut contract = Contract::new(exchange());
+    let mut contract = Contract::new(exchange(), treasury());
     set_context(owner(), NearToken::from_near(10), T0);
     contract.deposit();
     let after_deposit = vault(&contract).balance;
@@ -474,7 +484,7 @@ fn policy_storage_is_charged_and_refunded_to_the_vault() {
 #[test]
 #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
 fn set_agent_requires_one_yocto() {
-    let mut contract = Contract::new(exchange());
+    let mut contract = Contract::new(exchange(), treasury());
     set_context(owner(), NearToken::from_near(10), T0);
     contract.deposit();
     set_context(owner(), NearToken::from_yoctonear(0), T0);
@@ -531,7 +541,7 @@ fn set_agent_rejects_duplicate_tokens() {
 
 #[test]
 fn token_deposit_credits_the_sender_and_pays_its_storage() {
-    let mut contract = Contract::new(exchange());
+    let mut contract = Contract::new(exchange(), treasury());
     set_context(owner(), NearToken::from_near(10), T0);
     contract.deposit();
     set_context(owner(), NearToken::from_yoctonear(1), T0);
@@ -610,12 +620,13 @@ fn swap_deducts_records_and_pays_storage_once_quoted() {
         amount: U128(100),
     };
     assert_eq!(vault.recent_spends, std::slice::from_ref(&record));
-    // The swap's record, its output's new balance entry and the first ledger entries of both
-    // tokens are all charged to the owner.
+    // The swap's record, its output's new balance entry, the first ledger entries of both tokens
+    // and the treasury's fee entry for the output are all charged to the owner.
     let storage = borsh_cost(&record)
         .checked_add(borsh_cost(&token(&contract, &usdt())))
         .and_then(|cost| cost.checked_add(ledger_entry_cost(&wnear())))
         .and_then(|cost| cost.checked_add(ledger_entry_cost(&usdt())))
+        .and_then(|cost| cost.checked_add(fee_entry_cost(&usdt())))
         .unwrap();
     assert_eq!(vault.balance, near_before.checked_sub(storage).unwrap());
 }
@@ -1319,4 +1330,226 @@ fn ledger_underflow_is_logged_and_clamped_without_panicking() {
             .any(|log| log.contains(r#""event":"exchange_ledger_underflow""#)),
         "{logs:?}"
     );
+}
+
+/* ---------- protocol fee ---------- */
+
+/// The treasury's accrued USDT fees.
+fn fees(contract: &Contract) -> u128 {
+    contract.get_fees(usdt()).0
+}
+
+/// A delivered swap of 100 wNEAR whose output is `amount_out` USDT, so the treasury accrues
+/// `split_fee(amount_out).1`.
+fn accrue_fees(contract: &mut Contract, amount_out: u128) {
+    swap_to_output(contract, owner(), 0, 100, amount_out, true, T0);
+}
+
+fn withdraw_fees_as(contract: &mut Contract, caller: AccountId, deposit: u128, amount: u128) {
+    set_context(caller, NearToken::from_yoctonear(deposit), T0 + 20);
+    contract.withdraw_fees(usdt(), U128(amount)).detach();
+}
+
+#[test]
+fn fee_is_ten_bps_and_within_the_hard_cap() {
+    assert_eq!(FEE_BPS, 10);
+    assert_eq!(MAX_FEE_BPS, 10);
+    let contract = setup();
+    assert_eq!(contract.get_fee_bps(), FEE_BPS);
+    assert_eq!(contract.get_treasury_id(), Some(treasury()));
+}
+
+#[test]
+fn fee_split_rounds_down_and_always_adds_up() {
+    // (amount_out, net, fee)
+    let cases = [
+        (0, 0, 0),
+        (1, 1, 0),
+        (999, 999, 0), // 999 * 10 < 10000: no fee
+        (1_000, 999, 1),
+        (1_999, 1_998, 1),
+        (9_999, 9_990, 9),
+        (10_000, 9_990, 10),
+        (
+            10_000_000_000_000_000_000_000_000,
+            9_990_000_000_000_000_000_000_000,
+            10_000_000_000_000_000_000_000,
+        ),
+    ];
+    for (amount_out, net, fee) in cases {
+        assert_eq!(split_fee(amount_out), (net, fee), "amount_out {amount_out}");
+    }
+    // Exactly floor(amount_out * 10 / 10000), and net + fee == amount_out, wherever the product fits.
+    for amount_out in (0..50_000u128).chain([u128::MAX / 10 - 1, u128::MAX / 10]) {
+        let (net, fee) = split_fee(amount_out);
+        assert_eq!(
+            fee,
+            amount_out * u128::from(FEE_BPS) / 10_000,
+            "amount_out {amount_out}"
+        );
+        assert_eq!(net + fee, amount_out);
+    }
+    // No overflow at the top of the range either.
+    let (net, fee) = split_fee(u128::MAX);
+    assert_eq!(net.checked_add(fee), Some(u128::MAX));
+    assert_eq!(
+        fee,
+        u128::MAX / 10_000 * 10 + (u128::MAX % 10_000) * 10 / 10_000
+    );
+}
+
+#[test]
+fn delivered_output_credits_net_to_the_owner_and_the_fee_to_the_treasury() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 10_000);
+    assert_eq!(token(&contract, &usdt()).balance, U128(9_990));
+    assert_eq!(token(&contract, &usdt()).on_exchange, U128(0));
+    assert_eq!(fees(&contract), 10);
+    // The whole output was withdrawn to the vault: nothing is expected on the exchange.
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 0));
+}
+
+#[test]
+fn output_held_on_the_exchange_carries_no_fee() {
+    let mut contract = setup();
+    swap_to_output(&mut contract, owner(), 0, 100, 10_000, false, T0);
+    assert_eq!(token(&contract, &usdt()).balance, U128(0));
+    assert_eq!(token(&contract, &usdt()).on_exchange, U128(10_000));
+    assert_eq!(fees(&contract), 0);
+    assert_eq!(ledger_of(&contract, &usdt()), (10_000, 0));
+}
+
+#[test]
+fn tiny_output_carries_no_fee() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 999);
+    assert_eq!(token(&contract, &usdt()).balance, U128(999));
+    assert_eq!(fees(&contract), 0);
+}
+
+#[test]
+fn refunded_swaps_carry_no_fee() {
+    let mut contract = setup();
+    // The exchange's swap fails (e.g. below min_amount_out), and the refund arrives.
+    swap(&mut contract, 100, T0);
+    as_vault();
+    expect_promise(contract.on_swap_deposited(ticket(0, 100), Ok(U128(100))));
+    as_vault();
+    expect_promise(contract.on_swap_executed(ticket(0, 100), Err(PromiseError::Failed)));
+    as_vault();
+    assert!(!contract.on_swap_refund_withdrawn(
+        ticket(0, 100),
+        U128(100),
+        SwapStep::Swap,
+        Ok(U128(100))
+    ));
+    // The deposit fails outright.
+    swap(&mut contract, 100, T0 + 1);
+    as_vault();
+    let refunded = contract.on_swap_deposited(ticket(1, 100), Ok(U128(0)));
+    assert!(matches!(refunded, PromiseOrValue::Value(false)));
+    assert_eq!(token(&contract, &wnear()).balance, U128(1_000));
+    assert_eq!(fees(&contract), 0);
+}
+
+#[test]
+fn treasury_withdraws_accrued_fees_without_touching_owner_balances() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    assert_eq!(fees(&contract), 100);
+    let owner_before = vault(&contract);
+
+    withdraw_fees_as(&mut contract, treasury(), 1, 60);
+    assert_eq!(fees(&contract), 40);
+    assert_eq!(vault(&contract).tokens, owner_before.tokens);
+    assert_eq!(vault(&contract).balance, owner_before.balance);
+    assert_eq!(ledger_of(&contract, &usdt()), (0, 0));
+
+    // A successful transfer changes nothing more.
+    as_vault();
+    assert!(contract.on_fees_withdraw_complete(treasury(), usdt(), U128(60), Ok(())));
+    assert_eq!(fees(&contract), 40);
+}
+
+#[test]
+fn failed_fee_transfer_is_credited_back_once() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    withdraw_fees_as(&mut contract, treasury(), 1, 100);
+    assert_eq!(fees(&contract), 0);
+    as_vault();
+    assert!(!contract.on_fees_withdraw_complete(
+        treasury(),
+        usdt(),
+        U128(100),
+        Err(PromiseError::Failed)
+    ));
+    assert_eq!(fees(&contract), 100);
+    assert_eq!(token(&contract, &usdt()).balance, U128(99_900));
+}
+
+#[test]
+#[should_panic(expected = "exceeds the accrued usdt.near fees of 100")]
+fn treasury_cannot_withdraw_more_than_accrued() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    // The vault holds 99,900 USDT of the owner's, but the treasury is owed only 100.
+    withdraw_fees_as(&mut contract, treasury(), 1, 101);
+}
+
+#[test]
+#[should_panic(expected = "exceeds the accrued wnear.near fees of 0")]
+fn treasury_cannot_withdraw_a_token_with_no_fees() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    // The vault holds the owner's wNEAR, none of it fees.
+    set_context(treasury(), NearToken::from_yoctonear(1), T0 + 20);
+    contract.withdraw_fees(wnear(), U128(1)).detach();
+}
+
+#[test]
+#[should_panic(expected = "Only the treasury account can withdraw fees")]
+fn owner_cannot_withdraw_fees() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    withdraw_fees_as(&mut contract, owner(), 1, 1);
+}
+
+#[test]
+#[should_panic(expected = "Only the treasury account can withdraw fees")]
+fn agent_cannot_withdraw_fees() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    withdraw_fees_as(&mut contract, agent(), 1, 1);
+}
+
+#[test]
+#[should_panic(expected = "Only the treasury account can withdraw fees")]
+fn the_contract_itself_cannot_withdraw_fees() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    withdraw_fees_as(&mut contract, contract_id(), 1, 1);
+}
+
+#[test]
+#[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+fn fee_withdrawal_needs_exactly_one_yocto() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    withdraw_fees_as(&mut contract, treasury(), 0, 1);
+}
+
+#[test]
+#[should_panic(expected = "Withdrawal amount must be greater than zero")]
+fn zero_fee_withdrawal_is_rejected() {
+    let mut contract = setup();
+    accrue_fees(&mut contract, 100_000);
+    withdraw_fees_as(&mut contract, treasury(), 1, 0);
+}
+
+#[test]
+#[should_panic(expected = "The treasury cannot be the vault contract itself")]
+fn treasury_cannot_be_the_contract() {
+    set_context(owner(), NearToken::from_yoctonear(0), T0);
+    let _ = Contract::new(exchange(), contract_id());
 }

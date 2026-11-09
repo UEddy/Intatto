@@ -4,6 +4,10 @@ This covers the vault contract in `src/`, deployed on testnet as `vault-v1.intat
 with `exchange_id = ref-finance-101.testnet` (Rhea / Ref V1, ref-exchange 1.9.19). It is a
 working document, not an audit.
 
+vault-v1 runs the build without the swap fee (code hash `J5Mo…`). The fee build (invariants 12
+and 13) is not deployed yet. It goes to a fresh testnet account, vault-v2, initialized with
+`new(exchange_id, treasury_id)`, so vault-v1 and its canary are left as they are.
+
 ## What the contract is
 
 One contract holds many owners' vaults. Each vault keeps an owner's NEAR and NEP-141 tokens, and
@@ -36,13 +40,15 @@ caller's own vault and cannot name another one.
    every check in 2 against the vault as it is at that moment. A freeze, policy change or agent
    change made while the quote is in flight therefore applies to that swap.
 4. **Money leaves an owner's balance only in these ways:** an owner withdrawal, an agent spend or
-   swap allowed by 2 and 3, or storage for that owner's own record. Every debit is made before
+   swap allowed by 2 and 3 (whose output is credited less the fixed fee of invariant 12), or
+   storage for that owner's own record. Every debit is made before
    the transfer or deposit that sends the money. A failed transfer or swap is credited back
    exactly once, and its spend record is removed so it stops counting toward the limits.
-5. **Swap output is credited exactly as reported.** The owner is credited the amount the
-   exchange's `swap` returned, and only after the exchange's `withdraw` confirmed delivery to
-   the vault. If the withdrawal fails, the amount is recorded as `on_exchange` for the owner to
-   reclaim later; it is never credited twice.
+5. **Swap output is credited exactly as reported.** The exchange's `swap` return value is split
+   into the owner's `net` and the treasury's `fee`, which add up to it exactly (invariant 12).
+   This happens only after the exchange's `withdraw` confirmed delivery to the vault. If the
+   withdrawal fails, the whole amount is recorded as the owner's `on_exchange` for them to
+   reclaim later, with no fee. It is never credited twice.
 6. **Callbacks cannot be called from outside.** Every `on_*` method is `#[private]`: only the
    contract itself can call it.
 7. **Tokens are credited only for tokens the owner listed.** `ft_on_transfer` credits the
@@ -70,6 +76,31 @@ caller's own vault and cannot name another one.
     - It also refuses if a swap or reclaim of the token is in flight, or started between the
       query and the check. In that case the balance it read could be stale.
     - Otherwise it withdraws only the caller's own `on_exchange` amount.
+
+12. **The swap fee is fixed in the code and taken only from delivered swap output.**
+    - `FEE_BPS = 10` (0.10%) is a compile-time constant. A compile-time assertion keeps it at or
+      below `MAX_FEE_BPS = 10`. No method sets or changes it; `get_fee_bps` reports it, and the
+      code hash pins it.
+    - When a swap's output reaches the vault, the owner is credited `net` and the treasury `fee`,
+      with `fee = floor(amount_out × 10 / 10000)` and `net + fee == amount_out` exactly. The math
+      cannot overflow for any `u128`, and the callback cannot panic on it. An output below 1000
+      units carries no fee.
+    - Output left on the exchange (a failed withdrawal, recorded as `on_exchange`) carries no
+      fee, and neither does its later reclaim. So the treasury is owed only tokens the vault
+      itself holds.
+    - Refunded swaps, `agent_spend`, deposits, withdrawals and reclaims carry no fee.
+    - `swap_completed` (version 1.1.0) logs `amount_out` (gross), `fee` and `net`. The slippage
+      check still compares `min_amount_out` with the exchange's gross quote.
+13. **The treasury can only withdraw accrued fees.**
+    - `treasury_id` is set once by `new` and cannot be changed. It is stored under its own key
+      (`t`), and the fee balances under their own prefix (`f`), outside `Contract` and `Vault`.
+    - The fee balances are kept apart from every owner's. Only `withdraw_fees(token_id, amount)`
+      moves them, and only to the treasury.
+    - `withdraw_fees` can be called only by the treasury account, with exactly 1 yoctoNEAR. It can
+      take at most the fees accrued in that token, and never touches an owner's balance.
+    - A failed transfer is credited back to the treasury exactly once.
+    - The treasury's entry for a token is created when a swap into it is accepted, and paid for
+      by that owner, like the token's ledger entry. Callbacks never add storage.
 
 The unit tests in `src/tests.rs` and the sandbox tests in `tests/` check these. The sandbox swap
 tests run against the real ref-exchange 1.9.19 binary.
@@ -318,5 +349,65 @@ Limits of this measurement:
 - **One contract for everyone.** All owners' NEAR and tokens are pooled in one account. Per-owner
   balances are the contract's bookkeeping, so a bookkeeping bug could move value between
   owners.
+- **An owner's worst case per swap is the pool's `max_slippage_bps` plus 10 bps.** The slippage
+  floor bounds the gross output. The owner then receives that less the 0.10% fee, so at worst
+  the floor less 10 bps.
+- **Fees on output held on the exchange are not collected.** If the vault is not registered
+  with a swap's output token, the output stays on the exchange and is later reclaimed without a
+  fee. We register the vault with every token the console offers. An owner who lists another
+  token can avoid the fee on it until the vault is registered with that token.
+- **A lost treasury key strands the fees.** Nothing can change `treasury_id`. Owner funds are not
+  affected.
+- **A vault upgraded from code without a treasury has none.** For example, vault-v1 replaced in
+  place: fees from later swaps accrue there, but no account can withdraw them, because nothing
+  can set a treasury after init. That is why the fee build goes to a fresh vault-v2.
 - **Rejected agent calls cost the agent gas, nothing else.** Anyone with the agent key can make
   the agent pay gas for rejected calls, up to the key's allowance.
+
+## Passkey sign-in (planned, mainnet only, experimental)
+
+Not built yet; this section is the design the owner approved on 2026-11-09. The console will
+label the passkey path **"experimental: unaudited wallet contract, upgradeable by Trezu; small
+amounts only"** and recommend a withdrawal lock.
+
+How it works: a passkey account is a deterministic `0s…` account (NEP-616). It runs a WebAuthn
+wallet contract, deployed as a global contract by account id (NEP-591):
+`p256-passkey-wallet-contract.trezu.near` or `ed25519-passkey-wallet-contract.trezu.near`.
+The passkey's public key determines the account id. The executor
+([near-connect-passkey](https://github.com/NEAR-DevHub/near-connect-passkey)) signs each request
+with WebAuthn. Trezu's sponsor contract `helper.trezu.near` creates the account and relays the
+call, through a public function-call key, so the owner never holds a NEAR key. We run no relayer
+of our own.
+
+Trust and risks:
+
+- **Trezu can change the code of every passkey wallet.** Each code account holds one full-access
+  key (checked on mainnet, 2026-11-09). Whoever holds it can redeploy the code for all `0s…`
+  wallets that use it. Malicious code could call `withdraw` on our vault as the owner. A
+  withdrawal lock (invariant 10) blocks that while it lasts. That is why the console recommends
+  a lock for passkey owners.
+- **The wallet contract is unaudited.** Its README says: "DO NOT store any significant funds on
+  it."
+- **Account creation and relaying depend on `helper.trezu.near`.** Its limits are shared by all
+  of its users (20 new accounts and 100 relays per 10 minutes when checked), and Trezu can
+  change or revoke the public key. If it is unavailable, passkey owners cannot sign. Their funds
+  stay in the vault, and an owner with a NEAR wallet is unaffected.
+- **Recovery uses the open registry `passkeys-registry.near`.** Clients verify every candidate
+  key against the assertion signature, so a wrong entry cannot forge a signature.
+- **Passkeys are bound to the site's domain (rpId).** The site moves to `intatto.pages.dev`
+  (Cloudflare Pages), production deployments only, previews off. A preview at
+  `<hash>.intatto.pages.dev` could claim the same rpId and ask for the same passkeys. Changing
+  the domain later strands existing passkeys, so the domain is fixed before launch. Cloudflare
+  Pages also lets us set real HTTP security headers (`_headers`), instead of the `<meta>` policy
+  GitHub Pages forces.
+- **The page runs third-party code.** near-connect is vendored at commit `f2fc970` of the
+  `passkeys-20261104` branch, after review, because no release has the WebAuthn bridge yet. The
+  executor is pinned to a reviewed commit and served from our own origin.
+- **Several transactions run concurrently.** The wallet contract runs the promises of one request
+  concurrently, not in order. The passkey adapter therefore submits a multi-transaction plan one
+  transaction at a time, waiting for each to finish. Each one needs its own passkey prompt.
+- **Relayed transactions are signed by the sponsor, not the owner.** The console checks a
+  relayed transaction by its signer (`helper.trezu.near`) and by a receipt from the owner's
+  `0s…` account on the vault.
+- **Testing:** there is no testnet deployment of the wallet contracts, the registry or the
+  sponsor. We test with recorded fixtures and dry runs, then a mainnet canary with tiny amounts.

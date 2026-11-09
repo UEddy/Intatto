@@ -4,6 +4,7 @@ use near_sdk::json_types::{U64, U128};
 use near_sdk::{AccountId, Gas, Promise, assert_one_yocto, env, ext_contract, near, require};
 
 use crate::events::{Attempt, RejectReason, VaultEvent};
+use crate::fees;
 use crate::ledger::{self, ExchangeLedger};
 use crate::spend::Spend;
 use crate::tokens::{MAX_TOKEN_BALANCES, ext_ft};
@@ -386,6 +387,9 @@ impl Contract {
         // swap of a token creates its ledger entry, which this owner pays for below.
         ledger::start(token_in, amount_in.0);
         ledger::start(token_out, 0);
+        // The treasury's entry for the output too, so the callback that credits the fee never
+        // adds storage. The first swap into a token pays for it, like its ledger entry.
+        fees::ensure_entry(token_out);
         if let Err(cost) = self.settle_storage(owner_id, usage_before) {
             attempt.reject(
                 RejectReason::InsufficientBalance,

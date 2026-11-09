@@ -377,6 +377,10 @@
 .entry--through {
   background: color-mix(in srgb, var(--wax) 6%, transparent);
 }
+/* The demo agent's allowed payment to its merchant: expected, so not an alarm. */
+.stamp--allowed {
+  --stamp: var(--ink-2);
+}
 
 /* A new entry from a poll: the stamp comes down onto the line, and the line warms briefly. */
 .entry.is-new .stamp {

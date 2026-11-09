@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Smoke test for the v1 vault (swaps through Rhea / Ref V1) on testnet, using near-cli-rs 0.30.1.
 #
-# Deploys the locally built contract to a fresh account, vault-v1.intatto-dev.testnet, initialized
-# with new(exchange_id = ref-finance-101.testnet), and checks agent swaps through the real
+# Deploys the locally built contract to a fresh account ($VAULT, vault-v2.intatto-dev.testnet by
+# default; vault-v1 runs the build before the swap fee), initialized with
+# new(exchange_id = ref-finance-101.testnet, treasury_id = $TREASURY), and checks agent swaps through the real
 # wrap.testnet / usdt.itachicara.testnet pool #1084, with the agent signing every agent_swap with a
 # function-call key that can only call agent_swap on this vault.
 #
@@ -32,7 +33,11 @@ shopt -s inherit_errexit
 
 NETWORK=testnet
 OWNER=intatto-dev.testnet
-VAULT=vault-v1.intatto-dev.testnet
+VAULT=${VAULT:-vault-v2.intatto-dev.testnet}
+# The only account that can withdraw the swap fees; fixed at init.
+TREASURY=${TREASURY:-intatto-dev.testnet}
+# The fee build's FEE_BPS (src/fees.rs).
+FEE_BPS=10
 AGENT=agent.intatto-dev.testnet
 EXCHANGE=ref-finance-101.testnet
 WNEAR=wrap.testnet
@@ -50,8 +55,8 @@ RPC_CLIENT="$SCRIPT_DIR/lib/near_rpc.py"
 EXPLORER=https://explorer.testnet.near.org/transactions/
 KEYCHAIN="$HOME/.near-credentials/$NETWORK"
 
-# The contract's code storage (~2.39 NEAR for a 238.6 kB wasm) is staked from the vault account.
-VAULT_FUNDING='2.5 NEAR'
+# The contract's code storage (2.70 NEAR for the 270.3 kB fee build) is staked from the vault account.
+VAULT_FUNDING='3 NEAR'
 # The vault's NEAR balance pays for its own record's storage (vault, policy, token entries, spends).
 VAULT_NEAR_TARGET='0.1 NEAR'
 # wNEAR the owner keeps in the vault for the agent; topped back up on every run.
@@ -396,6 +401,11 @@ elif cmd == "amount-out":  # amount-out <tx response>: amount_out of its swap_co
     completed = [e for e in events(rpc_result(args[0])) if e["event"] == "swap_completed"]
     print(completed[0]["data"]["amount_out"] if completed else 0)
 
+elif cmd == "swap-split":  # swap-split <tx response>: "amount_out fee net" of its swap_completed
+    completed = [e for e in events(rpc_result(args[0])) if e["event"] == "swap_completed"]
+    d = completed[0]["data"] if completed else {}
+    print(d.get("amount_out", 0), d.get("fee", 0), d.get("net", 0))
+
 elif cmd == "show-vault":  # show-vault <vault json> <block time>
     vault, now = json.load(open(args[0])), int(args[1])
     print(json.dumps(vault, indent=2))
@@ -562,7 +572,7 @@ helper ge "$OWNER_BALANCE" "$NEEDED" ||
   die "$OWNER needs at least $(helper near "$NEEDED") NEAR; top it up from the testnet faucet"
 
 echo
-echo "== 1. Vault account with the contract, initialized with new(exchange_id = $EXCHANGE)"
+echo "== 1. Vault account with the contract, initialized with new(exchange_id = $EXCHANGE, treasury_id = $TREASURY)"
 case "$VAULT_HASH" in
 missing)
   echo "── create $VAULT with $VAULT_FUNDING"
@@ -584,7 +594,7 @@ if [ "$DEPLOY" = yes ]; then
     die "no legacy keychain entry for $VAULT to sign the deploy with"
   echo "── deploy $WASM with init call new"
   send_setup contract deploy "$VAULT" use-file "$WASM" with-init-call new \
-    json-args "{\"exchange_id\":\"$EXCHANGE\"}" prepaid-gas "$GAS" attached-deposit '0 NEAR' \
+    json-args "{\"exchange_id\":\"$EXCHANGE\",\"treasury_id\":\"$TREASURY\"}" prepaid-gas "$GAS" attached-deposit '0 NEAR' \
     network-config "$NETWORK" sign-with-legacy-keychain send
 fi
 echo "── on-chain code is this build"
@@ -598,6 +608,15 @@ EXCHANGE_ID=$(helper json "$WORK/get_exchange_id.json" 'v')
 echo "    expected:  $EXCHANGE"
 echo "    actual:    $EXCHANGE_ID"
 check "exchange fixed at init" [ "$EXCHANGE_ID" = "$EXCHANGE" ]
+echo "── get_treasury_id and get_fee_bps"
+view "$VAULT" get_treasury_id '{}'
+TREASURY_ID=$(helper json "$WORK/get_treasury_id.json" 'v')
+view "$VAULT" get_fee_bps '{}'
+FEE_BPS_ONCHAIN=$(helper json "$WORK/get_fee_bps.json" 'v')
+echo "    expected:  treasury $TREASURY, fee $FEE_BPS bps"
+echo "    actual:    treasury $TREASURY_ID, fee $FEE_BPS_ONCHAIN bps"
+check "treasury fixed at init" [ "$TREASURY_ID" = "$TREASURY" ]
+check "fee fixed in code" [ "$FEE_BPS_ONCHAIN" = "$FEE_BPS" ]
 
 echo
 echo "== 2. Storage registrations"
@@ -697,18 +716,20 @@ SWAP_EXPECTED=${PREDICTION%%$'\n'*}
 echo "    note:      ${PREDICTION#*$'\n'}"
 agent_swap "$SWAP_EXPECTED" "$POOL_ID" "$AMOUNT" "$MIN_OUT"
 if [ "$SWAP_EXPECTED" = swap-ok ]; then
-  AMOUNT_OUT=$(helper amount-out "$WORK/outcome.json")
+  read -r AMOUNT_OUT SWAP_FEE SWAP_NET < <(helper swap-split "$WORK/outcome.json")
   vault_view
   read -r USDT_AFTER USDT_ON_EXCHANGE < <(helper token-balance "$WORK/get_vault.json" "$USDT")
   read -r WNEAR_AFTER _ < <(helper token-balance "$WORK/get_vault.json" "$WNEAR")
-  echo "── the owner is credited exactly the exchange's output, and paid exactly $SWAP_AMOUNT wNEAR"
-  echo "    expected:  USDT +$(helper near "$AMOUNT_OUT") (at least $(helper near "$MIN_OUT")), wNEAR -$(helper near "$AMOUNT"), nothing held on the exchange"
+  echo "── the owner is credited the exchange's output less the $FEE_BPS bps fee, and paid exactly $SWAP_AMOUNT wNEAR"
+  echo "    expected:  USDT +$(helper near "$SWAP_NET") = $(helper near "$AMOUNT_OUT") (at least $(helper near "$MIN_OUT")) - fee $SWAP_FEE, wNEAR -$(helper near "$AMOUNT"), nothing held on the exchange"
   echo "    actual:    USDT $(helper near "$USDT_BEFORE") -> $(helper near "$USDT_AFTER") (+$(helper near "$USDT_ON_EXCHANGE") on exchange), wNEAR $(helper near "$WNEAR_BEFORE") -> $(helper near "$WNEAR_AFTER")"
-  check "exact crediting" python3 -I -c '
+  check "exact crediting, net + fee == amount_out" python3 -I -c '
 import sys
-before, after, out, min_out, held, w_before, w_after, amount = map(int, sys.argv[1:])
-sys.exit(0 if after - before == out and out >= min_out and held == 0 and w_before - w_after == amount else 1)
-' "$USDT_BEFORE" "$USDT_AFTER" "$AMOUNT_OUT" "$MIN_OUT" "$USDT_ON_EXCHANGE" "$WNEAR_BEFORE" "$WNEAR_AFTER" "$AMOUNT"
+before, after, out, fee, net, bps, min_out, held, w_before, w_after, amount = map(int, sys.argv[1:])
+ok = (after - before == net and net + fee == out and fee == out * bps // 10000
+      and out >= min_out and held == 0 and w_before - w_after == amount)
+sys.exit(0 if ok else 1)
+' "$USDT_BEFORE" "$USDT_AFTER" "$AMOUNT_OUT" "$SWAP_FEE" "$SWAP_NET" "$FEE_BPS" "$MIN_OUT" "$USDT_ON_EXCHANGE" "$WNEAR_BEFORE" "$WNEAR_AFTER" "$AMOUNT"
 fi
 
 echo

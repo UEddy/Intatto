@@ -5,6 +5,7 @@ use near_sdk::{
 };
 
 use crate::events::{Attempt, RejectReason, VaultEvent};
+use crate::fees;
 use crate::ledger;
 use crate::swap::{
     EXCHANGE_SWAP_TGAS, EXCHANGE_WITHDRAW_TGAS, ON_SWAP_EXECUTED_TGAS, ON_SWAP_WITHDRAWN_TGAS,
@@ -222,6 +223,8 @@ impl Contract {
                 VaultEvent::SwapCompleted {
                     swap: ticket,
                     amount_out,
+                    fee: U128(0),
+                    net: amount_out,
                     held_on_exchange: false,
                 }
                 .emit();
@@ -236,7 +239,9 @@ impl Contract {
     }
 
     /// Swap step 4: the output's withdrawal from the exchange resolved to `amount_out` if it
-    /// reached the vault. Credits the owner exactly that, or records it as left on the exchange.
+    /// reached the vault. Then the owner is credited `amount_out` less the protocol fee, and the
+    /// treasury the fee: together exactly `amount_out`. If it did not arrive, the whole amount is
+    /// recorded as the owner's, left on the exchange, with no fee.
     #[private]
     pub fn on_swap_output_withdrawn(
         &mut self,
@@ -245,14 +250,20 @@ impl Contract {
         #[callback_result] withdrawn: Result<U128, PromiseError>,
     ) -> bool {
         let delivered = withdrawn.is_ok_and(|withdrawn| withdrawn == amount_out);
+        let (net, fee) = if delivered {
+            fees::take_fee(&ticket.token_out, amount_out.0)
+        } else {
+            (amount_out.0, 0)
+        };
         let entry = self
             .vault_mut(&ticket.owner_id)
             .swap_token(&ticket.token_out);
         if delivered {
-            entry.balance = U128(add_amounts(entry.balance.0, amount_out.0));
+            entry.balance = U128(add_amounts(entry.balance.0, net));
             ledger::release(&ticket.token_out, amount_out.0);
         } else {
-            // Still owed to this owner on the exchange, so still expected there.
+            // Still owed to this owner on the exchange, so still expected there. Tokens the vault
+            // does not hold carry no fee: the treasury is only ever owed what the vault holds.
             entry.on_exchange = U128(add_amounts(entry.on_exchange.0, amount_out.0));
         }
         Self::end_swap(&ticket);
@@ -260,6 +271,8 @@ impl Contract {
         VaultEvent::SwapCompleted {
             swap: ticket,
             amount_out,
+            fee: U128(fee),
+            net: U128(net),
             held_on_exchange: !delivered,
         }
         .emit();
