@@ -1,6 +1,8 @@
 //! Sandbox harness shared by the integration tests. Each test binary uses part of it.
 #![allow(dead_code)]
 
+pub mod intents;
+
 use std::sync::{Arc, OnceLock};
 
 use intatto::{Policy, Spend, Vault};

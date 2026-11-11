@@ -10,6 +10,7 @@ hash below before using it.
 | `ref_exchange_v1.9.21.wasm` | Code of `v2.ref-finance.near`, the Rhea (Ref) V1 exchange on mainnet, fetched with RPC `view_code` on 2026-11-09 (block 223785783) | ref-exchange 1.9.21 (`metadata().version`) | `GZmkbfVLcN7ErxU9RDxP24YTaKmoVixhM6XyycP15Qvi` |
 | `intatto_j5mo.wasm` | Code of `vault-v1.intatto-dev.testnet` since 2026-11-08, fetched with RPC `view_code` on 2026-11-09 (block 276908989) | this repo at commit b85cece (`cargo near build reproducible-wasm`), the build before the swap fee | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL` |
 | `w_near.wasm` | Code of `wrap.testnet`, fetched with RPC `view_code` on 2026-11-02 | wrapped NEAR (NEP-141) | `DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa` |
+| `intents_near_0.4.5.wasm` | Code of `intents.near`, the NEAR Intents Verifier on mainnet, fetched with RPC `view_code` on 2026-11-11 (block 224083628) | defuse 0.4.5, built from near/intents `16d04f6ec4401263f8914638710260da50bb46b0` (`contract_source_metadata`) | `BtA1BEFNS619KkvXFsgcpQ21Tb5yMm32aaUkn7xNothk` (sha256 hex `a1afab98916d9f213746544dcf8e4e6bdb22c0be6bc5dfbd8ea8814c9922b547`) |
 
 The exchange hash also matches `ref_exchange_release_v1919.wasm` and the 1.9.19 entry in the
 release notes of the ref-contracts source (`ref-exchange/release_notes.md`).
@@ -22,6 +23,13 @@ changes one error text (E111). Every other test behaves the same on both.
 
 The tests deploy `w_near.wasm` twice: once as wNEAR, and once more as a stand-in stablecoin. Its
 `near_deposit` mints tokens 1:1 for attached NEAR, which makes it easy to fund pools.
+
+The Chain Signatures tests (`tests/chain_signatures.rs`) deploy `intents_near_0.4.5.wasm` as the
+Verifier, initialized with a sandbox DAO account holding the DAO role, so they can also exercise
+what intents.near governance can do to the vault's account there (salt invalidation, nonce
+cleanup). The MPC signer has no binary here: `tests/contracts/mock-mpc-signer` is built from
+source by the tests. It keeps `v1.signer`'s interface (`sign` with yield-resume,
+`derived_public_key`, `fail_on_timeout`), and a sandbox account plays the MPC nodes.
 
 `tests/upgrade.rs` deploys `intatto_v1.wasm`, writes state with it, then replaces it with the
 current build to check that the current code reads v1 state unchanged.
