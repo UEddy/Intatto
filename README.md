@@ -140,12 +140,13 @@ from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 
 | Suite | File | Tests |
 |---|---|---|
-| Unit tests (timing edges, callback outcomes, fee math) | [src/tests.rs](src/tests.rs) | 87 |
+| Unit tests (timing edges, callback outcomes, fee math, intent swap callbacks and encoding) | [src/tests.rs](src/tests.rs), [src/intent_swap.rs](src/intent_swap.rs) | 98 |
 | Spending, caps, roles | [tests/test_basics.rs](tests/test_basics.rs) | 15 |
 | Swaps through the real exchange, fees, J5Mo upgrade, a vault blacklisted on 1.9.21 | [tests/swap.rs](tests/swap.rs) | 17 |
 | Withdrawal lock | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs) | 3 |
 | v1 state survives a code upgrade | [tests/upgrade.rs](tests/upgrade.rs) | 1 |
-| **Total** (`cargo test -- --list`, 2026-11-11) | | **123** |
+| Chain Signatures intents path (branch `chain-signatures`): mock MPC signer, vendored intents.near 0.4.5, master 3z1W5 upgrade | [tests/chain_signatures.rs](tests/chain_signatures.rs) | 20 |
+| **Total** (`cargo test -- --list`, 2026-11-11, branch `chain-signatures`) | | **154** |
 
 The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. To run
 them against the mainnet binary (1.9.21, `v2.ref-finance.near`), and against the reproducible build
@@ -161,7 +162,7 @@ The web app's and the demo agent's tests run separately:
 ```bash
 cd web && npm ci && npm test        # 122 unit tests (vitest)
 cd web && npm run test:prod         # the Cloudflare build under its real CSP, against live testnet (Playwright)
-node --test agent/*.test.mjs        # 8 tests: the demo agent's transaction signer and secret redaction
+node --test agent/*.test.mjs        # 15 tests: the demo agent's transaction signer and secret redaction, and the intent swap agent (offline)
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy and
@@ -346,6 +347,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
 ## Status and known gaps
 
 - The contract has not been audited.
+- On branch `chain-signatures` only: agent swaps through NEAR Intents, signed by the MPC network; see [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md). Not deployed.
 - Not on mainnet yet. Planned before submission: the mainnet deployment (with the swap fee),
   passkey sign-in, and NEAR Intents (mainnet only). [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh)
   deploys only the reproducible build of commit `6cfa90e` (code hash
