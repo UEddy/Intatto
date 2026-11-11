@@ -725,3 +725,333 @@
     display: block;
   }
 }
+
+/* ---------- agent trades through NEAR Intents (mainnet's Chain Signatures vault) ---------- */
+
+.intents {
+  margin-bottom: 40px;
+  padding: 24px 0 28px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.intents-head {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+.intents-title {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3.4vw, 40px);
+  line-height: 1.1;
+}
+.intents-title em {
+  font-style: italic;
+}
+.intents-lede {
+  font-size: 15px;
+  color: var(--ink-2);
+  max-width: 60ch;
+}
+.intents-lede .acct {
+  overflow-wrap: anywhere;
+}
+.intents-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  min-width: 0;
+}
+.icheck {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 18px 0 20px;
+  border-top: 1px solid var(--rule);
+  min-width: 0;
+}
+.icheck:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.icheck-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.icheck-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-family: var(--font-text);
+  font-size: 15.5px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.icheck-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.icheck-claim {
+  flex: 1 1 16ch;
+  min-width: 0;
+}
+.icheck--alert .icheck-claim,
+.icheck--alert .rules-num {
+  color: var(--wax);
+}
+/* Side by side, the shorter cell keeps its rows at the top instead of stretching them. */
+.intents .hash-row {
+  align-content: start;
+}
+.key-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.hash--odd {
+  color: var(--wax);
+}
+.intents-fact {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 14px;
+  color: var(--ink-2);
+  max-width: 72ch;
+}
+.intents-fact .icon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--verdigris);
+}
+.intents-fact strong {
+  color: var(--ink);
+}
+
+/* the swap: amounts in the display face, the floor as a ruled scale, then the three receipts */
+.swap-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 4.2vw, 46px);
+  line-height: 1.05;
+  font-variant-numeric: lining-nums;
+}
+.swap-amt {
+  white-space: nowrap;
+}
+.swap-unit {
+  font-family: var(--font-text);
+  font-size: 0.36em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin-left: 0.3em;
+}
+.swap-arrow {
+  color: var(--ink-3);
+  align-self: center;
+}
+.floor {
+  display: grid;
+  gap: 10px;
+  max-width: 72ch;
+}
+.floor-scale {
+  position: relative;
+  /* room for the label above the track and the two below it */
+  padding: 22px 0 36px;
+  margin: 0 4px;
+}
+.floor-track {
+  position: relative;
+  height: 6px;
+  background: var(--verdigris-soft);
+  border-radius: 3px;
+}
+.floor-refused {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px 0 0 3px;
+  background: repeating-linear-gradient(135deg, var(--rule-strong) 0 2px, transparent 2px 6px);
+}
+.floor-mark {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+}
+.floor-dot {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--verdigris);
+  box-shadow: 0 0 0 3px var(--paper);
+}
+.floor-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.floor-label--swap {
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--verdigris);
+  font-weight: 600;
+}
+.floor-label--floor {
+  top: 40px;
+  transform: translateX(-50%);
+  color: var(--ink);
+}
+.floor-label--zero {
+  top: 40px;
+  left: 0;
+  font-family: var(--font-text);
+  color: var(--ink-3);
+}
+/* Narrow screens: the floor's label goes on its own line under the zero label. */
+@media (max-width: 520px) {
+  .floor-scale {
+    padding-bottom: 52px;
+  }
+  .floor-label--floor {
+    top: 56px;
+  }
+}
+.floor-note {
+  font-size: 14.5px;
+  color: var(--ink-2);
+}
+.floor-note strong {
+  color: var(--ink);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.floor-source {
+  margin-top: 0;
+}
+.swap-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule-strong);
+  counter-reset: step;
+}
+.swap-step {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0 12px 2.2rem;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+  counter-increment: step;
+  min-width: 0;
+}
+.swap-step::before {
+  content: counter(step, lower-roman) ".";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--ink-3);
+}
+.swap-step-call {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+.swap-step-who {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.swap-step-what {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.swap-step-proof {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.swap-step-proof .txlink {
+  min-height: 32px;
+  align-items: center;
+}
+
+/* the one caveat: amber, as warnings are on this board */
+.intents-caveat {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  font-size: 14.5px;
+  color: var(--ink);
+  min-width: 0;
+}
+.intents-caveat > .icon {
+  margin-top: 2px;
+  color: var(--amber);
+}
+.intents-caveat p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.intents-caveat-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (min-width: 1024px) {
+  .intents {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    column-gap: 48px;
+    padding: 32px 0 36px;
+    margin-bottom: 56px;
+  }
+  .intents-head {
+    grid-row: span 2;
+  }
+  .icheck {
+    grid-template-columns: 3.2rem minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+  .intents .hashes {
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+}

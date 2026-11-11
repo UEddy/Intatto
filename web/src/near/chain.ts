@@ -69,6 +69,10 @@ export type AccessKeyPermission = z.infer<typeof permission>;
 
 const accessKeyView = blockRef.extend({ nonce: z.number().int().nonnegative(), permission });
 
+const accessKeyListView = blockRef.extend({
+  keys: z.array(z.object({ public_key: z.string().min(1), access_key: z.object({ nonce: z.number().int().nonnegative(), permission }) })),
+});
+
 const blockView = z.object({
   header: z.object({
     height: z.number().int().nonnegative(),
@@ -162,6 +166,17 @@ export class Chain {
     return {
       value: { nonce: k.nonce, permission: k.permission },
       source: { rpcMethod: "query/view_access_key", target: `${accountId} ${publicKey}`, raw: JSON.stringify(result), blockHeight: k.block_height, blockHash: k.block_hash },
+    };
+  }
+
+  /** Every access key on the account, or null if the account does not exist. */
+  async accessKeyList(accountId: string): Promise<Sourced<{ publicKey: string; permission: AccessKeyPermission }[]> | null> {
+    const result = await this.queryOrMissing({ request_type: "view_access_key_list", finality: "final", account_id: accountId }, ["UNKNOWN_ACCOUNT"]);
+    if (result === null) return null;
+    const l = parseWith(accessKeyListView, result, `view_access_key_list ${accountId}`);
+    return {
+      value: l.keys.map((k) => ({ publicKey: k.public_key, permission: k.access_key.permission })),
+      source: { rpcMethod: "query/view_access_key_list", target: accountId, raw: JSON.stringify(result), blockHeight: l.block_height, blockHash: l.block_hash },
     };
   }
 

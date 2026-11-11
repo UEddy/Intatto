@@ -8,6 +8,7 @@ import { useChainNow } from "../ui/useNow";
 import { AgentKeyCard } from "./AgentKeyCard";
 import { AttemptLog, canarySubject, demoSubject } from "./AttemptLog";
 import { IntegrityCheck } from "./IntegrityCheck";
+import { IntentsPanel } from "./IntentsPanel";
 import { RulesPanel } from "./RulesPanel";
 import { TryItSnippet } from "./TryItSnippet";
 import { BOARD_POLL_MS, useBoard } from "./useBoard";
@@ -240,6 +241,8 @@ export function BoardPage() {
           </p>
         </div>
       </section>
+
+      <IntentsPanel />
 
       {b.block.data && (
         <p className="board-footnote mono">

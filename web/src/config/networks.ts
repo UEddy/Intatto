@@ -65,6 +65,42 @@ export interface ExpectedBuild {
   readonly image: string;
 }
 
+/**
+ * The Chain Signatures vault (CHAIN_SIGNATURES.md): a separate vault account whose own account on
+ * the NEAR Intents Verifier is signed for by the MPC network. The board shows its build, its one
+ * key there, and the agent intent swap that settled, all re-read from the chain.
+ */
+export interface IntentsConfig {
+  readonly vaultId: string;
+  /** The Verifier (defuse) the vault is bound to by setup_intents. */
+  readonly verifierId: string;
+  /** The MPC signer, and the path and domain the vault's key is derived with. */
+  readonly signerId: string;
+  readonly keyPath: string;
+  readonly keyDomain: number;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly expectedBuild: ExpectedBuild & {
+    /** The git tag on the commit, and the Reproducible build workflow run that built the wasm. */
+    readonly tag: string;
+    readonly workflowRun: number;
+  };
+  /** The one agent intent swap to show. Every field is checked against the transactions' logs. */
+  readonly swap: {
+    readonly intentId: string;
+    readonly tokenIn: string;
+    readonly tokenOut: string;
+    readonly amountIn: string;
+    readonly amountOut: string;
+    /** agent_intent_swap, signed by the agent. */
+    readonly signTxHash: string;
+    /** execute_intents on the Verifier, sent by its relayer key. */
+    readonly executeTxHash: string;
+    /** settle_intent_swap. */
+    readonly settleTxHash: string;
+  };
+}
+
 export interface NetworkConfig {
   readonly networkId: NetworkId;
   readonly label: string;
@@ -97,6 +133,8 @@ export interface NetworkConfig {
   /** Null until the demo vault is set up (scripts/canary-testnet.sh with PROFILE=demo). */
   readonly demo: DemoConfig | null;
   readonly expectedBuild: ExpectedBuild | null;
+  /** Null where no Chain Signatures vault runs. */
+  readonly intents: IntentsConfig | null;
   readonly repoUrl: string;
   /** Average block time measured over 10k blocks, for "about N blocks" estimates only. */
   readonly blockTimeMs: number;
@@ -167,6 +205,7 @@ export const TESTNET: NetworkConfig = {
     commit: "b85cece7e8afc49e8f3476cb8ae69f0792d99444",
     image: "sourcescan/cargo-near:0.21.1-rust-1.96.0",
   },
+  intents: null,
   repoUrl: REPO,
   blockTimeMs: 617,
 };
@@ -234,6 +273,39 @@ export const MAINNET: NetworkConfig = {
     codeHash: "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J",
     commit: "6cfa90e00890a510750d248b24dae0f86b5211be",
     image: "sourcescan/cargo-near:0.21.1-rust-1.96.0",
+  },
+  // Set up by scripts/mainnet-intents.sh on 2026-11-11 (CHAIN_SIGNATURES.md). Read on mainnet
+  // 2026-11-11, block 224,115,640: view_account code_hash HRkrMN8o…; get_intents_config bound to
+  // intents.near and v1.signer, key_verified; intents.near public_keys_of is exactly
+  // [ed25519:5kYTxFES…], which v1.signer derived_public_key(intatto/intents.near/v1, vault, 1) returns.
+  intents: {
+    vaultId: "intents.intatto.near",
+    verifierId: "intents.near",
+    signerId: "v1.signer",
+    keyPath: "intatto/intents.near/v1",
+    keyDomain: 1,
+    ownerId: "intents-owner.intatto.near",
+    agentId: "intents-agent.intatto.near",
+    // Tag intents-build: the Reproducible build workflow's wasm of commit fc23fbc, the only wasm
+    // scripts/mainnet-intents.sh deploys; contract_source_metadata names the same commit.
+    expectedBuild: {
+      codeHash: "HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC",
+      commit: "fc23fbc3abee3d503ecaeb5ced56d315374cdc20",
+      image: "sourcescan/cargo-near:0.21.1-rust-1.96.0",
+      tag: "intents-build",
+      workflowRun: 43063218549,
+    },
+    // The swap of 2026-11-11 17:46 UTC: 0.3 wNEAR for 1.130742 USDt (intent id 0).
+    swap: {
+      intentId: "0",
+      tokenIn: "wrap.near",
+      tokenOut: "usdt.tether-token.near",
+      amountIn: "300000000000000000000000",
+      amountOut: "1130742",
+      signTxHash: "GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT",
+      executeTxHash: "EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE",
+      settleTxHash: "73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE",
+    },
   },
   repoUrl: REPO,
   blockTimeMs: 581,
