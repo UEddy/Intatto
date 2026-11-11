@@ -129,7 +129,10 @@ impl Intents {
         let dao = env.create_account("dao.sandbox", near(50)).await?;
         let config = json!({ "config": {
             "wnear_id": wnear,
-            "fees": { "fee": 1, "fee_collector": dao },
+            // No protocol fee: intents.near charges it on the selling side of a token_diff and
+            // collects it from the counterparty, so the vault's own deltas are exact either way;
+            // with 0 the sandbox solver's diff is simply the vault's, negated.
+            "fees": { "fee": 0, "fee_collector": dao },
             "roles": { "super_admins": [dao], "grantees": { "DAO": [dao] } },
         }});
         let intents = env

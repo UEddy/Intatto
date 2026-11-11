@@ -185,6 +185,22 @@ pub trait IntentsVerifier {
     fn is_nonce_used(&self, account_id: AccountId, nonce: String) -> bool;
 }
 
+/// The argument of v1.signer's `sign`: `{"path", "payload_v2": {"Eddsa": "<hex>"}, "domain_id"}`.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct SignRequest {
+    pub path: String,
+    pub payload_v2: SignPayload,
+    pub domain_id: u64,
+}
+
+/// v1.signer's `Payload`, externally tagged; EdDSA payloads are 32 to 1232 bytes in hex.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub enum SignPayload {
+    Eddsa(String),
+}
+
 /// The MPC signer's (v1.signer, near/mpc 3.18.0) views and calls the vault uses.
 #[ext_contract(ext_mpc_signer)]
 pub trait MpcSigner {
@@ -195,6 +211,10 @@ pub trait MpcSigner {
         predecessor: Option<AccountId>,
         domain_id: Option<u64>,
     ) -> String;
+    /// Needs at least 1 yoctoNEAR and 15 TGas. Resolves, through yield-resume, to
+    /// `{"scheme":"Ed25519","signature":[64 bytes]}` once the MPC network answers, or fails
+    /// ("Request has timed out.") after the protocol's yield timeout of 200 blocks.
+    fn sign(&mut self, request: SignRequest);
 }
 
 #[near]

@@ -235,6 +235,47 @@ deposits on Rhea. Per-owner amounts are the vault's bookkeeping (`get_intents_ba
       (`a_paused_verifier_refunds_deposits_and_withdrawals`).
     - Balance entries are created by the call that starts a flow and paid for by that owner,
       so callbacks never add storage.
+17. **The agent's intent swaps stay inside the owner's rules, and the vault signs only what it
+    built.**
+    - `agent_intent_swap(owner, token_in, token_out, amount_in, amount_out)` is open only to the
+      registered agent. It needs a verified intents key (15), a pair and direction the owner
+      listed with `set_intent_policy`, and `amount_out / amount_in` at or above that pair's
+      floor (compared exactly in 256 bits).
+    - `amount_in` must be within token_in's `per_tx_cap` and `daily_cap` in `Policy::tokens`.
+      It shares the 24-hour window and `max_spends_per_24h` with spends and Rhea swaps, and
+      must not exceed the owner's intents balance.
+    - A frozen vault rejects it. `set_intent_policy` needs 1 yoctoNEAR and is refused while
+      withdrawals are locked; `remove_agent` clears the intent policy.
+    - Every check runs twice: at the call, and again in the callback that receives
+      intents.near's salt, against the vault as it is then. Only then is `amount_in` reserved
+      (debited from the owner's intents balance) and the swap recorded.
+    - The agent supplies no bytes. The vault writes the NEP-413 message itself:
+      `signer_id` = the vault, `deadline` = now + 300 s (whole seconds), and exactly one
+      `token_diff` of `-amount_in` token_in and `+amount_out` token_out. It also writes the
+      versioned nonce: intents.near's current salt, a nonce deadline 30 days after the intent's,
+      and the swap id. It asks v1.signer to sign SHA-256 of the NEP-413 envelope
+      (recipient = the Verifier).
+    - The answer is stored and logged (`intent_swap_signed`, with the full `MultiPayload`) only
+      if it verifies under the vault's registered key over exactly that hash. A timeout, a
+      failure, another scheme, or a signature by any other key returns `amount_in` and removes
+      the spend record. The callback never panics on the answer.
+    - The record is fixed-size from the start, and its storage and the signer's 1-yoctoNEAR
+      deposit are charged to that owner.
+18. **Settlement credits what happened, once, and never guesses.** intents.near executes a
+    `token_diff` exactly or not at all. `settle_intent_swap` (anyone, any time after signing)
+    asks `is_nonce_used(vault, nonce)`:
+    - **Used:** the owner is credited exactly `amount_out` and the record is deleted. Racing
+      settlements credit once (`intent_swap_is_signed_executed_and_settled_exactly_once`).
+    - **Unused before the deadline:** refused; nothing changes.
+    - **Unused, asked after the deadline:** the vault then asks `is_valid_salt`. It refunds
+      `amount_in` only if the salt is still valid and the nonce's own deadline has not passed.
+      Only then can "unused" not be a used nonce that governance cleaned up: `cleanup_nonces`
+      only removes nonces whose salt is invalid or whose deadline passed, and an invalidated salt
+      never becomes valid again.
+    - **Otherwise:** unresolved (`intent_swap_unresolved`). `amount_in` stays reserved and
+      nothing is credited. `a_cleaned_up_nonce_is_never_mistaken_for_an_unexecuted_intent`
+      executes a swap, then has the sandbox DAO invalidate the salt and clean the nonce. Then
+      `is_nonce_used` is false, and settlement still refuses to refund.
 
 ### Trust assumptions (intents path)
 
@@ -291,6 +332,23 @@ All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 
   well as everything listed above.
 
 ### Known limitations (intents path)
+
+- **A signed intent cannot be recalled.** Freeze, `remove_agent` and a policy change stop new
+  intent swaps, but a payload already signed stays valid on intents.near until its deadline,
+  at most 300 s after it was accepted. Anyone who sees the `intent_swap_signed` log can submit
+  it in that time. It can only execute as signed: exactly `amount_in` for exactly `amount_out`,
+  at or above the owner's floor.
+- **An unresolved swap stays reserved.** If intents.near governance invalidates the salt, or
+  nobody settles within 30 days after the deadline, settlement cannot tell executed from not
+  executed. The reserved `amount_in` then stays reserved for good: it is never credited to
+  anyone, but the owner cannot use it without a code upgrade.
+- **The price floor is the owner's, not the market's.** The vault checks `amount_out` against
+  the owner's floor only; nothing on chain compares it with a market price. A careless agent
+  can sell at the floor. The caps bound how much it can sell that way.
+- **No protocol fee on intent swaps.** The 10 bps fee (invariant 12) applies to Rhea swaps only.
+- **Swaps can be signed but not filled.** Solver quotes come and go. On 2026-11-11 an early
+  probe got no wNEAR to USDT quote at 0.01, 0.1 or 1 wNEAR, and a later one did (0.3 wNEAR for
+  1.121835 USDT). An intent nobody fills expires and is refunded at settlement.
 
 - **A shortfall in the shared intents account falls on whoever withdraws last.** There is no
   ledger check like the exchange's (invariant 11). If tokens leave the vault's intents account

@@ -183,7 +183,8 @@ impl Contract {
         .emit();
     }
 
-    /// Clears the caller's agent and policy. Requires exactly 1 yoctoNEAR (full-access key only).
+    /// Clears the caller's agent, policy and intent policy. Requires exactly 1 yoctoNEAR
+    /// (full-access key only).
     ///
     /// Leaves the frozen flag, token balances and the record of recent spends unchanged, so a
     /// newly registered agent still sees the last 24 hours of spending.
@@ -197,6 +198,7 @@ impl Contract {
             env::panic_str("No agent is registered for this vault");
         };
         vault.policy = Policy::default();
+        crate::intent_swap::clear_policy(&owner_id);
         // Clearing only frees storage, so settling can only credit the vault.
         let _ = self.settle_storage(&owner_id, usage_before);
 
