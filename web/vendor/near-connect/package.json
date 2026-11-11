@@ -1,0 +1,19 @@
+{
+  "name": "@hot-labs/near-connect",
+  "version": "0.11.5-f2fc970",
+  "description": "near-connect at NEAR-DevHub/near-connect f2fc9706262b70bd4cc0901e20cc3757c882fb5c, vendored (see VENDORED.md)",
+  "type": "commonjs",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NEAR-DevHub/near-connect"
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@noble/post-quantum": "0.7.1",
+    "@scure/base": "1.2.6"
+  }
+}

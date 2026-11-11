@@ -131,6 +131,15 @@ from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 | Withdrawal lock | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs) | 3 |
 | v1 state survives a code upgrade | [tests/upgrade.rs](tests/upgrade.rs) | 1 |
 
+The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. To run
+them against the mainnet binary (1.9.21, `v2.ref-finance.near`), and against the reproducible build
+instead of a fresh local build:
+
+```bash
+INTATTO_TEST_EXCHANGE=1.9.21 cargo test
+INTATTO_TEST_WASM=target/near/intatto.wasm INTATTO_TEST_WASM_SHA256=3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J cargo test
+```
+
 The web app's tests run separately:
 
 ```bash

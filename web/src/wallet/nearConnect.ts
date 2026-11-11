@@ -1,15 +1,21 @@
 /**
- * near-connect (@hot-labs/near-connect 0.12.0) behind the SignerAdapter interface.
+ * near-connect behind the SignerAdapter interface: NEAR-DevHub/near-connect at f2fc970 (the
+ * passkeys branch), vendored in web/vendor/near-connect after review (VENDORED.md there).
  *
  * - Manifest: the pinned four-wallet copy, never the remote default, so a manifest change cannot
- *   add or swap a wallet. Executor code is still fetched from each wallet's published URL.
+ *   add or swap a wallet; on mainnet, plus the passkey entry, whose executor this site serves.
+ *   The other executors' code is still fetched from each wallet's published URL.
+ * - storage: hardened (connectorStorage.ts), so no `debug-wallets` entry can add a wallet.
  * - providers: the configured RPC, so executors that broadcast use the same node the page reads.
  * - cspNonce: this page load's nonce from boot.js, so the executors' inline scripts may run.
+ * - A connected passkey wallet submits through PasskeyAdapter (passkey.ts).
  */
-import { NearConnector, type NearWalletBase } from "@hot-labs/near-connect";
+import { NearConnector, type NearWalletBase, type WalletManifest } from "@hot-labs/near-connect";
 import type { NetworkConfig } from "../config/networks";
+import { hardenedStorage } from "./connectorStorage";
 import pinned from "./manifest.pinned.json";
-import { WalletRejectedError, type SignerAdapter, type SubmittedTx, type TxPlan } from "./types";
+import { PASSKEY_WALLET_ID, PasskeyAdapter, passkeyManifestEntry, type WaitFinal } from "./passkey";
+import { PLAIN_SESSION, WalletRejectedError, type SignerAdapter, type SubmittedTx, type TxPlan, type WalletSession } from "./types";
 
 declare global {
   interface Window {
@@ -34,9 +40,18 @@ export function outcomeHash(outcome: unknown): string | null {
   return typeof h === "string" && h.length > 0 ? h : null;
 }
 
-function isRejection(e: unknown): boolean {
+export function isRejection(e: unknown): boolean {
   const text = String((e as { message?: unknown })?.message ?? e).toLowerCase();
   return /\b(rejected|cancell?ed|closed|denied)\b/.test(text);
+}
+
+/**
+ * The wallets the site offers on `config`'s network: the pinned four, plus the passkey wallet on
+ * mainnet only. `baseUrl` is where the site is served from (import.meta.env.BASE_URL).
+ */
+export function offeredWallets(config: NetworkConfig, baseUrl: string): WalletManifest[] {
+  const wallets = pinned.wallets as unknown as WalletManifest[];
+  return config.networkId === "mainnet" ? [...wallets, passkeyManifestEntry(baseUrl)] : wallets;
 }
 
 export class NearConnectAdapter implements SignerAdapter {
@@ -44,17 +59,36 @@ export class NearConnectAdapter implements SignerAdapter {
   readonly label = "NEAR wallet";
   readonly capabilities = { batch: true };
   readonly connector: NearConnector;
+  /** Present on mainnet: how a connected passkey wallet submits. */
+  readonly passkey: PasskeyAdapter | null;
 
-  constructor(private readonly config: NetworkConfig) {
+  constructor(
+    private readonly config: NetworkConfig,
+    waitFinal: WaitFinal,
+    /** Where the site is served from, ending in "/" (import.meta.env.BASE_URL). */
+    baseUrl: string,
+  ) {
     const nonce = typeof window !== "undefined" ? window.__INTATTO_CSP_NONCE__ : undefined;
+    this.passkey = config.networkId === "mainnet" ? new PasskeyAdapter(config, waitFinal) : null;
     this.connector = new NearConnector({
       network: config.networkId,
-      manifest: { version: pinned.version, wallets: pinned.wallets as never },
+      manifest: { version: pinned.version, wallets: offeredWallets(config, baseUrl) },
       providers: { [config.networkId]: [config.rpcUrl] },
+      storage: hardenedStorage(),
       footerBranding: null,
       autoConnect: true,
       ...(nonce ? { cspNonce: nonce } : {}),
     });
+  }
+
+  /** Whether the connected wallet is the passkey wallet. */
+  private isPasskey(wallet: NearWalletBase | null): boolean {
+    return this.passkey !== null && wallet?.manifest.id === PASSKEY_WALLET_ID;
+  }
+
+  async session(): Promise<WalletSession> {
+    const wallet = await this.wallet();
+    return this.isPasskey(wallet) ? { notice: this.passkey!.notice, gasSponsored: true } : PLAIN_SESSION;
   }
 
   private async wallet(): Promise<NearWalletBase | null> {
@@ -95,6 +129,7 @@ export class NearConnectAdapter implements SignerAdapter {
   async submit(signerId: string, plans: readonly TxPlan[]): Promise<SubmittedTx[]> {
     const wallet = await this.wallet();
     if (!wallet) throw new Error("No wallet is connected");
+    if (this.isPasskey(wallet)) return this.passkey!.submit(wallet, signerId, plans);
     let outcomes: unknown[];
     try {
       outcomes = await wallet.signAndSendTransactions({ network: this.config.networkId, signerId, transactions: toConnectorTransactions(plans) as never });

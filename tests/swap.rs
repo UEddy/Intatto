@@ -21,7 +21,25 @@ use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 use testresult::TestResult;
 
-const EXCHANGE_SHA256: &str = "AEAm8sQ5KYZRgnpq2CN2NhX6d8QV76iRtiDpy5Ai6zDX";
+/// ref-exchange 1.9.19, the code of `ref-finance-101.testnet` (tests/res/README.md).
+const EXCHANGE_1_9_19_SHA256: &str = "AEAm8sQ5KYZRgnpq2CN2NhX6d8QV76iRtiDpy5Ai6zDX";
+/// ref-exchange 1.9.21, the code of `v2.ref-finance.near` on mainnet (tests/res/README.md).
+const EXCHANGE_1_9_21_SHA256: &str = "GZmkbfVLcN7ErxU9RDxP24YTaKmoVixhM6XyycP15Qvi";
+/// Selects the exchange binary: `1.9.19` (testnet, the default) or `1.9.21` (mainnet).
+const EXCHANGE_VERSION_ENV: &str = "INTATTO_TEST_EXCHANGE";
+
+/// The exchange version these tests run against.
+fn exchange_version() -> String {
+    std::env::var(EXCHANGE_VERSION_ENV).unwrap_or_else(|_| "1.9.19".to_string())
+}
+
+fn exchange_wasm() -> Vec<u8> {
+    match exchange_version().as_str() {
+        "1.9.19" => res_wasm("ref_exchange_v1.9.19.wasm", EXCHANGE_1_9_19_SHA256),
+        "1.9.21" => res_wasm("ref_exchange_v1.9.21.wasm", EXCHANGE_1_9_21_SHA256),
+        other => panic!("{EXCHANGE_VERSION_ENV}={other}: expected 1.9.19 or 1.9.21"),
+    }
+}
 const POOL_ID: u64 = 0;
 /// Slippage the policy allows on the pool: 0.5%.
 const MAX_SLIPPAGE_BPS: u16 = 50;
@@ -72,12 +90,7 @@ impl SwapEnv {
             "referral_fee": 0,
         });
         let exchange = env
-            .deploy(
-                EXCHANGE,
-                res_wasm("ref_exchange_v1.9.19.wasm", EXCHANGE_SHA256),
-                "new",
-                exchange_args,
-            )
+            .deploy(EXCHANGE, exchange_wasm(), "new", exchange_args)
             .await?;
         let w_near = res_wasm("w_near.wasm", W_NEAR_SHA256);
         let wnear = env
@@ -1380,5 +1393,139 @@ async fn v1_lets_one_owner_reclaim_another_owners_tokens() -> TestResult {
     let result = s.reclaim(&other).await?;
     assert!(!result.assert_success().json::<bool>()?);
     assert_eq!(s.token_of(&other, &s.usdt).await?, (0, kept));
+    Ok(())
+}
+
+/// The exchange owner appoints `dex-owner.sandbox` a blacklist manager, which then sets whether the
+/// vault's account is blacklisted. ref-exchange 1.9.21 only.
+async fn set_vault_blacklisted(s: &SwapEnv, blacklisted: bool) -> TestResult {
+    let dex_owner: AccountId = "dex-owner.sandbox".parse()?;
+    let managers: Vec<AccountId> = s
+        .env
+        .view_on(&s.exchange, "get_blacklist_managers", json!({}))
+        .await?;
+    if !managers.contains(&dex_owner) {
+        // Only blacklist managers may blacklist, not the exchange owner itself.
+        let args = json!({ "users": [s.env.vault_id()] });
+        assert_fails_with(
+            s.env
+                .call_on(
+                    &s.exchange,
+                    &dex_owner,
+                    "extend_blacklisted_users",
+                    args,
+                    ONE_YOCTO,
+                    tgas(30),
+                )
+                .await?,
+            "E100: no permission to invoke this",
+        );
+        s.env
+            .call_on(
+                &s.exchange,
+                &dex_owner,
+                "extend_blacklist_managers",
+                json!({ "managers": [dex_owner] }),
+                ONE_YOCTO,
+                tgas(30),
+            )
+            .await?
+            .assert_success();
+    }
+    let method = if blacklisted {
+        "extend_blacklisted_users"
+    } else {
+        "remove_blacklisted_users"
+    };
+    let args = json!({ "users": [s.env.vault_id()] });
+    s.env
+        .call_on(&s.exchange, &dex_owner, method, args, ONE_YOCTO, tgas(30))
+        .await?
+        .assert_success();
+    let listed: bool = s
+        .env
+        .view_on(
+            &s.exchange,
+            "is_blacklisted_user",
+            json!({ "account_id": s.env.vault_id() }),
+        )
+        .await?;
+    assert_eq!(listed, blacklisted);
+    Ok(())
+}
+
+/// ref-exchange 1.9.21 (mainnet) adds a user blacklist that its blacklist managers control. On
+/// mainnet, `blockdexuser.near` is one, and 174 accounts were blacklisted on 2026-11-09. If the
+/// vault's account is blacklisted, the exchange refuses its deposits: every swap is refunded at
+/// the deposit step and nothing is lost.
+#[tokio::test]
+async fn blacklisted_vault_on_1_9_21_refunds_swaps_and_loses_nothing() -> TestResult {
+    if exchange_version() != "1.9.21" {
+        eprintln!("skipped: needs {EXCHANGE_VERSION_ENV}=1.9.21");
+        return Ok(());
+    }
+    let s = SwapEnv::new(FULLY_REGISTERED).await?;
+    let vault = s.env.vault_id().clone();
+    let amount_in = units(near(1));
+    let first = s.swap_at_quote(&s.env.owner, amount_in).await?;
+    let usdt = split_fee(first).0;
+    set_vault_blacklisted(&s, true).await?;
+
+    let quote = s.quote(amount_in).await?;
+    let result = s.agent_swap(amount_in, quote).await?;
+    let refunded = events(&result, "swap_refunded");
+    assert_eq!(refunded.len(), 1, "logs: {:?}", result.logs());
+    assert_eq!(refunded[0]["failed_step"], "deposit");
+    assert_eq!(refunded[0]["held_on_exchange"], false);
+    assert!(!result.assert_success().json::<bool>()?);
+    assert_eq!(s.token(&s.wnear).await?, (units(near(4)), 0));
+    assert_eq!(s.token(&s.usdt).await?, (usdt, 0));
+    assert_eq!(s.ft_balance(&s.wnear, &vault).await?, units(near(4)));
+    assert_eq!(s.usdt_ledger().await?.expected, U128(0));
+    s.assert_nothing_left_on_exchange().await?;
+
+    // Off the blacklist, swaps work again.
+    set_vault_blacklisted(&s, false).await?;
+    s.swap_at_quote(&s.env.owner, amount_in).await?;
+    Ok(())
+}
+
+/// Output already held in the vault's exchange account when the vault is blacklisted cannot be
+/// reclaimed until the vault is off the blacklist; nothing is lost meanwhile.
+#[tokio::test]
+async fn blacklisted_vault_on_1_9_21_keeps_held_output_until_reclaimable() -> TestResult {
+    if exchange_version() != "1.9.21" {
+        eprintln!("skipped: needs {EXCHANGE_VERSION_ENV}=1.9.21");
+        return Ok(());
+    }
+    let s = SwapEnv::new(Registered {
+        on_exchange: true,
+        on_usdt: false,
+    })
+    .await?;
+    let vault = s.env.vault_id().clone();
+    let held = s.swap_at_quote(&s.env.owner, units(near(1))).await?;
+    assert_eq!(s.token(&s.usdt).await?, (0, held));
+    s.register(&s.usdt, &vault).await?;
+    set_vault_blacklisted(&s, true).await?;
+
+    // The exchange refuses a blacklisted account's withdrawal: the reclaim fails, and the owner's
+    // claim stays recorded on the exchange, where the tokens still are.
+    let result = s.reclaim(&s.env.owner).await?;
+    let reclaimed = events(&result, "exchange_reclaim");
+    assert_eq!(reclaimed.len(), 1, "logs: {:?}", result.logs());
+    assert_eq!(reclaimed[0]["succeeded"], false);
+    assert!(!result.assert_success().json::<bool>()?);
+    assert_eq!(s.token(&s.usdt).await?, (0, held));
+    assert_eq!(s.exchange_view("get_deposit", &s.usdt).await?, held);
+    assert_eq!(s.usdt_ledger().await?.expected, U128(held));
+
+    // Off the blacklist, the same reclaim delivers it.
+    set_vault_blacklisted(&s, false).await?;
+    let result = s.reclaim(&s.env.owner).await?;
+    assert_eq!(events(&result, "exchange_reclaim")[0]["succeeded"], true);
+    assert_eq!(s.token(&s.usdt).await?, (held, 0));
+    s.assert_nothing_left_on_exchange().await?;
+    assert_eq!(s.ft_balance(&s.usdt, &vault).await?, held);
     Ok(())
 }

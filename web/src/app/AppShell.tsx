@@ -79,6 +79,7 @@ function WalletButton() {
         <div className="wallet-pop">
           <p className="muted small">Signed in as</p>
           <p className="mono wallet-acct">{w.accountId}</p>
+          {w.session.notice && <p className="small wallet-notice">{w.session.notice}</p>}
           <button type="button" className="btn btn--quiet btn--small btn--block" onClick={() => void w.disconnect()}>
             Disconnect
           </button>

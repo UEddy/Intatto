@@ -42,8 +42,16 @@ jobs:
       - run: cargo clippy --all-features --workspace --tests -- --warn clippy::all --warn clippy::nursery
 
   test:
-    name: Tests
+    name: Tests (exchange ${{ matrix.exchange }})
     runs-on: ubuntu-latest
+    # The swap tests against both exchange binaries: ref-exchange 1.9.19 (testnet) and 1.9.21
+    # (v2.ref-finance.near on mainnet). See tests/res/README.md.
+    strategy:
+      fail-fast: false
+      matrix:
+        exchange: ["1.9.19", "1.9.21"]
+    env:
+      INTATTO_TEST_EXCHANGE: ${{ matrix.exchange }}
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install

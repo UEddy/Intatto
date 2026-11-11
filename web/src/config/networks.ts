@@ -176,20 +176,32 @@ export const MAINNET: NetworkConfig = {
     fastnear: "https://tx.main.fastnear.com",
     nearblocks: "https://api.nearblocks.io",
   },
-  // Not deployed yet.
+  // Not deployed yet: set to the account scripts/mainnet-deploy.sh deployed to (VAULT_ID).
   vaultId: null,
-  // metadata(): ref-exchange 1.9.21
+  // metadata() (2026-11-09): ref-exchange 1.9.21, Running; code hash
+  // GZmkbfVLcN7ErxU9RDxP24YTaKmoVixhM6XyycP15Qvi, the binary the sandbox suite runs against with
+  // INTATTO_TEST_EXCHANGE=1.9.21 (tests/res/README.md).
   exchangeId: "v2.ref-finance.near",
-  // get_pool(3879): SIMPLE_POOL, 0.3% fee
+  // get_pool(3879) (2026-11-09, block 223,788,029): SIMPLE_POOL, total_fee 30 (0.3%), reserves
+  // 523.2 wNEAR / 1,903.48 USDt. The deepest simple wNEAR/USDt pool; get_return for 0.5 wNEAR was
+  // 1.816902 USDt.
   pool: { id: 3879, tokenIds: ["wrap.near", "usdt.tether-token.near"] },
+  // ft_metadata (2026-11-09): wNEAR 24 decimals; USDt ("Tether USD") 6 decimals.
   tokens: [
     { contractId: "wrap.near", role: "wnear" },
     { contractId: "usdt.tether-token.near", role: "usdt" },
   ],
-  // Not set up yet.
+  // Not set up yet: scripts/mainnet-canary.sh prints these values (owner, agent, the agent's
+  // published key, the baseline balance and its lock transaction) once it has run.
   canary: null,
   demo: null,
-  expectedBuild: null,
+  // `cargo near build reproducible-wasm` of commit 6cfa90e in a fresh clone (2026-11-09), the
+  // build scripts/mainnet-deploy.sh refuses to deploy anything but.
+  expectedBuild: {
+    codeHash: "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J",
+    commit: "6cfa90e00890a510750d248b24dae0f86b5211be",
+    image: "sourcescan/cargo-near:0.21.1-rust-1.96.0",
+  },
   repoUrl: REPO,
   blockTimeMs: 581,
 };

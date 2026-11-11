@@ -5,6 +5,7 @@ import { useChainNow } from "../ui/useNow";
 import { useWallet } from "../wallet/WalletProvider";
 import { ActionProvider } from "./ActionSheet";
 import { KillSwitch } from "./KillSwitch";
+import { PASSKEY_LOCK_ADVICE } from "../wallet/passkey";
 import { DepositPanel, LockPanel, ReclaimPanel, WithdrawPanel } from "./MoneyPanels";
 import { Overview } from "./Overview";
 import { PolicyEditor } from "./PolicyEditor";
@@ -50,6 +51,7 @@ export function ConsolePage() {
 
 function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: string }) {
   const c = useConsole(ownerId);
+  const { session } = useWallet();
   const [tab, setTab] = useState<"vault" | "activity">("vault");
   const nowNs = useChainNow(c.block.data?.timestampNs, c.block.dataUpdatedAt);
   const v = c.vault.data?.value;
@@ -63,6 +65,11 @@ function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: stri
         <h1 className="display display--l">Your vault</h1>
         <p className="mono console-owner">{ownerId}</p>
       </header>
+      {session.notice && (
+        <aside className="notice notice--warn" role="note" aria-label="Passkey wallet">
+          <strong>{session.notice}</strong> {PASSKEY_LOCK_ADVICE} <a href="#lock">Lock withdrawals</a>.
+        </aside>
+      )}
 
       <div className="console-tabs seg" role="tablist" aria-label="Console sections">
         <button type="button" role="tab" className="seg-btn" aria-selected={tab === "vault"} onClick={() => setTab("vault")}>
@@ -80,7 +87,7 @@ function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: stri
           {c.vault.isError && <p className="notice notice--warn">Could not read the vault: {String(c.vault.error)}</p>}
           {c.vault.isSuccess && (
             <>
-              <DepositPanel vaultId={vaultId} ownerId={ownerId} vault={v ?? null} tokens={c.tokens} accountNear={c.account.data?.value.amount ?? null} />
+              <DepositPanel vaultId={vaultId} ownerId={ownerId} vault={v ?? null} tokens={c.tokens} accountNear={c.account.data?.value.amount ?? null} gasSponsored={session.gasSponsored} />
               {v && chainNow !== null && (
                 <>
                   {/* Every configured token's metadata first: a missing row would silently drop that token's caps. */}

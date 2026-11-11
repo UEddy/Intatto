@@ -54,9 +54,35 @@ const lockMessage = (what: string, l: LockInfo) => `${what} is refused while wit
 
 /* ---------- deposits ---------- */
 
-export function depositNear(o: { vaultId: string; amount: bigint; vaultExists: boolean }): Intent {
+/** What the connected account can pay with, for the funding check. */
+export interface Funding {
+  readonly accountId: string;
+  /** The account's NEAR balance, or null if unknown (still loading, or no such account yet). */
+  readonly accountNear: bigint | null;
+  /** Gas is paid by a relayer (the passkey wallet), so the account needs only what it sends. */
+  readonly gasSponsored: boolean;
+}
+
+/** Gas kept back for a wallet that pays its own: the console's Max also keeps 0.05 NEAR. */
+export const OWN_GAS_RESERVE = 50_000_000_000_000_000_000_000n;
+
+/** A blocker if the account cannot pay `needed` NEAR (attached deposits) plus its own gas. */
+export function fundingBlocker(needed: bigint, funding: Funding | undefined): string | null {
+  if (!funding || funding.accountNear === null || needed <= 0n) return null;
+  const total = needed + (funding.gasSponsored ? 0n : OWN_GAS_RESERVE);
+  if (funding.accountNear >= total) return null;
+  const has = `${formatNear(funding.accountNear)} NEAR`;
+  if (funding.gasSponsored) {
+    return `Your passkey account ${funding.accountId} holds ${has}, less than the ${formatNear(needed)} NEAR this sends. Send NEAR to ${funding.accountId} from an exchange or another wallet first: the sponsor pays the gas, but the deposit comes from your account's own balance.`;
+  }
+  return `Your account holds ${has}; this needs ${formatNear(needed)} NEAR plus gas (${formatNear(OWN_GAS_RESERVE)} NEAR kept back).`;
+}
+
+export function depositNear(o: { vaultId: string; amount: bigint; vaultExists: boolean; funding?: Funding }): Intent {
   const blockers: string[] = [];
   if (o.amount <= 0n) blockers.push("Enter an amount greater than zero.");
+  const short = fundingBlocker(o.amount, o.funding);
+  if (short) blockers.push(short);
   return {
     title: "Deposit NEAR",
     summary: `Moves ${formatNear(o.amount)} NEAR from your account into your vault.${o.vaultExists ? "" : " This first deposit creates the vault; a small part pays for its storage."}`,
@@ -81,6 +107,7 @@ export function wrapAndDeposit(o: {
   storageMin: bigint;
   tokenInPolicy: boolean;
   vaultExists: boolean;
+  funding?: Funding;
 }): Intent {
   const actions: PlannedFunctionCall[] = [];
   if (!o.ownerRegistered) actions.push(call("storage_deposit", { account_id: o.ownerId, registration_only: true }, GAS.storageDeposit, o.storageMin));
@@ -92,6 +119,8 @@ export function wrapAndDeposit(o: {
   if (!o.vaultExists) blockers.push("Deposit some NEAR first: the vault must exist, and it pays for this token's storage from its NEAR balance.");
   if (!o.tokenInPolicy) blockers.push(`${o.wnear.symbol} is not in your policy, so the vault would refuse it. Add it in the policy first.`);
   const registrations = (o.ownerRegistered ? 0 : 1) + (o.vaultRegistered ? 0 : 1);
+  const short = fundingBlocker(o.amount + BigInt(registrations) * o.storageMin + 1n, o.funding);
+  if (short) blockers.push(short);
   return {
     title: `Wrap and deposit ${o.wnear.symbol}`,
     summary: `Wraps ${formatUnits(o.amount, o.wnear.decimals)} NEAR into ${o.wnear.symbol} and deposits it into your vault, in one transaction.`,

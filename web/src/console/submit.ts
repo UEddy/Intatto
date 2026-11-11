@@ -26,23 +26,35 @@ export interface TxResult {
 export async function readOutcomes(chain: Chain, archive: Chain, signerId: string, submitted: readonly SubmittedTx[]): Promise<TxResult[]> {
   const results: TxResult[] = [];
   for (const s of submitted) {
+    // A relayed transaction (passkey) is signed by its relayer, not by the user.
+    const sender = s.senderId ?? signerId;
     // wait_until NONE answers at once. (With EXECUTED_OPTIMISTIC, a node that never saw the
     // transaction waits ~11 s and then reports TIMEOUT_ERROR, which is retried, not "not found".)
     let source = chain;
-    let outcome = await chain.tx(s.hash, signerId, "NONE").catch(() => null);
+    let outcome = await chain.tx(s.hash, sender, "NONE").catch(() => null);
     if (!outcome) {
       source = archive;
-      outcome = await archive.tx(s.hash, signerId, "NONE");
+      outcome = await archive.tx(s.hash, sender, "NONE");
     }
     if (!outcome) throw new Error(`Transaction ${s.hash} was not found on chain`);
     // The wallet reports after execution, but if a receipt is still pending, wait for it.
     for (let i = 0; i < 20 && outcome.receipts.some((r) => r.status === "pending"); i++) {
       await new Promise((r) => setTimeout(r, 1000));
-      outcome = (await source.tx(s.hash, signerId, "NONE")) ?? outcome;
+      outcome = (await source.tx(s.hash, sender, "NONE")) ?? outcome;
     }
-    if (outcome.signerId !== signerId) throw new Error(`Transaction ${s.hash} was signed by ${outcome.signerId}, not ${signerId}`);
+    if (outcome.signerId !== sender) throw new Error(`Transaction ${s.hash} was signed by ${outcome.signerId}, not ${sender}`);
     const failed = outcome.receipts.find((r) => r.status === "failure");
-    const onReceiver = outcome.receipts.find((r) => r.executorId === s.receiverId);
+    let onReceiver = outcome.receipts.find((r) => r.executorId === s.receiverId);
+    if (sender !== signerId) {
+      // Relayed: it counts only if a receipt from the user's own account ran on the receiver,
+      // which is what the vault checks (predecessor = owner).
+      const routes = await source.receiptRoutes(s.hash, sender);
+      const route = routes?.routes.find((r) => r.predecessorId === signerId && r.receiverId === s.receiverId);
+      onReceiver = route ? outcome.receipts.find((r) => r.id === route.receiptId) : undefined;
+      if (!onReceiver && !failed) {
+        throw new Error(`Relayed transaction ${s.hash} succeeded without a call from ${signerId} to ${s.receiverId}`);
+      }
+    }
     const [inc, exe] = await Promise.all([source.block(outcome.txBlockHash), onReceiver ? source.block(onReceiver.blockHash) : Promise.resolve(null)]);
     results.push({
       hash: s.hash,

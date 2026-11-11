@@ -9,9 +9,10 @@
 //   node agent/injection-demo.mjs --llm                  an LLM on NEAR AI Cloud decides
 //   add --dry-run to print the transactions without signing or sending them
 //
-// Environment (see agent/README.md):
+// Environment, or agent/.env (gitignored; the environment wins), see agent/README.md:
 //   DEMO_AGENT_KEY   the demo agent's function-call private key (published in agent/README.md)
 //   NEAR_AI_API_KEY  for --llm; NEAR_AI_MODEL overrides the model
+// Secret values never reach stdout or the run log: every line goes through redact() (secrets.mjs).
 //   DEMO_VAULT, DEMO_OWNER, DEMO_AGENT, DEMO_MERCHANT, DEMO_ATTACKER, NEAR_RPC override the defaults
 //
 // Every step goes to stdout and to agent/runs/<timestamp>-<mode>.jsonl.
@@ -19,9 +20,12 @@ import { mkdirSync, appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { keyPair, serializeTransaction, signTransaction } from "./near-tx.mjs";
+import { loadEnvFile, redact, secretValues } from "./secrets.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const env = process.env;
+const loadedFromFile = loadEnvFile(env);
+const SECRETS = secretValues(env);
 const args = new Set(process.argv.slice(2));
 const MODE = args.has("--llm") ? "llm" : args.has("--compromised") ? "compromised" : null;
 const DRY_RUN = args.has("--dry-run");
@@ -40,7 +44,7 @@ const CONFIG = {
   attacker: env.DEMO_ATTACKER ?? "attacker.testnet",
   // A tool-capable model NEAR AI serves from its own attested TEE (checked against /v1/models).
   model: env.NEAR_AI_MODEL ?? "deepseek-ai/DeepSeek-V4.1-Flash-1017",
-  nearAi: "https://cloud-api.near.ai/v1",
+  nearAi: env.NEAR_AI_BASE_URL ?? "https://cloud-api.near.ai/v1",
   invoiceNear: "0.01",
   maxTurns: 6,
 };
@@ -56,11 +60,11 @@ let step = 0;
 function log(kind, data) {
   step += 1;
   const entry = { step, at: new Date().toISOString(), kind, ...data };
-  appendFileSync(logFile, `${JSON.stringify(entry, (_, v) => (typeof v === "bigint" ? v.toString() : v))}\n`);
+  appendFileSync(logFile, `${redact(JSON.stringify(entry, (_, v) => (typeof v === "bigint" ? v.toString() : v)), SECRETS)}\n`);
   const summary = Object.entries(data)
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x))}`)
     .join("  ");
-  console.log(`[${String(step).padStart(2, "0")}] ${kind.padEnd(14)} ${summary}`);
+  console.log(redact(`[${String(step).padStart(2, "0")}] ${kind.padEnd(14)} ${summary}`, SECRETS));
 }
 
 /* ---------- chain ---------- */
@@ -341,6 +345,8 @@ async function llmAgent() {
 /* ---------- run ---------- */
 
 async function main() {
+  // Which variables came from agent/.env: names only.
+  log("env", { loaded_from_agent_env_file: loadedFromFile, near_ai_key_set: Boolean(env.NEAR_AI_API_KEY), agent_key_set: Boolean(env.DEMO_AGENT_KEY) });
   log("start", { mode: MODE, dry_run: DRY_RUN, vault: CONFIG.vault, owner: CONFIG.owner, agent: CONFIG.agent, merchant: CONFIG.merchant, attacker: CONFIG.attacker, log: logFile });
   log("invoice", { text: invoiceText() });
   signer = await loadSigner();

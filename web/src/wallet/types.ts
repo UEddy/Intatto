@@ -4,8 +4,9 @@
  * signs and submits, then returns transaction hashes; the app reads every outcome itself over
  * its own RPC. That keeps the screens identical for:
  *
- * - NearConnectAdapter (now): near-connect's signAndSendTransactions.
- * - A passkey adapter (later): signDelegateActions, posted to a relayer, which returns the hash.
+ * - NearConnectAdapter: near-connect's signAndSendTransactions, signed by the user's account.
+ * - The passkey wallet (wallet/passkey.ts, mainnet only): one transaction at a time, each relayed
+ *   and signed by Trezu's sponsor contract on the user's behalf.
  */
 
 export interface PlannedFunctionCall {
@@ -40,6 +41,12 @@ export interface Intent {
 export interface SubmittedTx {
   readonly hash: string;
   readonly receiverId: string;
+  /**
+   * The account that signed the transaction, when it is not the user's own: a relayer (the
+   * passkey sponsor). Its outcome is looked up with this sender, and must contain a receipt from
+   * the user's account on `receiverId`.
+   */
+  readonly senderId?: string;
 }
 
 export interface AdapterCapabilities {
@@ -58,7 +65,18 @@ export interface SignerAdapter {
   disconnect(): Promise<void>;
   /** Signs and submits `plans` in order; resolves with their hashes once submitted. */
   submit(signerId: string, plans: readonly TxPlan[]): Promise<SubmittedTx[]>;
+  /** What the screens need to know about the connected wallet. Never prompts. */
+  session?(): Promise<WalletSession>;
 }
+
+export interface WalletSession {
+  /** A warning to show wherever this wallet is in use (the passkey wallet's "experimental"), or null. */
+  readonly notice: string | null;
+  /** Gas is paid by a relayer, so the account only needs NEAR for what it sends (the passkey wallet). */
+  readonly gasSponsored: boolean;
+}
+
+export const PLAIN_SESSION: WalletSession = { notice: null, gasSponsored: false };
 
 /** The user closed or rejected the wallet's prompt. */
 export class WalletRejectedError extends Error {

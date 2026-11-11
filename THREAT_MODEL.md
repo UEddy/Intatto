@@ -163,6 +163,14 @@ exchange beyond rejected calls.
     code. The integration was checked
   against ref-exchange 1.9.19; the smoke scripts refuse to run if the exchange's code hash
   changes.
+- **The mainnet exchange's blacklist** (`v2.ref-finance.near`, ref-exchange 1.9.21). Its owner
+  (`ref-finance.sputnik-dao.near`) appoints blacklist managers, and a manager can blacklist any
+  account. On 2026-11-09 the one manager was `blockdexuser.near`, and 174 accounts were
+  blacklisted. If the vault's account is blacklisted, the exchange refuses its deposits, so every
+  owner's swap is refunded at the deposit step, and refuses its withdrawals. Output already on
+  the exchange then stays recorded as `on_exchange` and cannot be reclaimed until the vault is
+  removed from the list. Nothing is lost or misattributed. Both cases run against the real 1.9.21
+  binary in `tests/swap.rs` (`blacklisted_vault_on_1_9_21_*`).
 - **Token contracts an owner lists.** These are trusted as NEP-141 implementations by that
   owner only. A dishonest token can fake deposits or withdrawals of itself, for the owners who
   listed it.
@@ -203,7 +211,8 @@ What the page does to keep its own part honest:
 
 ### Wallet executors
 
-Wallets connect through near-connect (`@hot-labs/near-connect` 0.12.0). The page offers four,
+Wallets connect through near-connect, vendored at NEAR-DevHub/near-connect `f2fc970`
+(`web/vendor/near-connect/VENDORED.md`; it replaced `@hot-labs/near-connect` 0.12.0). The page offers four,
 from a pinned copy of near-connect's manifest (`web/src/wallet/manifest.pinned.json`, from
 manifest 1.1.0, sha256 `a90e85a7…`, 2026-11-09), so a change to the remote manifest cannot add or
 swap a wallet. On testnet only Meteor and Intear appear; HOT and MyNearWallet declare mainnet only.
@@ -228,6 +237,14 @@ the contract's policy the real one.
 
 ### Content security policy
 
+On Cloudflare Pages (prepared, `web/scripts/pages-deploy.sh`, not deployed) the build also emits
+`_headers`: the same policy as a real header, plus `frame-ancestors 'none'`, `X-Frame-Options:
+DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a
+`Permissions-Policy` that allows WebAuthn on this origin only and turns off camera, microphone,
+geolocation, USB, Bluetooth, HID, serial and payment. A static header cannot carry the per-load
+nonce, so its `script-src` allows `'self' 'unsafe-inline'`, and the `<meta>` policy below still
+requires the nonce: a script must pass both.
+
 GitHub Pages cannot set headers, so the policy is a `<meta>` tag. `boot.js`, the first script on
 the page, inserts it together with a nonce that is random on every page load
 (`crypto.getRandomValues`, 18 bytes) and never appears in the served HTML. Only `boot.js` runs
@@ -245,6 +262,7 @@ before the policy exists.
 
 | Origin | Why |
 |---|---|
+| `'self'` | The passkey executor this site serves (`/wallets/passkey-executor-798e9e5.js`) |
 | `test.rpc.fastnear.com`, `rpc.mainnet.fastnear.com` | Live view calls and transaction status |
 | `archival-rpc.testnet.fastnear.com`, `archival-rpc.mainnet.fastnear.com` | Old transactions only (canary setup and run start) |
 | `tx.test.fastnear.com`, `tx.main.fastnear.com` | Transaction lists (FastNEAR, primary) |
@@ -366,9 +384,9 @@ Limits of this measurement:
 
 ## Passkey sign-in (planned, mainnet only, experimental)
 
-Not built yet; this section is the design the owner approved on 2026-11-09. The console will
-label the passkey path **"experimental: unaudited wallet contract, upgradeable by Trezu; small
-amounts only"** and recommend a withdrawal lock.
+Built, not deployed (the site is not on Cloudflare Pages yet). The console labels the passkey
+path **"Experimental: unaudited wallet contract, upgradeable by Trezu; small amounts only."**, in
+a banner and in the wallet menu, and recommends a withdrawal lock. Code: `web/src/wallet/passkey.ts`.
 
 How it works: a passkey account is a deterministic `0s…` account (NEP-616). It runs a WebAuthn
 wallet contract, deployed as a global contract by account id (NEP-591):
@@ -401,13 +419,28 @@ Trust and risks:
   Pages also lets us set real HTTP security headers (`_headers`), instead of the `<meta>` policy
   GitHub Pages forces.
 - **The page runs third-party code.** near-connect is vendored at commit `f2fc970` of the
-  `passkeys-20261104` branch, after review, because no release has the WebAuthn bridge yet. The
-  executor is pinned to a reviewed commit and served from our own origin.
+  `passkeys-20261104` branch, because no release has the WebAuthn bridge yet. Its review and the
+  check that its build matches its source are in `web/vendor/near-connect/VENDORED.md`. The
+  executor is `passkey-executor.js` at `798e9e5`, rebuilt byte for byte from source and served from
+  our own origin (`web/vendor/PASSKEY-EXECUTOR.md`).
+- **Only the passkey wallet can use WebAuthn.** The vendored near-connect runs
+  `navigator.credentials` in our page for any wallet whose manifest grants `webauthn`, with
+  options that wallet chooses. Only the passkey entry has it, and no offered wallet has the
+  `walletConnect` or `keepAlive` permissions this build widened (`web/src/wallet/passkey.test.ts`).
+  near-connect would also register wallets from a `debug-wallets` storage entry. Its storage
+  (`web/src/wallet/connectorStorage.ts`) never returns that key.
+- **A cancelled prompt in another language shows as an error.** The executor's messages are
+  localized, and only English "cancelled" is recognised as a rejection. Nothing is sent either way.
 - **Several transactions run concurrently.** The wallet contract runs the promises of one request
   concurrently, not in order. The passkey adapter therefore submits a multi-transaction plan one
   transaction at a time, waiting for each to finish. Each one needs its own passkey prompt.
 - **Relayed transactions are signed by the sponsor, not the owner.** The console checks a
   relayed transaction by its signer (`helper.trezu.near`) and by a receipt from the owner's
   `0s…` account on the vault.
+- **The account must hold NEAR before it deposits.** The sponsor pays the gas, but a deposit is
+  the account's own NEAR. The console refuses a deposit the account cannot cover and says where
+  to send NEAR (`fundingBlocker` in `web/src/console/intents.ts`).
 - **Testing:** there is no testnet deployment of the wallet contracts, the registry or the
-  sponsor. We test with recorded fixtures and dry runs, then a mainnet canary with tiny amounts.
+  sponsor. The adapter is tested with recorded mainnet transactions relayed by
+  `helper.trezu.near` (`web/src/test/fixtures/rpc-tx-status-relayed-*.json`) and fakes, then a
+  mainnet canary with tiny amounts.

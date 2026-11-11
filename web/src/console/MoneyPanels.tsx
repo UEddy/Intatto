@@ -28,8 +28,9 @@ function AssetTabs({ value, onChange, tokens, label }: { value: Asset; onChange:
   );
 }
 
-export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear }: { vaultId: string; ownerId: string; vault: VaultView | null; tokens: TokenState[]; accountNear: bigint | null }) {
+export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear, gasSponsored = false }: { vaultId: string; ownerId: string; vault: VaultView | null; tokens: TokenState[]; accountNear: bigint | null; gasSponsored?: boolean }) {
   const run = useAction();
+  const funding = { accountId: ownerId, accountNear, gasSponsored };
   const [asset, setAsset] = useState<Asset>("near");
   const [amount, setAmount] = useState("");
   const token = tokens.find((t) => t.id === asset);
@@ -37,7 +38,7 @@ export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear }: {
   const inPolicy = (id: string) => !!vault?.policy.tokens.some((t) => t.token_id === id);
 
   const review = () => {
-    if (asset === "near") return run(I.depositNear({ vaultId, amount: parsedOrZero(amount, NEAR_DECIMALS), vaultExists: vault !== null }));
+    if (asset === "near") return run(I.depositNear({ vaultId, amount: parsedOrZero(amount, NEAR_DECIMALS), vaultExists: vault !== null, funding }));
     if (!token?.info) return;
     if (token.role === "wnear") {
       return run(
@@ -51,6 +52,7 @@ export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear }: {
           storageMin: token.storageMin ?? 0n,
           tokenInPolicy: inPolicy(token.id),
           vaultExists: vault !== null,
+          funding,
         }),
       );
     }

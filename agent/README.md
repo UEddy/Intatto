@@ -90,6 +90,12 @@ The second script prints the key to publish above, and the public key to put in
 
 ## Environment
 
+Set these in the environment, or put them in `agent/.env` (one `NAME=value` per line). That file
+is gitignored (`/agent/.env`), and variables already set in the environment win over it. Secret
+values never reach stdout or `agent/runs/*.jsonl`: every log line is redacted
+([secrets.mjs](secrets.mjs)), and [injection-demo.test.mjs](injection-demo.test.mjs) checks it
+against a server that echoes the key back.
+
 | Variable | Default |
 |---|---|
 | `DEMO_AGENT_KEY` | none; required unless `--dry-run` |
@@ -101,6 +107,7 @@ The second script prints the key to publish above, and the public key to put in
 | `DEMO_MERCHANT` | `demo-merchant.intatto-dev.testnet` |
 | `DEMO_ATTACKER` | `attacker.testnet` |
 | `NEAR_RPC` | `https://test.rpc.fastnear.com` |
+| `NEAR_AI_BASE_URL` | `https://cloud-api.near.ai/v1` (the tests point it at a local stub) |
 
 ## Tests
 

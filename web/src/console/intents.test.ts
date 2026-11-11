@@ -113,3 +113,34 @@ describe("policy form", () => {
     expect(diffPolicy(before, after, tokens)).toEqual([{ what: "wNEAR per trade", before: "0.1 wNEAR", after: "0.2 wNEAR" }]);
   });
 });
+
+describe("funding check", () => {
+  const NEAR = 10n ** 24n;
+  const passkey = (accountNear: bigint | null) => ({ accountId: "0s640d667971eb2a50c512be2e893cbe7851c1fcf9", accountNear, gasSponsored: true });
+  const wallet = (accountNear: bigint | null) => ({ accountId: "alice.near", accountNear, gasSponsored: false });
+
+  it("blocks a passkey deposit the account cannot pay, and says where to send NEAR", () => {
+    const i = I.depositNear({ vaultId: "vault.near", amount: NEAR, vaultExists: true, funding: passkey(0n) });
+    expect(i.blockers.join(" ")).toMatch(/Send NEAR to 0s640d667971eb2a50c512be2e893cbe7851c1fcf9 .*the sponsor pays the gas/);
+  });
+
+  it("lets a passkey account deposit exactly its balance: the sponsor pays the gas", () => {
+    expect(I.depositNear({ vaultId: "vault.near", amount: NEAR, vaultExists: true, funding: passkey(NEAR) }).blockers).toEqual([]);
+  });
+
+  it("keeps gas back for a wallet that pays its own", () => {
+    expect(I.depositNear({ vaultId: "vault.near", amount: NEAR, vaultExists: true, funding: wallet(NEAR) }).blockers.join(" ")).toMatch(/plus gas/);
+    expect(I.depositNear({ vaultId: "vault.near", amount: NEAR, vaultExists: true, funding: wallet(2n * NEAR) }).blockers).toEqual([]);
+  });
+
+  it("does not block while the balance is unknown", () => {
+    expect(I.fundingBlocker(NEAR, passkey(null))).toBeNull();
+  });
+
+  it("counts storage registrations into what a wrap-and-deposit needs", () => {
+    const wnear = { id: "wrap.near", symbol: "wNEAR", decimals: 24 };
+    const base = { vaultId: "vault.near", ownerId: "0s640d667971eb2a50c512be2e893cbe7851c1fcf9", wnear, amount: NEAR, ownerRegistered: false, vaultRegistered: true, storageMin: 1_250_000_000_000_000_000_000n, tokenInPolicy: true, vaultExists: true };
+    expect(I.wrapAndDeposit({ ...base, funding: passkey(NEAR) }).blockers.join(" ")).toMatch(/holds 1 NEAR/);
+    expect(I.wrapAndDeposit({ ...base, funding: passkey(2n * NEAR) }).blockers).toEqual([]);
+  });
+});

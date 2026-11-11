@@ -1,2 +1,5 @@
 /target
 /agent/runs/
+/mainnet-*.txs
+# Secrets for the prompt-injection demo (NEAR_AI_API_KEY, DEMO_AGENT_KEY). Never commit.
+/agent/.env

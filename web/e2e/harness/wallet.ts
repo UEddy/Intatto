@@ -3,7 +3,8 @@
 import { TESTNET } from "../../src/config/networks";
 import { NearConnectAdapter } from "../../src/wallet/nearConnect";
 
-const adapter = new NearConnectAdapter(TESTNET);
+// Testnet: no passkey wallet, so the adapter never waits for finality; the harness signs nothing.
+const adapter = new NearConnectAdapter(TESTNET, async () => {}, "/");
 (window as unknown as { harness: unknown }).harness = {
   ready: adapter.connector.whenManifestLoaded,
   wallets: () => adapter.connector.availableWallets.map((w) => w.manifest.id),

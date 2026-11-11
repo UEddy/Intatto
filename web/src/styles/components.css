@@ -681,6 +681,14 @@ code {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+/* The passkey wallet's "experimental" notice in the wallet menu. */
+.wallet-notice {
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+  color: var(--ink);
+}
 @media (max-width: 420px) {
   .masthead-tools .net-switch {
     padding: 0 10px;

@@ -186,6 +186,39 @@ export class Chain {
     }
     return parseTxOutcome(response.result);
   }
+
+  /**
+   * Who called whom in a transaction: each receipt's predecessor and receiver, which the plain
+   * `tx` answer leaves out (EXPERIMENTAL_tx_status). Null if the node does not know the transaction.
+   * Used to check that a relayed transaction reached the receiver from the user's own account.
+   */
+  async receiptRoutes(hash: string, senderId: string): Promise<{ signerId: string; routes: ReceiptRoute[] } | null> {
+    const response = await this.rpc.call("EXPERIMENTAL_tx_status", { tx_hash: hash, sender_account_id: senderId, wait_until: "NONE" });
+    if (!response.ok) {
+      if (response.error.name === "UNKNOWN_TRANSACTION") return null;
+      throw new ChainAnswerError(response.error);
+    }
+    return parseReceiptRoutes(response.result);
+  }
+}
+
+export interface ReceiptRoute {
+  readonly receiptId: string;
+  readonly predecessorId: string;
+  readonly receiverId: string;
+}
+
+const txStatusResponse = z.object({
+  transaction: z.object({ signer_id: z.string() }),
+  receipts: z.array(z.object({ receipt_id: z.string(), predecessor_id: z.string(), receiver_id: z.string() })),
+});
+
+export function parseReceiptRoutes(raw: unknown): { signerId: string; routes: ReceiptRoute[] } {
+  const t = parseWith(txStatusResponse, raw, "EXPERIMENTAL_tx_status response");
+  return {
+    signerId: t.transaction.signer_id,
+    routes: t.receipts.map((r) => ({ receiptId: r.receipt_id, predecessorId: r.predecessor_id, receiverId: r.receiver_id })),
+  };
 }
 
 const outcomeStatus = z.union([
