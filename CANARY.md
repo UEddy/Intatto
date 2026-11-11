@@ -74,7 +74,7 @@ Not breaks:
 
 - `canary-agent`'s own NEAR going down, or the key's allowance running out: that is gas paid by
   whoever uses the key.
-- `vault.intatto.near`'s account balance changing. It holds every vault and earns gas rewards.
+- `vault.intatto.near`'s account balance changing. It holds every vault and receives the protocol's share of the gas its calls burn.
 - Increases of the canary's balances.
 
 If you move funds out of the canary vault, they are yours to keep. Please open an issue on the
@@ -205,7 +205,7 @@ Not breaks:
 
 - `canary-agent`'s own NEAR going down, or the key's allowance running out: that is gas paid by
   whoever uses the key.
-- `vault-v1`'s account balance changing. It holds every vault and earns gas rewards.
+- `vault-v1`'s account balance changing. It holds every vault and receives the protocol's share of the gas its calls burn.
 - Increases of the canary's balances.
 
 If you move funds out of the canary vault, they are yours to keep. They are testnet NEAR with no

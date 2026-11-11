@@ -6,13 +6,17 @@ Author: [UEddy](https://github.com/UEddy)
 
 **The agent's key is public. Take the money if you can.**
 
-The canary is an AI agent's vault on NEAR testnet holding 0.9974 NEAR, and the agent's signing key
-is published in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
+The canary is an AI agent's vault on NEAR mainnet holding 0.99761 NEAR, and the agent's signing
+key is published in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
-contract, and the contract refuses every one. Nothing has left the canary since it was set up
-(balance still 997400000000000000000000 yoctoNEAR at block 277,204,809). Watch every attempt live
-on the board at **[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)**, or try one yourself in
-[Try it](#try-it).
+contract, and the contract refuses every one. Nothing has left the canary since it was set up on
+2026-11-11 (balance still 997610000000000000000000 yoctoNEAR at block 224,114,110, and nobody has
+signed with the key yet). Watch every attempt live on the board at
+**[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)**, or try one yourself in
+[Try it](#try-it). A second canary has run on testnet since 2026-11-06, also untouched (0.9974
+NEAR).
+
+Today most trading bots hold your private key. In September 2024, attackers exploited a flaw in the Telegram trading bot Banana Gun and drained about $3 million from 11 users' bot wallets; because the bot held the keys, every transfer was a valid signed transaction that nothing on chain could refuse. The team refunded the users from its treasury.[^banana-gun] Intatto removes the key from the bot: the agent signs only calls the vault's policy allows, and the money stays in a contract it cannot empty.
 
 That is what Intatto does: a NEAR contract that holds an owner's NEAR and NEP-141 tokens and lets
 one AI agent spend or swap them only within limits the owner sets on chain. The agent signs with a
@@ -20,8 +24,10 @@ function-call key. The contract, not the agent's software, checks every limit, s
 buggy, compromised, prompt-injected, or whose key is simply public can move no more than the owner
 allowed. For the canary that is nothing at all.
 
-The repository has three parts: the vault contract (`src/`), a web app with an owner console and the
-public canary board (`web/`), and scripts for testnet and mainnet (`scripts/`).
+The repository has four parts: the vault contract (`src/`), including agent swaps through NEAR
+Intents signed by the MPC network ([CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)); a web app with an
+owner console and the public canary board (`web/`); the agents (`agent/`): the prompt-injection
+demo and the intent-swap agent; and scripts for testnet and mainnet (`scripts/`).
 
 ## The problem
 
@@ -34,17 +40,35 @@ and an optional time lock on the owner's own withdrawals.
 
 ## What is deployed
 
-Testnet only. Mainnet is not deployed yet. The board is live at
-[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet) and reads testnet.
+| | Mainnet | Testnet |
+|---|---|---|
+| Vault contract with the 10 bps swap fee | **Live**: `vault.intatto.near`, the reproducible build of `6cfa90e` | **Live**: `vault-v2.intatto-dev.testnet`, a local build of the fee code |
+| Public canary (published agent key) | **Live** since 2026-11-11: 0.99761 NEAR, locked until 2026-11-20, no attempts yet | **Live** since 2026-11-06: 0.9974 NEAR on `vault-v1` (no fee), locked until 2026-12-06, no attempts yet |
+| Agent swaps through Rhea (Ref V1), within on-chain limits | **Live**: [smoke test](#mainnet-smoke-test-2026-11-11) 18/18 on 2026-11-11 | **Live** on vault-v1 and vault-v2 |
+| Agent swaps through NEAR Intents, signed by the MPC network | **Live**: `intents.intatto.near`, [one swap settled](#first-intent-swap-2026-11-11) on 2026-11-11 | Not available (mainnet only) |
+| Prompt-injection demo | Not deployed | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
+| Break-price board and owner console | **Live** at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet), the default | **Live** on the same site (network switch, or `?network=testnet`) |
+| Wallets | Meteor, Intear, HOT, MyNearWallet | Meteor, Intear |
+| Passkey sign-in | **Experimental**: live in the web app (mainnet only, unaudited Trezu wallet contract); not yet verified end to end ([THREAT_MODEL.md](THREAT_MODEL.md#passkey-sign-in-mainnet-only-experimental)) | Not available (mainnet only) |
+| Teardown | **Planned** after the canary's lock ends on 2026-11-20 ([scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)) | |
+
+| | Mainnet |
+|---|---|
+| Canary vault contract | [`vault.intatto.near`](https://explorer.near.org/accounts/vault.intatto.near), bound to `v2.ref-finance.near` (ref-exchange 1.9.21); fee 10 bps, treasury `eddyhamezz.near` |
+| Its code hash | `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`, the reproducible build of commit [`6cfa90e`](https://github.com/UEddy/Intatto/commit/6cfa90e00890a510750d248b24dae0f86b5211be) (tag `canary-build`), built in CI ([run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828)), deployed in [`HGEauwuJ…`](https://explorer.near.org/transactions/HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ) |
+| Canary owner | `canary.intatto.near`; baseline set by [`8YwFyVR6…`](https://explorer.near.org/transactions/8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58) |
+| Canary agent | `canary-agent.intatto.near` (its function-call private key is published, see below) |
+| Intents vault contract | [`intents.intatto.near`](https://explorer.near.org/accounts/intents.intatto.near), code hash `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC`, the reproducible build of commit [`fc23fbc`](https://github.com/UEddy/Intatto/commit/fc23fbc3abee3d503ecaeb5ced56d315374cdc20) (tag `intents-build`), bound to `intents.near` and `v1.signer` |
+| Smoke test accounts | owner `demo.intatto.near`, agent `demo-agent.intatto.near`, on `vault.intatto.near` |
 
 | | Testnet |
 |---|---|
 | Canary vault contract | [`vault-v1.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v1.intatto-dev.testnet), no fee |
 | Its code hash | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL`, the reproducible build of commit [`b85cece`](https://github.com/UEddy/Intatto/commit/b85cece7e8afc49e8f3476cb8ae69f0792d99444), deployed in [`A3KLQkGa…`](https://explorer.testnet.near.org/transactions/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
 | Canary owner | `canary.intatto-dev.testnet` |
-| Canary agent | `canary-agent.intatto-dev.testnet` (its function-call private key is published, see below) |
-| Fee vault contract | [`vault-v2.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v2.intatto-dev.testnet), the 10 bps swap fee live (`get_fee_bps` = 10, treasury `intatto-dev.testnet`); first fee-paying swap [`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2) |
-| Its code hash | `7aiNbHTnDs4irAQaaGuudHmEgcQvjuMDRzxUSGrZHHiR`, a local `non-reproducible-wasm` build, so it cannot be checked against source. Mainnet gets the reproducible build of commit `6cfa90e` (`3z1W5Sfh…`, see [Status](#status-and-known-gaps)). |
+| Canary agent | `canary-agent.intatto-dev.testnet` (its function-call private key is also published, in [CANARY.md](CANARY.md#testnet)) |
+| Fee vault contract | [`vault-v2.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v2.intatto-dev.testnet), the 10 bps swap fee (`get_fee_bps` = 10, treasury `intatto-dev.testnet`); first fee-paying swap [`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2) |
+| Its code hash | `7aiNbHTnDs4irAQaaGuudHmEgcQvjuMDRzxUSGrZHHiR`, a local `non-reproducible-wasm` build, so it cannot be checked against source. Mainnet runs the reproducible build above. |
 | Prompt-injection demo vault | `demo-owner.intatto-dev.testnet`'s vault on vault-v2; agent `demo-agent.intatto-dev.testnet`, whose key is also published ([agent/README.md](agent/README.md)) |
 | Exchange both are bound to | `ref-finance-101.testnet` (Rhea / Ref V1, ref-exchange 1.9.19) |
 | Earlier v0 deployment | `vault.intatto-dev.testnet` (spending only, no swaps) |
@@ -53,60 +77,102 @@ The canary is a vault whose agent key is public. Anyone can sign with it and try
 money. Rules and baseline: [CANARY.md](CANARY.md). Threat model and invariants:
 [THREAT_MODEL.md](THREAT_MODEL.md).
 
+### Mainnet smoke test, 2026-11-11
+
+`scripts/mainnet-smoke.sh --send` on `vault.intatto.near`, every step checked over RPC, 18 of 18
+passed. The run stopped once at step 6, before signing (near CLI could not fetch a nonce), and
+resumed from its log; steps 1 to 5 are from the first run.
+
+| # | Step | Transaction |
+|---|---|---|
+| 1 | create `demo.intatto.near` with 0.95 NEAR | [`2SYW6J7t…`](https://explorer.near.org/transactions/2SYW6J7tnrGVNE2FMWKKii1SfF8i7rwE9n5wJNXxfJNp) |
+| 2 | create `demo-agent.intatto.near` with 0.55 NEAR | [`6nb6EF3Z…`](https://explorer.near.org/transactions/6nb6EF3ZLVaiCvRF4xtKn8653ReBC5J3xyNkPGU49yG9) |
+| 3 | deposit 0.05 NEAR for the vault record's storage | [`6KGkma65…`](https://explorer.near.org/transactions/6KGkma65RT3GBn9rJfnV3N2f79cXc4TUQYDUqWeHMi14) |
+| 4 | `set_agent`: sell at most 0.5 wNEAR per swap and per 24 h, via pool #3879 only, 100 bps slippage | [`F6MevBze…`](https://explorer.near.org/transactions/F6MevBzeneKsYRs5JMmHvU34RvKHxYHQH77YuSJvP2mx) |
+| 5 | register the owner on `wrap.near` | [`5d5mUwEK…`](https://explorer.near.org/transactions/5d5mUwEKpTQnA2tABkevxhSWsoqvWAF8yFkwHSxhwSBe) |
+| 6 | register the owner on `usdt.tether-token.near` | [`DPYK4Srr…`](https://explorer.near.org/transactions/DPYK4Srr6awErMM9Wukq8FWnw2uX7QKg5FepCPByJyGD) |
+| 7 | wrap 0.5 NEAR | [`4iNxajRg…`](https://explorer.near.org/transactions/4iNxajRg8u4oRW1nqAhcUpHUsZ5XbYyHwAyQr2iiJXWx) |
+| 8 | deposit 0.5 wNEAR into the vault | [`AxajPmMi…`](https://explorer.near.org/transactions/AxajPmMiRHBubP4cVdu3Hro1WaAYNATWh5wfeSsjFhQ5) |
+| 9 | the agent's function-call key: `agent_swap` on the vault only | [`9VH61sk6…`](https://explorer.near.org/transactions/9VH61sk6JCsRxZpgnVMvPCwvHci6zZWpotQEixVeziw) |
+| 10 | rejected: 0.6 wNEAR, over the per-swap cap (`over_per_tx_cap`) | [`8o7EGQoM…`](https://explorer.near.org/transactions/8o7EGQoMWfxUzeST7cTzA63J5MzvxB5ZiWk4NENa8XHU) |
+| 11 | rejected: pool #5470 is not allowlisted (`pool_not_allowlisted`) | [`G5d3Fu83…`](https://explorer.near.org/transactions/G5d3Fu838aDw5SSpRvh694TpHLKLg6Vk4LVZRJzssekc) |
+| 12 | rejected: `min_amount_out` of 1, far below the quote (`slippage_too_loose`) | [`CEpq15Yc…`](https://explorer.near.org/transactions/CEpq15YceDiwqHWtpUszmZH8LegBoyyZzgrdJ8HRaEck) |
+| 13 | the owner freezes the vault | [`6YRqjJXZ…`](https://explorer.near.org/transactions/6YRqjJXZcNuyeHHSnAeMoURtT6vHfG44VpGJ34uDBCk2) |
+| 14 | rejected: the vault is frozen (`frozen`) | [`7bm6uGYG…`](https://explorer.near.org/transactions/7bm6uGYGGJG3hJnuJQYoFfxBckCp6Qasvs5fVHzSW3Li) |
+| 15 | the owner unfreezes the vault | [`416HQTkH…`](https://explorer.near.org/transactions/416HQTkHniVyVb2UHHYJJZXU8fHQZTVefsDGoRV8a9Mf) |
+| 16 | rejected: signed by the owner, not the agent (`not_agent`) | [`BbsZNYEz…`](https://explorer.near.org/transactions/BbsZNYEzCHKDDsf3Rc9CT2h5xiSE71Sqi1SLgU7nZFbZ) |
+| 17 | swap 0.5 wNEAR through pool #3879: 1.887287 USDt out, 0.001887 USDt fee, 1.8854 USDt credited to the owner | [`JAFaEDBh…`](https://explorer.near.org/transactions/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8) |
+| 18 | the owner withdraws the 1.8854 USDt | [`2tqfhEiJ…`](https://explorer.near.org/transactions/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW) |
+
+### First intent swap, 2026-11-11
+
+An agent swap through NEAR Intents on `intents.intatto.near`: 0.3 wNEAR for 1.130742 USDt, at
+3.769 USDt per wNEAR against the owner's floor of 3.3. The vault checked the pair and amounts
+against the owner's policy, built the NEP-413 `token_diff` itself, had it signed by the MPC network
+(`v1.signer`), and credited the owner once `intents.near` reported the nonce used. Setup
+transactions, the signed payload and the checks: [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md).
+
+| Step | Signer | Transaction |
+|---|---|---|
+| `agent_intent_swap`: policy checks, reserve, MPC signature, signed payload logged | `intents-agent.intatto.near` | [`GbHfV9nq…`](https://explorer.near.org/transactions/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT) |
+| `execute_intents` with the solver's intent | the relay | [`EJY7oiU1…`](https://explorer.near.org/transactions/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
+| `settle_intent_swap`: nonce used, owner credited 1.130742 USDt | `intents-agent.intatto.near` | [`73aJTu55…`](https://explorer.near.org/transactions/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
+
 ## Try it
 
 Each step says what to run and what you should see. Steps 1 to 3 need only `curl` and
 `python3`. Steps 4 and 5 need [near-cli-rs](https://github.com/near/near-cli-rs) (tested with
-0.30.1).
+0.30.1). The testnet canary's accounts, key and command are in [CANARY.md](CANARY.md#testnet).
 
 **1. Read the canary vault.**
 
 ```bash
-curl -s https://test.rpc.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault-v1.intatto-dev.testnet","method_name":"get_vault","args_base64":"eyJvd25lcl9pZCI6ImNhbmFyeS5pbnRhdHRvLWRldi50ZXN0bmV0In0="}}' \
+curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.intatto.near","method_name":"get_vault","args_base64":"eyJvd25lcl9pZCI6ImNhbmFyeS5pbnRhdHRvLm5lYXIifQ=="}}' \
   | python3 -c 'import json,sys; print(json.dumps(json.loads(bytes(json.load(sys.stdin)["result"]["result"])), indent=1))'
 ```
 
-You should see `"balance": "997400000000000000000000"` (0.9974 NEAR), an empty `allowlist`, caps of
-`"0"`, and `"withdrawals_locked_until": "1796577187277683986"` (2026-12-06 17:13:07 UTC). Any lower
-balance is a canary break (see [CANARY.md](CANARY.md)).
+You should see `"balance": "997610000000000000000000"` (0.99761 NEAR), an empty `allowlist`, caps
+of `"0"`, and `"withdrawals_locked_until": "1795176000000000000"` (2026-11-20 12:00:00 UTC). Any
+lower balance is a canary break (see [CANARY.md](CANARY.md)).
 
 **2. Check that the deployed code is the published build.**
 
 ```bash
-curl -s https://test.rpc.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_account","finality":"final","account_id":"vault-v1.intatto-dev.testnet"}}' \
+curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_account","finality":"final","account_id":"vault.intatto.near"}}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["code_hash"])'
 ```
 
-You should see `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL`. To reproduce it, check out commit
-`b85cece`, run `cargo near build reproducible-wasm`, and compare `sha256sum target/near/intatto.wasm`
-with hex `fdb4855d004545633f78479a1600abaae429b0562e6d37a962fc2737b0fb4999`. The build image is
-pinned in [Cargo.toml](Cargo.toml).
+You should see `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`. To reproduce it, check out commit
+`6cfa90e` (tag `canary-build`), run `cargo near build reproducible-wasm`, and compare
+`sha256sum target/near/intatto.wasm` with hex
+`2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`. The build image is pinned in
+[Cargo.toml](Cargo.toml).
 
 **3. Check the published key's permission.**
 
 ```bash
-curl -s https://test.rpc.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key","finality":"final","account_id":"canary-agent.intatto-dev.testnet","public_key":"ed25519:EHqQpQk85svJoeAWkJugoCGUXGMaVg77hak6pkiteZqr"}}' \
+curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key","finality":"final","account_id":"canary-agent.intatto.near","public_key":"ed25519:GWvo8kPMuTxj9yLvTnsFJ5jxB4D3CNrbcMsLn2WTAEig"}}' \
   | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["result"]["permission"]))'
 ```
 
-You should see a `FunctionCall` permission with receiver `vault-v1.intatto-dev.testnet`, methods
-`agent_spend` and `agent_swap`, and an allowance in yoctoNEAR (1 NEAR at setup, lower once
+You should see a `FunctionCall` permission with receiver `vault.intatto.near`, methods
+`agent_spend` and `agent_swap`, and an allowance in yoctoNEAR (0.25 NEAR at setup, lower once
 anyone has used the key).
 
 **4. Try to drain the canary with the published key.** The private key is in
-[CANARY.md](CANARY.md). Put any account id as the receiver; you do not need a testnet account of
+[CANARY.md](CANARY.md). Put any account id as the receiver; you do not need a mainnet account of
 your own, because the agent account pays the gas.
 
 ```bash
 export CANARY_KEY='<the private key from CANARY.md>'
-near contract call-function as-transaction vault-v1.intatto-dev.testnet agent_spend \
-  json-args '{"owner_id":"canary.intatto-dev.testnet","receiver_id":"anyone.testnet","amount":"997400000000000000000000"}' \
+near contract call-function as-transaction vault.intatto.near agent_spend \
+  json-args '{"owner_id":"canary.intatto.near","receiver_id":"anyone.near","amount":"997610000000000000000000"}' \
   prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
-  sign-as canary-agent.intatto-dev.testnet network-config testnet \
+  sign-as canary-agent.intatto.near network-config mainnet \
   sign-with-plaintext-private-key "$CANARY_KEY" send
 ```
 
-You should see the transaction fail with `Receiver anyone.testnet is not on the vault's allowlist`,
+You should see the transaction fail with `Receiver anyone.near is not on the vault's allowlist`,
 and its logs contain a `spend_rejected` event with `"reason":"receiver_not_allowlisted"`. Then
 repeat step 1: the balance is unchanged. Changing the amount, receiver or method, or calling
 `agent_swap`, gives other rejection reasons; none moves funds.
@@ -119,10 +185,10 @@ repeat step 1: the balance is unchanged. Changing the amount, receiver or method
 cd web && npm ci && npm run dev
 ```
 
-Open the printed URL (it ends in `/Intatto/`). The board reads the canary from testnet: its
-balance against the baseline, the code-hash check, and every transaction signed with the
-published key. The owner console (`#/console`) connects a NEAR wallet on testnet. The same board
-is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet).
+Open the printed URL (it ends in `/Intatto/`). The board reads the mainnet canary (switch to
+testnet in the header): its balance against the baseline, the code-hash check, and every
+transaction signed with the published key. The owner console (`#/vault`) connects a NEAR wallet.
+The same board is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet).
 
 ## Tests
 
@@ -145,8 +211,8 @@ from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 | Swaps through the real exchange, fees, J5Mo upgrade, a vault blacklisted on 1.9.21 | [tests/swap.rs](tests/swap.rs) | 17 |
 | Withdrawal lock | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs) | 3 |
 | v1 state survives a code upgrade | [tests/upgrade.rs](tests/upgrade.rs) | 1 |
-| Chain Signatures intents path (branch `chain-signatures`): mock MPC signer, vendored intents.near 0.4.5, master 3z1W5 upgrade | [tests/chain_signatures.rs](tests/chain_signatures.rs) | 20 |
-| **Total** (`cargo test -- --list`, 2026-11-11, branch `chain-signatures`) | | **154** |
+| NEAR Intents path: mock MPC signer, vendored intents.near 0.4.5, upgrade from the canary's 3z1W5 build | [tests/chain_signatures.rs](tests/chain_signatures.rs) | 20 |
+| **Total** (`cargo test -- --list`, 2026-11-11) | | **154** |
 
 The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. To run
 them against the mainnet binary (1.9.21, `v2.ref-finance.near`), and against the reproducible build
@@ -160,9 +226,9 @@ INTATTO_TEST_WASM=target/near/intatto.wasm INTATTO_TEST_WASM_SHA256=3z1W5SfhYy2X
 The web app's and the demo agent's tests run separately:
 
 ```bash
-cd web && npm ci && npm test        # 122 unit tests (vitest)
-cd web && npm run test:prod         # the Cloudflare build under its real CSP, against live testnet (Playwright)
-node --test agent/*.test.mjs        # 15 tests: the demo agent's transaction signer and secret redaction, and the intent swap agent (offline)
+cd web && npm ci && npm test        # 126 unit tests (vitest)
+cd web && npm run test:prod         # the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
+node --test agent/*.test.mjs        # 16 tests: the demo agent's transaction signer and secret redaction, and the intent swap agent (offline)
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy and
@@ -214,19 +280,19 @@ The full list of invariants and trust assumptions is in [THREAT_MODEL.md](THREAT
 
 ## The agent's function-call key: exact limits
 
-The canary agent's published key, as read on chain with `view_access_key` (step 3):
+The mainnet canary agent's published key, as read on chain with `view_access_key` (step 3):
 
 ```json
-{"FunctionCall": {"allowance": "1000000000000000000000000", "method_names": ["agent_spend", "agent_swap"], "receiver_id": "vault-v1.intatto-dev.testnet"}}
+{"FunctionCall": {"allowance": "250000000000000000000000", "method_names": ["agent_spend", "agent_swap"], "receiver_id": "vault.intatto.near"}}
 ```
 
 What this key can do, enforced by the NEAR protocol:
 
-- Sign transactions from `canary-agent.intatto-dev.testnet` that call `agent_spend` or
-  `agent_swap` on `vault-v1.intatto-dev.testnet`, and nothing else.
+- Sign transactions from `canary-agent.intatto.near` that call `agent_spend` or `agent_swap` on
+  `vault.intatto.near`, and nothing else.
 - Attach no deposit. A function-call key cannot attach NEAR, so it cannot call any vault method
   that requires 1 yoctoNEAR (every owner method except `freeze`).
-- Spend gas only from its allowance (1 NEAR at setup). Gas for failed calls counts too. When the
+- Spend gas only from its allowance (0.25 NEAR at setup). Gas for failed calls counts too. When the
   allowance runs out the key stops working. Because this key is public, anyone can use up the
   allowance. That costs the canary nothing: the vault's funds are not involved.
 - It cannot transfer the agent account's NEAR, add or delete keys, deploy code, stake, or call any
@@ -234,16 +300,16 @@ What this key can do, enforced by the NEAR protocol:
 
 What limits the money is not the key but the vault's policy. The vault checks that the caller is
 the registered agent account and applies the owner's policy to every call, whichever key signed
-it. `canary-agent.intatto-dev.testnet` also has a full-access key, held by the deployer
-(`ed25519:FUyyLtJtgkZMbcMsyjNsWBXVcNauhAwU7D4nBBZrhm8K`). It can do anything with the agent
+it. `canary-agent.intatto.near` also has a full-access key, held by the operator
+(`ed25519:3vFARja44DSWWf5PqizuKMoYfxRUJWbBoHmaq7prMPmh`). It can do anything with the agent
 account's own NEAR, but through the vault it is bound by the same policy as the published key. It
 also means the account cannot lock itself out when the published key's allowance runs out.
 
-Two private keys are published on purpose, both testnet function-call keys: the canary's, as
-bait, with the permission shown above, and the prompt-injection demo agent's
-([agent/README.md](agent/README.md)), which can call only `agent_spend` on vault-v2. Every other
-`ed25519:` string in the repository is a public key or a transaction signature from recorded
-testnet data in `web/src/test/fixtures/`.
+Three private keys are published on purpose, all function-call keys: the two canaries', as bait
+(mainnet, with the permission shown above; testnet, on vault-v1 with a 1 NEAR allowance), and the
+prompt-injection demo agent's on testnet ([agent/README.md](agent/README.md)), which can call
+only `agent_spend` on vault-v2. Every other `ed25519:` string in the repository is a public key
+or a transaction signature from recorded mainnet and testnet data in `web/src/test/fixtures/`.
 
 ## Unit economics
 
@@ -270,15 +336,18 @@ is the contract's storage stake (2.55 NEAR for this build) plus deployment gas.
 
 ## Business model
 
-**Live on testnet in vault-v2; not on mainnet yet.** The canary's contract (vault-v1) charges no
-fee. The fee is in [src/fees.rs](src/fees.rs).
+**Live on mainnet in `vault.intatto.near`, and on testnet in vault-v2.** The testnet canary's
+contract (vault-v1) charges no fee. The fee is in [src/fees.rs](src/fees.rs).
 
 A protocol fee of 0.10% (10 basis points) on the output of agent swaps, fixed in the contract code
 as a compile-time constant, with no method that can change it. In vault-v2's first fee-paying swap,
 [`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2),
 0.1 wNEAR became 0.124142266 USDT; the `swap_completed` event shows a fee of 0.000124142 USDT
 (`124142266245632723653` of `124142266245632723653642` units, exactly 10 bps rounded down) and
-the owner credited the rest. The fee is taken
+the owner credited the rest. On mainnet, the smoke test's swap
+([`JAFaEDBh…`](https://explorer.near.org/transactions/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8))
+turned 0.5 wNEAR into 1.887287 USDt: a fee of 0.001887 USDt (`1887` of `1887287` units) and
+1.8854 USDt credited to the owner. The fee is taken
 from the amount the exchange returns: the owner is credited the output minus the fee, and the fee
 accrues to a treasury balance kept separate from owner balances. The treasury account can
 withdraw only accrued fees. Spends, deposits, withdrawals and reclaims carry no fee, and neither
@@ -294,8 +363,9 @@ Per completed swap, the agent pays about 0.0036 NEAR of gas whatever the size (t
 
 - **Unstoppable DeFi (`defi`).** A vault with a trading agent: swaps go through Rhea (Ref V1)
   under on-chain pool, pair, cap and slippage rules, the slippage checked against the exchange's
-  own quote, with a 10 bps protocol fee fixed in the code (live on testnet). It does not use NEAR
-  Intents yet; Intents support is planned for mainnet.
+  own quote, with a 10 bps protocol fee fixed in the code (live on mainnet). Agent swaps also go
+  through NEAR Intents, signed by the MPC network for the vault's own account and checked against
+  the owner's pair allowlist and price floors (live on mainnet, [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)).
 - **AI Security & Defense (`security`).** The agent's key is public and the money is still there:
   the canary invites anyone to drain it with the published key, and the board shows every attempt
   and the contract's reason for refusing it. The prompt-injection demo shows the same contract
@@ -325,7 +395,7 @@ Contract (Rust, toolchain 1.93.0):
 - Test binaries from testnet: ref-exchange 1.9.19 (Rhea / Ref V1) and wrap.testnet's wNEAR contract ([tests/res/README.md](tests/res/README.md))
 
 Web app (TypeScript):
-- Runtime: React 19.3.1, react-router 8.5.1, TanStack Query 5.107.1, zod 4.6.7, [near-connect](https://github.com/hot-dao/near-selector) (`@hot-labs/near-connect`) 0.12.0
+- Runtime: React 19.3.1, react-router 8.5.1, TanStack Query 5.107.1, zod 4.6.7, [near-connect](https://github.com/NEAR-DevHub/near-connect) at `f2fc970`, vendored in `web/vendor/near-connect`
 - Fonts: Bodoni Moda, Instrument Sans, JetBrains Mono (Fontsource)
 - Build and tests: Vite 8.3.6, TypeScript 6.0.3, Vitest 5.1.0, Playwright 1.65.0, Testing Library, jsdom, fake-indexeddb
 
@@ -337,28 +407,41 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
 
 | Path | What |
 |---|---|
-| `src/` | The vault contract: `lib.rs` (deposit, withdraw, views), `policy.rs`, `spend.rs`, `swap.rs`, `callbacks.rs`, `tokens.rs`, `ledger.rs`, `lock.rs`, `storage.rs`, `events.rs`; unit tests in `tests.rs` |
-| `tests/` | Sandbox tests and the contract binaries they deploy (`tests/res/`) |
+| `src/` | The vault contract: `lib.rs` (deposit, withdraw, views), `policy.rs`, `spend.rs`, `swap.rs`, `callbacks.rs`, `tokens.rs`, `ledger.rs`, `lock.rs`, `storage.rs`, `events.rs`, and the NEAR Intents path in `intents.rs` and `intent_swap.rs`; unit tests in `tests.rs` |
+| `tests/` | Sandbox tests, the contract binaries they deploy (`tests/res/`) and the mock MPC signer (`tests/contracts/`) |
+| `agent/` | The prompt-injection demo agent and the intent-swap agent (Node, no dependencies) |
 | `web/` | Owner console and canary board (React, Vite) |
-| `scripts/` | Testnet smoke tests and canary setup; mainnet deploy, canary and smoke scripts, dry run by default (near-cli-rs) |
+| `scripts/` | Testnet smoke tests and canary setup; mainnet deploy, canary, smoke, intents and teardown scripts, dry run by default and resumable (near-cli-rs) |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Invariants, trust assumptions, what counts as a canary break |
-| [CANARY.md](CANARY.md) | The public canary: accounts, key, baseline, how to try |
+| [CANARY.md](CANARY.md) | The public canaries, mainnet and testnet: accounts, keys, baselines, how to try |
+| [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md) | The NEAR Intents path: calls, the mainnet run, its transactions |
 
 ## Status and known gaps
 
 - The contract has not been audited.
-- On branch `chain-signatures` only: agent swaps through NEAR Intents, signed by the MPC network. Live on mainnet as `intents.intatto.near` (a separate account from the canary's vault); one swap settled on 2026-11-11, 0.3 wNEAR for 1.130742 USDt. See [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md).
-- Not on mainnet yet. Planned before submission: the mainnet deployment (with the swap fee),
-  passkey sign-in, and NEAR Intents (mainnet only). [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh)
-  deploys only the reproducible build of commit `6cfa90e` (code hash
+- On mainnet, `vault.intatto.near` runs the reproducible build of commit `6cfa90e` (code hash
   `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`, sha256
   `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`), built in CI by the
   [Reproducible build](.github/workflows/reproducible-build.yml) workflow in
-  [run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828); so far it has only been dry-run.
+  [run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828);
+  [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh) deploys nothing else. `intents.intatto.near`
+  runs the reproducible build of commit `fc23fbc` (`HRkrMN8o…`, run 43063218549).
+- The deployer keeps a full-access key on both vault accounts, so the funds in this hackathon
+  deployment stay recoverable. That key can replace the code. For the canary's vault, the board's
+  integrity check shows any change within 10 seconds ([CANARY.md](CANARY.md)).
+- The NEAR Intents path has settled one swap on mainnet. Its limits and trust assumptions (the MPC
+  network, `intents.near` governance) are in [THREAT_MODEL.md](THREAT_MODEL.md).
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
-  checked against source; vault-v1 and mainnet use reproducible builds.
-- The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet) (testnet).
+  checked against source; vault-v1 and both mainnet vaults use reproducible builds.
+- Passkey sign-in: experimental, live in the web app (mainnet only, unaudited Trezu wallet
+  contract); not yet verified end to end.
+- Planned: taking the mainnet deployment apart after the canary's lock ends on 2026-11-20
+  ([scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)).
+- The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)
+  (mainnet by default; testnet through the network switch).
 
 ## License
 
 [MIT](LICENSE).
+
+[^banana-gun]: The Block: <https://www.theblock.co/post/318074/banana-gun-exploit-refund>

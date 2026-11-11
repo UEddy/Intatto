@@ -131,7 +131,7 @@ of the transaction that caused it tells the two apart.
 These are not breaks:
 - `canary-agent`'s own NEAR going down, or its key's allowance running out. That is gas paid by
   whoever uses the published key.
-- `vault-v1`'s account balance changing. It holds every vault and earns gas rewards.
+- `vault-v1`'s account balance changing. It holds every vault and receives the protocol's share of the gas its calls burn.
 - Increases of the canary's balances.
 
 **The canary ends, rather than breaks, if `vault-v1`'s code hash changes.** It only tests the
@@ -456,7 +456,8 @@ the contract's policy the real one.
 
 ### Content security policy
 
-On Cloudflare Pages (prepared, `web/scripts/pages-deploy.sh`, not deployed) the build also emits
+On Cloudflare Pages, where the site is live at intatto.pages.dev (deployed with
+`web/scripts/pages-deploy.sh`), the build also emits
 `_headers`: the same policy as a real header, plus `frame-ancestors 'none'`, `X-Frame-Options:
 DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a
 `Permissions-Policy` that allows WebAuthn on this origin only and turns off camera, microphone,
@@ -620,9 +621,9 @@ Limits of this measurement:
 - **Rejected agent calls cost the agent gas, nothing else.** Anyone with the agent key can make
   the agent pay gas for rejected calls, up to the key's allowance.
 
-## Passkey sign-in (planned, mainnet only, experimental)
+## Passkey sign-in (mainnet only, experimental)
 
-Built, not deployed (the site is not on Cloudflare Pages yet). The console labels the passkey
+Experimental: live in the web app (mainnet only, unaudited Trezu wallet contract); not yet verified end to end. The console labels the passkey
 path **"Experimental: unaudited wallet contract, upgradeable by Trezu; small amounts only."**, in
 a banner and in the wallet menu, and recommends a withdrawal lock. Code: `web/src/wallet/passkey.ts`.
 
