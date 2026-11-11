@@ -61,22 +61,27 @@ CANARY_FC_ALLOWANCE_DEFAULT=0.25
 CANARY_OWNER_EXTRA=0.1
 CANARY_AGENT_EXTRA=0.05
 SMOKE_SWAP_NEAR_DEFAULT=0.5
-# Each agent_swap (300 TGas) needs ~0.301 NEAR of allowance and balance at hand: its gas is bought
-# at the purchase price (1e9) and the unused part refunded, to the balance and, as gas refunds
-# carry the signing key, to the key's allowance. The smoke's five agent calls need 0.4214 NEAR of
-# allowance at most (dry run, 2026-11-11).
-SMOKE_FC_ALLOWANCE_DEFAULT=0.5
+# A function-call key's allowance caps the gas the key may buy; it holds no NEAR, and the gas is
+# paid from the agent account's balance. Each agent_swap (300 TGas) needs ~0.301 NEAR at hand: its
+# gas is bought at the purchase price (1e9) and the unused part refunded to the balance. Whether
+# the refund also restores the allowance is not verified on chain, so the fit check assumes it
+# does not (every call's gas at the purchase price counts against the allowance), and the
+# allowance is set well above that: 2 NEAR against ~1.51 NEAR for the five agent calls. The real
+# limit is the agent account's balance, SMOKE_AGENT_BALANCE, which does not follow the allowance.
+SMOKE_FC_ALLOWANCE_DEFAULT=2
 # The smoke owner's balance beyond the swap: vault deposit (0.05), two token registrations, gas,
 # and ~0.301 NEAR at hand for its own 300 TGas agent_swap (the not_agent rejection). It needs
 # 0.8872 NEAR at once at most (dry run, 2026-11-11).
 SMOKE_OWNER_EXTRA=0.45
-SMOKE_AGENT_EXTRA=0.05
+# The smoke agent's initial balance: ~0.301 NEAR at hand for one agent_swap at a time, the gas
+# its calls spend, and its account and key storage.
+SMOKE_AGENT_BALANCE=0.55
 
 # Initial balances in yoctoNEAR, from NEAR amounts.
 canary_owner_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$CANARY_OWNER_EXTRA")"; }
 canary_agent_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$CANARY_AGENT_EXTRA")"; }
 smoke_owner_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$SMOKE_OWNER_EXTRA")"; }
-smoke_agent_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$SMOKE_AGENT_EXTRA")"; }
+smoke_agent_yocto() { helper yocto "$SMOKE_AGENT_BALANCE"; }
 
 MODE=dry-run
 PHASE=estimate
@@ -122,6 +127,12 @@ parse_mode() {
     *) die "unknown argument $arg (use --dry-run, the default, or --send)" ;;
     esac
   done
+  # DRY_RUN_TOPUP=<account>=<NEAR>: the fit check adds that much to <account>'s live balance, to
+  # plan against a top-up not yet sent. Dry runs only.
+  if [ -n "${DRY_RUN_TOPUP:-}" ]; then
+    [ "$MODE" = dry-run ] || die "DRY_RUN_TOPUP is for dry runs only; unset it to --send"
+    [[ "$DRY_RUN_TOPUP" == ?*=?* ]] || die "DRY_RUN_TOPUP must be <account>=<NEAR>"
+  fi
 }
 
 require_tools() {
@@ -243,9 +254,11 @@ tx() {
       "$(helper add "$(helper add "${SIGNER_COST[$signer]}" "$upfront")" "$(helper mul "${SIGNER_STORAGE[$signer]}" "$BYTE_COST")")")
     SIGNER_COST[$signer]=$(helper add "${SIGNER_COST[$signer]}" "$cost")
     # Signed with a function-call key ($KEYCHAIN/<account>/<key>.json): its allowance pays the gas.
+    # No refund to the allowance is assumed (unverified on chain): each call counts its gas at the
+    # purchase price, so KEY_NEED is the sum of upfront_gas.
     if [[ "$spec" == "file:$KEYCHAIN/$signer/"* ]]; then
-      KEY_NEED[$signer]=$(helper max "${KEY_NEED[$signer]:-0}" "$(helper add "${KEY_COST[$signer]:-0}" "$upfront_gas")")
-      KEY_COST[$signer]=$(helper add "${KEY_COST[$signer]:-0}" "$gas_cost")
+      KEY_NEED[$signer]=$(helper add "${KEY_COST[$signer]:-0}" "$upfront_gas")
+      KEY_COST[$signer]=$(helper add "${KEY_COST[$signer]:-0}" "$upfront_gas")
       KEY_SPEC[$signer]=$spec
     fi
     printf '  %2d. %s\n      signer %s, at most %s NEAR (deposit %s + %s TGas prepaid + %s TGas fees%s), %s NEAR at hand\n      near' \
@@ -350,6 +363,10 @@ fit_check() {
         continue
       fi
       have=${state%% *} source=live
+      if [ -n "${DRY_RUN_TOPUP:-}" ] && [ "${DRY_RUN_TOPUP%%=*}" = "$s" ]; then
+        have=$(helper add "$have" "$(helper yocto "${DRY_RUN_TOPUP#*=}")")
+        source="live + ${DRY_RUN_TOPUP#*=} NEAR top-up assumed (DRY_RUN_TOPUP)"
+      fi
     fi
     fit_line "$s" "${SIGNER_NEED[$s]}" "$have" "$source"
   done

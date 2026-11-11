@@ -190,7 +190,7 @@ reserve_yocto() {
   fi
   if [ "$SMOKE" = 1 ]; then
     total=$(helper add "$total" "$(smoke_owner_yocto "$SMOKE_SWAP_NEAR_DEFAULT")")
-    total=$(helper add "$total" "$(smoke_agent_yocto "$SMOKE_FC_ALLOWANCE_DEFAULT")")
+    total=$(helper add "$total" "$(smoke_agent_yocto)")
     total=$(helper add "$total" "$(helper mul 2 "$create")")
   fi
   echo "$total"
