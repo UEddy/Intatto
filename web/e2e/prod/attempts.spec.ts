@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { withoutFastnearRateLimit } from "../rateLimit";
 
 // The prompt-injection demo's runs on 2026-11-11 (agent/README.md, "Results"). Final on chain, so
 // they stay in the demo agent's log; later runs only add rows above them.
@@ -18,14 +19,15 @@ function watch(page: Page) {
   });
   page.on("pageerror", (e) => problems.push(String(e)));
   page.on("response", (r) => {
-    if (/tx\.test\.fastnear\.com|nearblocks\.io/.test(r.url())) indexer.push({ url: r.url(), status: r.status() });
+    if (/tx\.(test|main)\.fastnear\.com|nearblocks\.io/.test(r.url())) indexer.push({ url: r.url(), status: r.status() });
   });
   return { problems, indexer };
 }
 
-test("the attempt logs render real rows from the indexer under the production CSP", async ({ page }) => {
+test("testnet: the attempt logs render real rows from the indexer under the production CSP", async ({ page }) => {
   const { problems, indexer } = watch(page);
-  const res = await page.goto("./#/");
+  // The demo runs on testnet only; mainnet is the default network.
+  const res = await page.goto("./?network=testnet#/");
 
   // The preview sends the Cloudflare headers, so this runs under the header CSP and the <meta> one.
   const csp = res!.headers()["content-security-policy"] ?? "";
@@ -61,4 +63,34 @@ test("the attempt logs render real rows from the indexer under the production CS
 
   expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p)), "CSP violations").toEqual([]);
   expect(problems, "console errors").toEqual([]);
+});
+
+// The default board: the mainnet canary, under the header CSP and the <meta> one.
+test("mainnet: the canary board renders live under the production CSP", async ({ page }, info) => {
+  const { problems, indexer } = watch(page);
+  const res = await page.goto("./#/");
+  const csp = res!.headers()["content-security-policy"] ?? "";
+  for (const origin of ["https://rpc.mainnet.fastnear.com", "https://archival-rpc.mainnet.fastnear.com", "https://tx.main.fastnear.com", "https://h4n.app", "https://api0.herewallet.app"]) {
+    expect(csp, "header CSP").toContain(origin);
+  }
+  await expect(page.locator(".net-switch")).toContainText("Mainnet");
+
+  // Read from mainnet: the canary vault's balance, the build check and the run's start.
+  await expect(page.locator(".seal-caption")).toContainText("canary.intatto.near");
+  await expect(page.locator(".seal-caption")).toContainText("vault.intatto.near");
+  await expect(page.locator(".hero-status .badge")).toHaveText(/Intact|Frozen/, { timeout: 45_000 });
+  await expect(page.locator(".hfig").first().locator(".hfig-value .skeleton")).toHaveCount(0, { timeout: 45_000 });
+  await expect(page.locator(".integrity-title")).toContainText("Matches the published build", { timeout: 45_000 });
+  await expect(page.locator(".hfig").nth(1)).toContainText("Since the canary was set up on the published build", { timeout: 45_000 });
+  await expect(page.locator(".hfig").nth(1).locator(".dur").first()).toBeVisible();
+
+  // The canary's log: rows or the empty state, never an error.
+  const canary = page.locator(".attempt-log", { has: page.getByRole("heading", { name: "Attempts with the published key" }) });
+  await expect(canary.locator(".entry--skeleton")).toHaveCount(0, { timeout: 60_000 });
+  await expect(canary.locator(".indexer-down"), await canary.innerText()).toHaveCount(0);
+  expect(indexer.filter((r) => r.url.startsWith("https://tx.main.fastnear.com/") && r.status === 200).length, JSON.stringify(indexer)).toBeGreaterThanOrEqual(1);
+  await page.screenshot({ path: "screenshots/prod-mainnet-board.png", fullPage: true });
+
+  expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p)), "CSP violations").toEqual([]);
+  expect(withoutFastnearRateLimit(problems, info), "console errors").toEqual([]);
 });

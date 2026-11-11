@@ -3,9 +3,12 @@
 import { chromium } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 const [base, out] = process.argv.slice(2);
+// NETWORK=mainnet WALLETS=hot-wallet,mynearwallet node ...: which network and wallets to measure.
+const NETWORK = process.env.NETWORK ?? "testnet";
+const WALLETS = (process.env.WALLETS ?? "meteor-wallet,intear-wallet").split(",");
 const browser = await chromium.launch();
 const result = {};
-for (const walletId of ["meteor-wallet", "intear-wallet"]) {
+for (const walletId of WALLETS) {
   for (const flow of ["connect", "sign"]) {
     const ctx = await browser.newContext({ bypassCSP: true });
     const page = await ctx.newPage();
@@ -28,7 +31,7 @@ for (const walletId of ["meteor-wallet", "intear-wallet"]) {
     });
     const errors = [];
     page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 200)));
-    await page.goto(`${base}/Intatto/e2e/harness/wallet.html`);
+    await page.goto(`${base}/Intatto/e2e/harness/wallet.html?network=${NETWORK}`);
     await page.waitForFunction(() => window.harness);
     await page.evaluate(() => window.harness.ready);
     const available = await page.evaluate(() => window.harness.wallets());
@@ -37,7 +40,7 @@ for (const walletId of ["meteor-wallet", "intear-wallet"]) {
     await page.waitForTimeout(2000);
     const origins = {};
     for (const s of seen) (origins[s.origin] ??= new Set()).add(`${s.frame} ${s.kind} ${s.path}`);
-    result[`${walletId} ${flow}`] = {
+    result[`${NETWORK} ${walletId} ${flow}`] = {
       available,
       settled,
       origins: Object.fromEntries(Object.entries(origins).map(([k, v]) => [k, [...v].slice(0, 6)])),

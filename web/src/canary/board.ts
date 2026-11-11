@@ -107,13 +107,30 @@ export interface RunStart {
   readonly blockHash: string;
 }
 
+/**
+ * When the current run started: a run covers one build with the canary in place, so it starts at
+ * the later of the verified deployment of that build and the verified setup (the lock's receipt).
+ * On testnet the upgrade came after the setup; on mainnet the canary was set up on a vault that
+ * already ran the build. Null until both are verified.
+ */
+export function runStartOf(
+  deploy: RunStart | null,
+  setup: BaselineCheck | null,
+): (RunStart & { readonly by: "deploy" | "setup" }) | null {
+  if (!deploy || !setup) return null;
+  if (setup.lockSetAtNs > deploy.atNs) {
+    return { atNs: setup.lockSetAtNs, blockHeight: setup.lockSetBlockHeight, blockHash: setup.lockSetBlockHash, by: "setup" };
+  }
+  return { ...deploy, by: "deploy" };
+}
+
 export type SealState = "intact" | "broken" | "unknown";
 
 export interface BoardInput {
   readonly vault: VaultView | null | undefined;
   readonly baselineYocto: bigint;
   readonly baseline: BaselineCheck | null;
-  /** The verified start of the current run (the upgrade to the published build), if any. */
+  /** The verified start of the current run (runStartOf), if any. */
   readonly runStart: RunStart | null;
   /** The vault's code no longer matches the build the run covers: the run has ended. */
   readonly codeChanged: boolean;

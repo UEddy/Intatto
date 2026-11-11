@@ -12,7 +12,7 @@ export default defineConfig({
   workers: 1,
   use: { ...base.use, baseURL: "http://localhost:4176/Intatto/" },
   webServer: {
-    command: "VITE_E2E=1 npx vite build --outDir dist-e2e --emptyOutDir && npx vite preview --outDir dist-e2e --port 4176 --strictPort",
+    command: "VITE_E2E=1 VITE_DEFAULT_NETWORK=testnet npx vite build --outDir dist-e2e --emptyOutDir && npx vite preview --outDir dist-e2e --port 4176 --strictPort",
     url: "http://localhost:4176/Intatto/",
     reuseExistingServer: false,
     timeout: 180_000,

@@ -32,7 +32,8 @@ export interface CanaryConfig {
   /**
    * The current run: the canary tests one build of the vault, and a code change ends a run
    * (THREAT_MODEL.md). The board verifies this deployment transaction on load (signer, receiver,
-   * and the deployed code's SHA-256) and counts "intact for" from its block.
+   * and the deployed code's SHA-256) and counts "intact for" from the later of its block and the
+   * baseline transaction's lock (runStartOf in src/canary/board.ts).
    */
   readonly run: {
     readonly deployTxHash: string;
@@ -185,8 +186,9 @@ export const MAINNET: NetworkConfig = {
     fastnear: "https://tx.main.fastnear.com",
     nearblocks: "https://api.nearblocks.io",
   },
-  // Not deployed yet: set to the account scripts/mainnet-deploy.sh deployed to (VAULT_ID).
-  vaultId: null,
+  // Deployed by scripts/mainnet-deploy.sh (2026-11-11): view_account code_hash is the published
+  // build below; get_exchange_id v2.ref-finance.near, get_treasury_id eddyhamezz.near, 10 bps.
+  vaultId: "vault.intatto.near",
   // metadata() (2026-11-09): ref-exchange 1.9.21, Running; code hash
   // GZmkbfVLcN7ErxU9RDxP24YTaKmoVixhM6XyycP15Qvi, the binary the sandbox suite runs against with
   // INTATTO_TEST_EXCHANGE=1.9.21 (tests/res/README.md).
@@ -200,12 +202,34 @@ export const MAINNET: NetworkConfig = {
     { contractId: "wrap.near", role: "wnear" },
     { contractId: "usdt.tether-token.near", role: "usdt" },
   ],
-  // Not set up yet: scripts/mainnet-canary.sh prints these values (owner, agent, the agent's
-  // published key, the baseline balance and its lock transaction) once it has run.
-  canary: null,
+  // Set up by scripts/mainnet-canary.sh with BOUNTY=1 on 2026-11-11.
+  canary: {
+    ownerId: "canary.intatto.near",
+    agentId: "canary-agent.intatto.near",
+    // view_access_key (block 224,088,367): FunctionCall agent_spend, agent_swap on
+    // vault.intatto.near, 0.25 NEAR allowance
+    agentPublicKey: "ed25519:GWvo8kPMuTxj9yLvTnsFJ5jxB4D3CNrbcMsLn2WTAEig",
+    // CANARY.md, section "Mainnet" (not part of this site).
+    privateKeyUrl: "https://github.com/UEddy/Intatto/blob/master/CANARY.md#mainnet",
+    baseline: {
+      // get_vault(canary.intatto.near).balance after lock_withdrawals_until: the 1 NEAR deposit
+      // less the storage of the record, policy and lock
+      balanceYocto: "997610000000000000000000",
+      // the last setup transaction: lock_withdrawals_until(2026-11-20T12:00:00Z); its
+      // withdrawals_locked receipt is in block 224,088,066 (2026-11-11 16:12:10 UTC), where the run
+      // starts, since it came after the deployment below
+      txHash: "8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58",
+    },
+    // The deployment of vault.intatto.near with the published build and new() (block 224,086,630,
+    // 2026-11-11 15:58:25 UTC; DeployContract code SHA-256 2c520bfc...e8d218f5).
+    run: {
+      deployTxHash: "HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ",
+      codeHash: "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J",
+    },
+  },
   demo: null,
   // `cargo near build reproducible-wasm` of commit 6cfa90e in a fresh clone (2026-11-09), the
-  // build scripts/mainnet-deploy.sh refuses to deploy anything but.
+  // build scripts/mainnet-deploy.sh refuses to deploy anything but; vault.intatto.near runs it.
   expectedBuild: {
     codeHash: "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J",
     commit: "6cfa90e00890a510750d248b24dae0f86b5211be",

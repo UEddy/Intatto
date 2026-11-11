@@ -1,12 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Real wallets, real CSP (the production build's boot.js), live testnet. Runs in one project
-// only: it loads third-party executors and opens their windows, and once is enough.
+// Real wallets, real CSP (the production build's boot.js), live chains: Meteor and Intear on
+// testnet, HOT and MyNearWallet on mainnet (they declare mainnet only). Runs in one project only:
+// it loads third-party executors and opens their windows, and once is enough.
 test.beforeEach(({}, info) => {
   test.skip(info.project.name !== "1440-light", "runs once");
 });
 
-/** Blocked loads that are cosmetic (the wallet's own fonts and loader image) and stay blocked. */
+/**
+ * Blocked loads that are cosmetic (the wallets' own fonts, Meteor's loader image) and stay
+ * blocked. HOT's images are allowed (src/wallet/csp.ts: without them its executor shuts down).
+ */
 const COSMETIC = [/img-src/, /style-src/, /font-src/];
 
 function cspMessages(page: Page): string[] {
@@ -50,7 +54,7 @@ for (const w of WALLETS) {
   test(`${w.name} connects under the CSP`, async ({ page, context }) => {
     test.setTimeout(90_000);
     const messages = cspMessages(page);
-    await page.goto("./#/");
+    await page.goto("./?network=testnet#/");
     await page.getByRole("button", { name: "Connect wallet" }).click();
     await page.getByText(w.name, { exact: true }).click();
 
@@ -76,3 +80,55 @@ for (const w of WALLETS) {
     test.info().annotations.push({ type: "cosmetic CSP blocks", description: messages.filter((m) => !functional.includes(m)).map((m) => m.slice(0, 160)).join(" | ") || "none" });
   });
 }
+
+// MyNearWallet logs in and signs in its own window; the executor needs no backend of its own.
+test("MyNearWallet connects under the CSP (mainnet)", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const messages = cspMessages(page);
+  await page.goto("./?network=mainnet#/");
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  const popup = context.waitForEvent("page", { timeout: 30_000 });
+  await page.getByText("MyNearWallet", { exact: true }).click();
+  const win = await popup;
+  await win.waitForLoadState("domcontentloaded").catch(() => {});
+  expect(new URL(win.url()).host).toBe("app.mynearwallet.com");
+  await win.close();
+  const functional = messages.filter((m) => !COSMETIC.some((c) => c.test(m)));
+  expect(functional, "CSP violations that would break the wallet").toEqual([]);
+});
+
+// HOT shows a QR code in its executor and passes the request and the answer through its relay
+// (h4n.app), dating requests by its clock (api0.herewallet.app). Both must get through the CSP.
+test("HOT Wallet connects under the CSP (mainnet)", async ({ page }, info) => {
+  test.setTimeout(90_000);
+  const messages = cspMessages(page);
+  const relay: { url: string; method: string; status: number }[] = [];
+  page.on("response", (r) => {
+    if (/^https:\/\/(h4n\.app|api0\.herewallet\.app)\//.test(r.url())) relay.push({ url: r.url(), method: r.request().method(), status: r.status() });
+  });
+  await page.goto("./?network=mainnet#/");
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await page.getByText("HOT Wallet", { exact: true }).click();
+
+  let scan = null;
+  for (let i = 0; i < 40 && !scan; i++) {
+    for (const f of page.frames()) {
+      const el = f.getByText("Scan in", { exact: false }).first();
+      if (await el.isVisible().catch(() => false)) scan = el;
+    }
+    if (!scan) await page.waitForTimeout(500);
+  }
+  expect(scan, "HOT showed its QR code").not.toBeNull();
+  // A blocked load that HOT cannot do without makes it remove its own executor within a second.
+  await page.waitForTimeout(3_000);
+  await expect(scan!, "HOT's QR code is still up").toBeVisible();
+  // The request was posted to the relay, which is then polled for the wallet's answer.
+  await expect.poll(() => relay.filter((r) => /\/request$/.test(r.url) && r.method === "POST" && r.status < 300).length, { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect.poll(() => relay.filter((r) => /\/response$/.test(r.url)).length, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect(relay.some((r) => r.url.startsWith("https://api0.herewallet.app/") && r.status === 200), JSON.stringify(relay)).toBe(true);
+  await page.screenshot({ path: `screenshots/wallet-hot-${info.project.name}.png` });
+
+  const functional = messages.filter((m) => !COSMETIC.some((c) => c.test(m)));
+  expect(functional, "CSP violations that would break the wallet").toEqual([]);
+  test.info().annotations.push({ type: "cosmetic CSP blocks", description: messages.filter((m) => !functional.includes(m)).map((m) => m.slice(0, 160)).join(" | ") || "none" });
+});

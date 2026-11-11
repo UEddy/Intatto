@@ -9,7 +9,9 @@ import lockTx from "../test/fixtures/rpc-tx-canary-lock.json";
 import txsVault from "../test/fixtures/fastnear-transactions-vault.json";
 import { attemptsFrom } from "./attempts";
 import upgradeTx from "../test/fixtures/rpc-tx-vault-upgrade.json";
-import { boardState, checkBaselineTx, checkRunStartTx, integrityState } from "./board";
+import mainnetDeployTx from "../test/fixtures/rpc-tx-mainnet-deploy.json";
+import mainnetLockTx from "../test/fixtures/rpc-tx-mainnet-canary-lock.json";
+import { boardState, checkBaselineTx, checkRunStartTx, integrityState, runStartOf } from "./board";
 
 const VAULT = "vault-v1.intatto-dev.testnet";
 const decode = (r: { result: { result: number[] } }): VaultView => VaultViewSchema.parse(JSON.parse(new TextDecoder().decode(Uint8Array.from(r.result.result))));
@@ -91,6 +93,35 @@ describe("checkRunStartTx", () => {
   it("ends the run, without a break, when the code changes", () => {
     const s = boardState({ vault: canary, baselineYocto: BASELINE, baseline, nowNs: RUN_AT + 1000n, runStart: RUN.runStart, codeChanged: true });
     expect(s).toMatchObject({ seal: "intact", runEnded: true, unbrokenForNs: null });
+  });
+});
+
+describe("mainnet canary", () => {
+  const MAINNET_VAULT = "vault.intatto.near";
+  const Z1W = "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J";
+  it("verifies the real deployment of the published build and the real lock", () => {
+    expect(checkRunStartTx(parseTxOutcome(mainnetDeployTx.result), MAINNET_VAULT, Z1W)).toEqual({ ok: true, blockHash: "BNfP7pqayfF1t2XT4F1vikyq3w8XEznx7Wakj2g5nKPV" });
+    expect(checkBaselineTx(parseTxOutcome(mainnetLockTx.result), { ownerId: "canary.intatto.near" }, MAINNET_VAULT)).toEqual({
+      ok: true,
+      lockedUntilNs: 1795176000000000000n,
+      blockHash: "88p8kiptmeKLyDoYCLqwCS9fjByQkPNWMvDpo5vuvFZK",
+    });
+  });
+});
+
+describe("runStartOf", () => {
+  // Mainnet: deployed at block 224,086,630, canary locked at 224,088,066.
+  const deploy = { atNs: 1794412705795534224n, blockHeight: 224086630, blockHash: "BNfP" };
+  const setup = { lockedUntilNs: 1795176000000000000n, lockSetAtNs: 1794413530328250785n, lockSetBlockHeight: 224088066, lockSetBlockHash: "88p8" };
+  it("starts at the setup when the canary was set up on a vault already running the build", () => {
+    expect(runStartOf(deploy, setup)).toEqual({ atNs: 1794413530328250785n, blockHeight: 224088066, blockHash: "88p8", by: "setup" });
+  });
+  it("starts at the deployment when the build was deployed under an existing canary", () => {
+    expect(runStartOf(RUN.runStart, baseline)).toEqual({ ...RUN.runStart, by: "deploy" });
+  });
+  it("waits until both are verified", () => {
+    expect(runStartOf(null, setup)).toBeNull();
+    expect(runStartOf(deploy, null)).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 /**
  * Which network the page runs on: `?network=mainnet|testnet` in the URL, else the last choice
- * (localStorage), else the build default (VITE_DEFAULT_NETWORK, testnet if unset). Switching
+ * (localStorage), else the build default (VITE_DEFAULT_NETWORK, mainnet if unset). Switching
  * reloads the page so no query, cache or wallet session crosses networks.
  */
 import { NETWORKS, type NetworkConfig, type NetworkId } from "./networks";
@@ -16,7 +16,7 @@ export function resolveNetwork(search: string, stored: string | null, buildDefau
   if (isNetworkId(fromUrl)) return fromUrl;
   if (isNetworkId(stored)) return stored;
   if (isNetworkId(buildDefault)) return buildDefault;
-  return "testnet";
+  return "mainnet";
 }
 
 function readStored(): string | null {

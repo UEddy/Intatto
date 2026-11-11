@@ -4,9 +4,12 @@
 import { chromium } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 const [base, out, shots] = process.argv.slice(2);
+// NETWORK=mainnet WALLETS=hot-wallet,mynearwallet node ...: which network and wallets to measure.
+const NETWORK = process.env.NETWORK ?? "testnet";
+const WALLETS = (process.env.WALLETS ?? "meteor-wallet,intear-wallet").split(",");
 const browser = await chromium.launch();
 const result = {};
-for (const walletId of ["meteor-wallet", "intear-wallet"]) {
+for (const walletId of WALLETS) {
   const ctx = await browser.newContext({ bypassCSP: true, viewport: { width: 1000, height: 800 } });
   const page = await ctx.newPage();
   const seen = [];
@@ -25,11 +28,11 @@ for (const walletId of ["meteor-wallet", "intear-wallet"]) {
     popups.push(p.url());
     p.on("framenavigated", (f) => f === p.mainFrame() && popups.push(f.url()));
   });
-  await page.goto(`${base}/Intatto/e2e/harness/wallet.html`);
+  await page.goto(`${base}/Intatto/e2e/harness/wallet.html?network=${NETWORK}`);
   await page.waitForFunction(() => window.harness);
   await page.click(`#connect-${walletId}`);
   await page.waitForTimeout(8000);
-  await page.screenshot({ path: `${shots}/clicked-${walletId}-1.png` });
+  await page.screenshot({ path: `${shots}/clicked-${NETWORK}-${walletId}-1.png` });
   // Intear asks how to connect, inside its own iframe: choose its web wallet.
   for (const f of page.frames()) {
     if (f.url().includes("hot-wallet-connector-iframe")) {
@@ -37,8 +40,8 @@ for (const walletId of ["meteor-wallet", "intear-wallet"]) {
     }
   }
   await page.waitForTimeout(8000);
-  await page.screenshot({ path: `${shots}/clicked-${walletId}-2.png` });
-  result[walletId] = { requests: [...new Set(seen)], popups: [...new Set(popups)].map((u) => u.slice(0, 140)) };
+  await page.screenshot({ path: `${shots}/clicked-${NETWORK}-${walletId}-2.png` });
+  result[`${NETWORK} ${walletId}`] = { requests: [...new Set(seen)], popups: [...new Set(popups)].map((u) => u.slice(0, 140)) };
   await ctx.close();
 }
 await browser.close();

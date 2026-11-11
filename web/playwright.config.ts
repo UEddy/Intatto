@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Screenshots of the production build (with its CSP) at 360, 768 and 1440 px, light and dark,
-// against live testnet.
+// against live mainnet and testnet (and mocks of testnet).
 const widths = [
   { name: "360", viewport: { width: 360, height: 780 }, isMobile: true, hasTouch: true },
   { name: "768", viewport: { width: 768, height: 1024 }, isMobile: false, hasTouch: true },

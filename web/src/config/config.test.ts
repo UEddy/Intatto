@@ -7,7 +7,8 @@ describe("network selection", () => {
     expect(resolveNetwork("?network=mainnet", "testnet", "testnet")).toBe("mainnet");
     expect(resolveNetwork("", "mainnet", "testnet")).toBe("mainnet");
     expect(resolveNetwork("", null, "mainnet")).toBe("mainnet");
-    expect(resolveNetwork("?network=devnet", "bogus", undefined)).toBe("testnet");
+    expect(resolveNetwork("?network=testnet", "mainnet", "mainnet")).toBe("testnet");
+    expect(resolveNetwork("?network=devnet", "bogus", undefined)).toBe("mainnet");
   });
 });
 
@@ -25,8 +26,10 @@ describe("network configs", () => {
       expect([...c.pool.tokenIds].sort()).toEqual(c.tokens.map((t) => t.contractId).sort());
     }
   });
-  it("leave mainnet's vault and canary empty until they exist", () => {
-    expect(MAINNET.vaultId).toBeNull();
-    expect(MAINNET.canary).toBeNull();
+  it("point mainnet at the deployed vault and its canary, on the published build", () => {
+    expect(MAINNET.vaultId).toBe("vault.intatto.near");
+    expect(MAINNET.canary?.ownerId).toBe("canary.intatto.near");
+    expect(MAINNET.canary?.agentId).toBe("canary-agent.intatto.near");
+    expect(MAINNET.canary?.run?.codeHash).toBe(MAINNET.expectedBuild?.codeHash);
   });
 });

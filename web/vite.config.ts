@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
 import { NETWORKS } from "./src/config/networks.ts";
-import { WALLET_CONNECT_SRC, WALLET_FRAME_SRC } from "./src/wallet/csp.ts";
+import { WALLET_CONNECT_SRC, WALLET_FRAME_SRC, WALLET_IMG_SRC } from "./src/wallet/csp.ts";
 
 /**
  * Where the site is served from: "/Intatto/" on GitHub Pages (a project site, the default), "/" on
@@ -43,7 +43,7 @@ function csp(): Plugin {
     // near-connect's popup and the executors' srcdoc documents use inline <style> without a nonce.
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
-    "img-src 'self' data:",
+    `img-src 'self' data: ${WALLET_IMG_SRC.join(" ")}`,
     `connect-src 'self' ${[...origins].sort().join(" ")}`,
     `frame-src ${WALLET_FRAME_SRC.join(" ")}`,
     "manifest-src 'self'",

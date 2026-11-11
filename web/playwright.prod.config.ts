@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // The Cloudflare Pages build (INTATTO_BASE=/), previewed with its real _headers (vite.config.ts),
-// against live testnet: what https://intatto.pages.dev serves.
+// against live mainnet (the default) and testnet: what https://intatto.pages.dev serves.
 //
 //   npm run test:prod
 export default defineConfig({

@@ -1,5 +1,5 @@
 import { useServices } from "../app/services";
-import { boardState, integrityState } from "../canary/board";
+import { boardState, integrityState, runStartOf } from "../canary/board";
 import { formatNear } from "../near/units";
 import { durationParts, formatDateTime, formatDuration, formatDurationWords, formatInt, formatShortDate, formatUtc } from "../ui/format";
 import { Badge, Icon, RawRow, SectionMark, Skeleton, Traceable, TxLink } from "../ui/primitives";
@@ -31,7 +31,10 @@ export function BoardPage() {
 
   const canary = b.canary;
   const baseline = b.baseline.data?.ok ? b.baseline.data.check : null;
-  const runStart = b.run.data?.ok ? b.run.data.start : null;
+  // The later of the verified deployment and the verified setup (runStartOf).
+  const runStart = runStartOf(b.run.data?.ok ? b.run.data.start : null, baseline);
+  const runTxHash = runStart?.by === "setup" ? canary.baseline.txHash : canary.run?.deployTxHash;
+  const startProblem = b.run.data && !b.run.data.ok ? `The run's start transaction failed its check (${b.run.data.problem}).` : b.baseline.data && !b.baseline.data.ok ? `The setup transaction failed its check (${b.baseline.data.problem}).` : null;
   const integrity = integrityState(b.code.isSuccess ? (b.code.data?.value.codeHash ?? null) : undefined, config.expectedBuild?.codeHash ?? null);
   const codeChanged = canary.run !== null && b.code.isSuccess && b.code.data?.value.codeHash !== canary.run.codeHash;
   const state = boardState({
@@ -137,7 +140,7 @@ export function BoardPage() {
             <h2 className="hfig-label">Intact for</h2>
             <Traceable
               source={runStart ? { rpcMethod: "block", target: runStart.blockHash, raw: runStart.atNs.toString(), blockHeight: runStart.blockHeight, blockHash: runStart.blockHash } : undefined}
-              extra={runStart && canary.run ? <RawRow label="Run tx" value={<TxLink hash={canary.run.deployTxHash} />} /> : undefined}
+              extra={runStart && runTxHash ? <RawRow label="Run tx" value={<TxLink hash={runTxHash} />} /> : undefined}
             >
               <p className="hfig-value" aria-label={unbrokenNs !== null ? formatDuration(unbrokenNs) : undefined}>
                 {unbrokenNs !== null ? (
@@ -147,7 +150,7 @@ export function BoardPage() {
                       <span className="dur-unit">{u}</span>
                     </span>
                   ))
-                ) : state.runEnded || (b.run.data && !b.run.data.ok) ? (
+                ) : state.runEnded || startProblem ? (
                   "—"
                 ) : (
                   <Skeleton />
@@ -158,11 +161,13 @@ export function BoardPage() {
               {state.runEnded ? (
                 "This run ended: the vault's code changed after it started. That is not a break; a new run starts from the next verified build."
               ) : runStart ? (
-                <>
-                  Since this run started with the upgrade to the published build, {formatDateTime(runStart.atNs)}.
-                </>
-              ) : b.run.data && !b.run.data.ok ? (
-                `The run's start transaction failed its check (${b.run.data.problem}).`
+                runStart.by === "setup" ? (
+                  <>Since the canary was set up on the published build, {formatDateTime(runStart.atNs)}.</>
+                ) : (
+                  <>Since this run started with the upgrade to the published build, {formatDateTime(runStart.atNs)}.</>
+                )
+              ) : startProblem ? (
+                startProblem
               ) : (
                 "Counting from the start of this run."
               )}
@@ -209,7 +214,7 @@ export function BoardPage() {
         <div className="board-main">
           <AttemptLog query={b.attempts} subject={canarySubject(canary)} />
           {b.demo && <AttemptLog query={b.demoAttempts} subject={demoSubject(b.demo)} />}
-          {attempts !== undefined && attempts.length === 0 && <RulesPanel canary={canary} rulesUrl={canary.privateKeyUrl} />}
+          {attempts !== undefined && attempts.length === 0 && <RulesPanel canary={canary} rulesUrl={canary.privateKeyUrl} networkId={config.networkId} />}
         </div>
         <div className="board-side">
           <AgentKeyCard query={b.agentKey} canary={canary} vaultId={b.vaultId} />

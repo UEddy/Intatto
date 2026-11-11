@@ -1,0 +1,243 @@
+{
+ "jsonrpc": "2.0",
+ "result": {
+  "final_execution_status": "FINAL",
+  "receipts_outcome": [
+   {
+    "block_hash": "BNfP7pqayfF1t2XT4F1vikyq3w8XEznx7Wakj2g5nKPV",
+    "id": "BfkGXrZJsz7CeCC38L6WUetiauNMRcw6JVtxFTsgq5De",
+    "outcome": {
+     "executor_id": "vault.intatto.near",
+     "gas_burnt": 18938956991315,
+     "logs": [],
+     "metadata": {
+      "contracts": [
+       null,
+       {
+        "local": "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J"
+       }
+      ],
+      "gas_profile": [
+       {
+        "cost": "BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "2647681110"
+       },
+       {
+        "cost": "CONTRACT_LOADING_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "35445963"
+       },
+       {
+        "cost": "CONTRACT_LOADING_BYTES",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "291445234430"
+       },
+       {
+        "cost": "READ_CACHED_TRIE_NODE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "31920000000"
+       },
+       {
+        "cost": "READ_MEMORY_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "13049316000"
+       },
+       {
+        "cost": "READ_MEMORY_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "250887978"
+       },
+       {
+        "cost": "READ_REGISTER_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "5034330372"
+       },
+       {
+        "cost": "READ_REGISTER_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "8574894"
+       },
+       {
+        "cost": "STORAGE_HAS_KEY_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "54039896625"
+       },
+       {
+        "cost": "STORAGE_HAS_KEY_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "153954225"
+       },
+       {
+        "cost": "STORAGE_WRITE_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "128393472000"
+       },
+       {
+        "cost": "STORAGE_WRITE_KEY_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "422897202"
+       },
+       {
+        "cost": "STORAGE_WRITE_VALUE_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "1706019645"
+       },
+       {
+        "cost": "TOUCHING_TRIE_NODE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "31920000000"
+       },
+       {
+        "cost": "WASM_INSTRUCTION",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "13702178424"
+       },
+       {
+        "cost": "WRITE_MEMORY_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "8411384583"
+       },
+       {
+        "cost": "WRITE_MEMORY_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "280548516"
+       },
+       {
+        "cost": "WRITE_REGISTER_BASE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "5731044972"
+       },
+       {
+        "cost": "WRITE_REGISTER_BYTE",
+        "cost_category": "WASM_HOST_COST",
+        "gas_used": "68428152"
+       }
+      ],
+      "version": 4
+     },
+     "receipt_ids": [
+      "3dSpivo3rWPhJiSkvsuTQhaXV4ZdQUX5UE8dSa4te4jQ"
+     ],
+     "status": {
+      "SuccessValue": ""
+     },
+     "tokens_burnt": "1893895699131500000000"
+    },
+    "proof": [
+     {
+      "direction": "Right",
+      "hash": "AyvYhVFfQkZMdgTzog8d7YvhcE2eEAtnqXLWEWzocevs"
+     },
+     {
+      "direction": "Left",
+      "hash": "Esd3J7zoFdAKkFhLoUMihshmWRzrTZTvgBpXTStPoRMN"
+     },
+     {
+      "direction": "Right",
+      "hash": "3H4agvs2mmNiqrhCbM1rJssN7iSVQngjzc19LmuKNMFi"
+     }
+    ]
+   },
+   {
+    "block_hash": "CtNbQp4YmgbVdFNMm4vTA9wMGfyJ9gqud5kPRUXewymg",
+    "id": "3dSpivo3rWPhJiSkvsuTQhaXV4ZdQUX5UE8dSa4te4jQ",
+    "outcome": {
+     "executor_id": "vault.intatto.near",
+     "gas_burnt": 223182562500,
+     "logs": [],
+     "metadata": {
+      "contracts": [
+       {
+        "local": "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J"
+       }
+      ],
+      "gas_profile": [],
+      "version": 4
+     },
+     "receipt_ids": [],
+     "status": {
+      "SuccessValue": ""
+     },
+     "tokens_burnt": "0"
+    },
+    "proof": [
+     {
+      "direction": "Right",
+      "hash": "2cYX6msJ7fm81sVqg8Tw322TjLZKUL6F3fj4MKTVbbyP"
+     },
+     {
+      "direction": "Right",
+      "hash": "uFKo4oQ4V1LoE9q4dM6nPNjQDpLDhtjZsMeXWAWbJWP"
+     },
+     {
+      "direction": "Left",
+      "hash": "5y5XGKeDEzwTXqwsZBbUkeK3fjteHsG8hrknKtsYt1rS"
+     }
+    ]
+   }
+  ],
+  "status": {
+   "SuccessValue": ""
+  },
+  "transaction": {
+   "actions": [
+    {
+     "DeployContract": {
+      "code": "LFIL/BFzyQPO3pQlmp8IhJJ6l5g67vXMVSAlN+jSGPU="
+     }
+    },
+    {
+     "FunctionCall": {
+      "args": "eyJleGNoYW5nZV9pZCI6InYyLnJlZi1maW5hbmNlLm5lYXIiLCJ0cmVhc3VyeV9pZCI6ImVkZHloYW1lenoubmVhciJ9",
+      "deposit": "0",
+      "gas": 50000000000000,
+      "method_name": "new"
+     }
+    }
+   ],
+   "hash": "HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ",
+   "nonce": 224083541000001,
+   "priority_fee": 0,
+   "public_key": "ed25519:CXvDtHjHjSGC8VaznmZjBmJXjp68UuaqCFkNJ1bSiNgi",
+   "receiver_id": "vault.intatto.near",
+   "signature": "ed25519:1HCjFUrgAqXaqZ9yNe6ZPEFFYsp27JkuxN4XQWMio6fm5csNoqWhTXrhXm2FbFAWxphSwabSE9XpoCDZmXZ74ks",
+   "signer_id": "vault.intatto.near"
+  },
+  "transaction_outcome": {
+   "block_hash": "BNfP7pqayfF1t2XT4F1vikyq3w8XEznx7Wakj2g5nKPV",
+   "id": "HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ",
+   "outcome": {
+    "executor_id": "vault.intatto.near",
+    "gas_burnt": 2315831371694,
+    "logs": [],
+    "metadata": {
+     "gas_profile": null,
+     "version": 1
+    },
+    "receipt_ids": [
+     "BfkGXrZJsz7CeCC38L6WUetiauNMRcw6JVtxFTsgq5De"
+    ],
+    "status": {
+     "SuccessReceiptId": "BfkGXrZJsz7CeCC38L6WUetiauNMRcw6JVtxFTsgq5De"
+    },
+    "tokens_burnt": "231583137169400000000"
+   },
+   "proof": [
+    {
+     "direction": "Right",
+     "hash": "DLDTQ6jJ1dSdVH337RkMa7EzH2DDdHx2uGe6niXD3fLW"
+    },
+    {
+     "direction": "Right",
+     "hash": "3Y1ZXovZqHaAqkxJph4UiCKs96jNWzo1RNm86hPd63ju"
+    },
+    {
+     "direction": "Right",
+     "hash": "3H4agvs2mmNiqrhCbM1rJssN7iSVQngjzc19LmuKNMFi"
+    }
+   ]
+  }
+ },
+ "id": "intatto-2317581-673282427"
+}

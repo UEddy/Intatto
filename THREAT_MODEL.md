@@ -205,7 +205,8 @@ What the page does to keep its own part honest:
 - Indexer data (FastNEAR, NearBlocks) only lists transactions. Vault events are parsed only from
   receipts the vault contract itself executed, so another contract cannot forge them.
 - The board verifies the canary's setup transaction and the current run's deployment transaction
-  on load (signer, receiver, logged event or deployed code hash) before counting from them.
+  on load (signer, receiver, logged event or deployed code hash) before counting from the later
+  of the two.
 - Before every signature, a review sheet shows each action's receiver, method, arguments,
   deposit and gas.
 
@@ -255,7 +256,11 @@ before the policy exists.
   know it.
 - **`style-src 'self' 'unsafe-inline'`.** near-connect's wallet picker and the executors' documents
   use inline `<style>` without a nonce. The page keeps no secrets in its DOM for CSS to leak.
-- **`img-src 'self' data:`, `font-src 'self'`.** Wallet icons are embedded in the pinned manifest.
+- **`img-src 'self' data: https://hot-labs.org https://storage.herewallet.app`, `font-src 'self'`.**
+  Wallet icons are embedded in the pinned manifest. HOT's executor loads its logo and QR frame
+  from those two hosts and shuts itself down (near-connect removes its iframe before the relay
+  answers) if they are blocked, so they are allowed; images cannot run script. Measured
+  2026-11-11.
 - **`frame-src https://wallet.intear.tech`.** Intear's "choose how to connect" page, which its
   executor loads inside its own iframe.
 - **`connect-src`.** Exactly these, and nothing else:
@@ -271,25 +276,40 @@ before the policy exists.
 | `wallet.intear.tech` | Executor code of Intear |
 | `mc.meteorwallet.app` (https and wss) | Meteor Connect bridge: `/api/action`, `/api/bridge/…` and its WebSocket, used for the web-wallet handoff and mobile QR pairing |
 | `wss://logout-bridge-service.intear.tech` | Intear's bridge for its App connection method and logout notices |
+| `h4n.app` | HOT's relay: the connect or sign request is posted to `/<id>/request` and the wallet's answer polled from `/<id>/response` (QR, app and Telegram connections) |
+| `api0.herewallet.app` | HOT's clock (`/api/v1/web/time`), which dates and expires its relay requests |
 
-The wallet entries were measured on testnet on 2026-11-09. The Meteor and Intear connect and sign
-flows were driven to the wallet's own window, recording every request the page and the executors
-made (`web/e2e/harness`); Intear's WebSocket comes from its executor code, since the Web method
-does not open it. `web/e2e/wallets.spec.ts` repeats both flows under the enforced policy and
-fails on any blocked load other than these cosmetic ones, which stay blocked: Meteor's loader
-image (`meteorwallet.app`), its font stylesheets (`rsms.me`, `fonts.cdnfonts.com`) and an inline
-`data:` font. Its picker falls back to system fonts.
+The wallet entries were measured on testnet on 2026-11-09 (Meteor, Intear) and on mainnet on
+2026-11-11 (all four). Each wallet's connect and sign flows were driven to the wallet's own window
+or QR code, recording every request the page and the executors made (`web/e2e/harness`, with
+`NETWORK=mainnet`); Intear's WebSocket comes from its executor code, since the Web method does not
+open it. The HOT and MyNearWallet executors' code (fetched 2026-11-11, sha256 `3139b7ae…` and
+`428055ae…`) was also searched for every host it names. `web/e2e/wallets.spec.ts` repeats the
+Meteor and Intear flows on testnet and the HOT and MyNearWallet flows on mainnet under the
+enforced policy, and fails on any blocked load other than these cosmetic ones, which stay blocked:
+Meteor's loader image (`meteorwallet.app`), Meteor's and HOT's font stylesheets (`rsms.me`,
+`fonts.cdnfonts.com`) and an inline `data:` font. Their pickers fall back to system fonts. The HOT
+test also checks that its QR code stays up and that its relay answers.
+
+- **MyNearWallet** needs nothing beyond its executor's code: it logs in and signs in its own
+  window (`app.mynearwallet.com`) and reads the chain through the RPC near-connect hands it (the
+  configured one). The fallback RPCs in its code (`c1`/`c2.rpc.fastnear.com`, `*.aurora.dev`,
+  `rpc.mainnet.near.org`) are used only when near-connect provides none, which it always does here.
+- **HOT** needs its relay and clock above. Its code also names `my.herewallet.app/request`, the
+  default endpoint of a QR strategy this executor overrides with the relay, and an RPC helper
+  with no caller; neither was contacted.
 
 Limits of this measurement:
 
 - Signing was measured up to the wallet's window; completing it needs a logged-in wallet. Both
   wallets sign and broadcast in their own window and return the result by `postMessage` or the
   bridge above.
-- HOT and MyNearWallet were not measured, because they do not run on testnet. Their executors
-  call other backends (HOT: `h4n.app`, `api0.herewallet.app`, `storage.herewallet.app`), which the
-  policy blocks. They must be measured, and their backends listed here, before the mainnet demo.
+- HOT's flows were measured up to its QR code: the request reached the relay and the relay was
+  polled. Completing a connection needs the HOT app; its answer comes back through the same relay.
 - Meteor's executor defaults to `free.rpc.fastnear.com` for mainnet. It made no RPC call in the
-  testnet flows; recheck on mainnet.
+  testnet or mainnet flows (2026-11-11). Asked to sign with no wallet connected, it resolved with
+  no transaction and made no request; the page treats a result without a transaction hash as an
+  error and signs only with a connected session.
 
 ## Known limitations
 

@@ -25,7 +25,7 @@ for (const [name, scenario] of Object.entries(scenarios(NOW_NS))) {
   test(`state: ${name}`, async ({ page }, info) => {
     const problems = watchErrors(page);
     await mockChain(page, scenario, NOW_NS);
-    await page.goto("./#/");
+    await page.goto("./?network=testnet#/");
     await settle(page);
 
     const seal = page.locator(".seal--hero");
@@ -49,7 +49,8 @@ for (const [name, scenario] of Object.entries(scenarios(NOW_NS))) {
     await page.screenshot({ path: `screenshots/state-${name}-${info.project.name}.png`, fullPage: true });
     // Readable-scale views of the parts that change per state.
     await page.screenshot({ path: `screenshots/state-${name}-${info.project.name}-top.png` });
-    await page.locator(".attempt-log").screenshot({ path: `screenshots/state-${name}-${info.project.name}-log.png` });
+    // The canary's log (testnet also shows the demo agent's log below it).
+    await page.locator(".attempt-log", { has: page.getByRole("heading", { name: "Attempts with the published key" }) }).screenshot({ path: `screenshots/state-${name}-${info.project.name}-log.png` });
     expect(problems).toEqual([]);
   });
 }
@@ -58,7 +59,7 @@ test("a new attempt during polling is stamped in", async ({ page }) => {
   const problems = watchErrors(page);
   const all = attemptSet(NOW_NS); // newest first
   await mockChain(page, { ...scenarios(NOW_NS)["attempts-matches"]!, attempts: (poll) => (poll === 0 ? all.slice(1) : all) }, NOW_NS);
-  await page.goto("./#/");
+  await page.goto("./?network=testnet#/");
   await settle(page);
   await expect(page.locator(".ledger .entry")).toHaveCount(2);
   await expect(page.locator(".entry.is-new")).toHaveCount(0);
@@ -77,7 +78,7 @@ test("a new attempt during polling is stamped in", async ({ page }) => {
 test("with reduced motion the seal is static", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await mockChain(page, scenarios(NOW_NS)["broken"]!, NOW_NS);
-  await page.goto("./#/");
+  await page.goto("./?network=testnet#/");
   await expect(page.locator(".seal--hero")).toHaveAttribute("aria-label", "Seal broken", { timeout: 20_000 });
   await page.waitForTimeout(100);
   // Every seal animation (press, crack, halves parting) has already reached its end state.
