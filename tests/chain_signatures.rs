@@ -1076,6 +1076,42 @@ async fn intent_swap_rejections_are_logged_and_change_nothing() -> TestResult {
         .await?
         .assert_success();
 
+    // An owner with no vault.
+    let args = json!({
+        "owner_id": stranger, "token_in": wnear, "token_out": usdt,
+        "amount_in": U128(WHOLE), "amount_out": U128(3 * WHOLE),
+    });
+    let no_vault = s
+        .env
+        .call_on(
+            s.env.vault_id(),
+            &agent,
+            "agent_intent_swap",
+            args,
+            NO_DEPOSIT,
+            gas,
+        )
+        .await?;
+    rejected(no_vault, "no_vault", "No vault exists for");
+    // The owner later drops wNEAR's caps from the main policy: the listed pair alone allows nothing.
+    let mut no_caps = s.policy();
+    no_caps.tokens.retain(|caps| caps.token_id != wnear);
+    s.env
+        .set_agent(&owner, &agent, &no_caps)
+        .await?
+        .assert_success();
+    rejected(
+        s.intent_swap_as(&agent, &wnear, &usdt, WHOLE, 3 * WHOLE, gas)
+            .await?,
+        "pair_mismatch",
+        "has no caps in the policy",
+    );
+    s.env
+        .set_agent(&owner, &agent, &s.policy())
+        .await?
+        .assert_success();
+    unchanged().await?;
+
     // A second key on the vault's Verifier account stops intent swaps once anyone checks.
     let extra = json!({ "public_key": ed25519_string(&derived_signing_key(&owner, "extra")) });
     s.env
@@ -1308,5 +1344,124 @@ async fn an_invalidated_salt_leaves_an_unexecuted_swap_unresolved() -> TestResul
     let result = s.settle(&s.env.stranger, &id).await?;
     assert_eq!(result.assert_success().json::<String>()?, "unresolved");
     assert_eq!(s.intents_snapshot().await?, [2 * WHOLE, 0, 3 * WHOLE, 0]);
+    Ok(())
+}
+
+// ---- Step 4: the intents build replaces master's code over master's state ----
+
+/// SHA-256 (base58) of tests/res/intatto_3z1w5.wasm: master's reproducible build of 6cfa90e,
+/// the code mainnet-deploy.sh deploys.
+const MASTER_3Z1W5_SHA256: &str = "3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J";
+
+/// State written by master's code (3z1W5) reads back unchanged after this build replaces it,
+/// with no migration: vaults, policies, token balances, spends, withdrawal locks, the treasury
+/// and the exchange. Spend ids continue, and the intents path then works on the upgraded vault
+/// end to end.
+#[tokio::test]
+async fn master_3z1w5_state_survives_the_intents_upgrade() -> TestResult {
+    let s = CsEnv::on_code(res_wasm("intatto_3z1w5.wasm", MASTER_3Z1W5_SHA256)).await?;
+    let (owner, vault) = (s.env.owner.clone(), s.env.vault_id().clone());
+    let (wnear, usdt) = (s.it.wnear.clone(), s.it.usdt.clone());
+    let fee_bps: u16 = s.env.view_on(&vault, "get_fee_bps", json!({})).await?;
+    assert_eq!(fee_bps, 10, "the vendored binary is the fee build");
+
+    // State written by master's code: two owners, token balances, one spend, and a withdrawal
+    // lock on the second owner.
+    s.fund_vault(&owner, &wnear, 3 * WHOLE).await?;
+    s.fund_vault(&owner, &usdt, WHOLE).await?;
+    s.env.spend_ok(millinear(100)).await?;
+    let second = s.env.merchant.clone();
+    s.env.deposit(&second, near(2)).await?.assert_success();
+    let until = s.env.block_timestamp().await? + 2 * HOUR_NS;
+    let args = json!({ "timestamp_ns": near_sdk::json_types::U64(until) });
+    s.env
+        .call(&second, "lock_withdrawals_until", args, ONE_YOCTO)
+        .await?
+        .assert_success();
+    let views = || async {
+        let owner_vault: Value = s.env.vault_json(&owner).await?;
+        let second_vault: Value = s.env.vault_json(&second).await?;
+        let policy: Value = s
+            .env
+            .view_on(&vault, "get_policy", json!({ "owner_id": owner }))
+            .await?;
+        let exchange: Value = s.env.view_on(&vault, "get_exchange_id", json!({})).await?;
+        let treasury: Value = s.env.view_on(&vault, "get_treasury_id", json!({})).await?;
+        TestResult::Ok(json!([
+            owner_vault,
+            second_vault,
+            policy,
+            exchange,
+            treasury
+        ]))
+    };
+    let before = views().await?;
+    assert_eq!(
+        before[1]["withdrawals_locked_until"],
+        json!(until.to_string())
+    );
+
+    // Replace the code only, as a redeploy of the mainnet vault would.
+    near_api::Contract::deploy(vault.clone())
+        .use_code(contract_wasm())
+        .without_init_call()
+        .with_signer(s.env.signer.clone())
+        .send_to(&s.env.network)
+        .await?
+        .assert_success();
+    assert_eq!(
+        views().await?,
+        before,
+        "every view reads back field for field"
+    );
+    assert!(s.config().await?.is_none(), "intents start unset");
+    let policy: IntentPolicy = s
+        .env
+        .view_on(&vault, "get_intent_policy", json!({ "owner_id": owner }))
+        .await?;
+    assert!(policy.pairs.is_empty());
+
+    // Master's behaviour is intact: spend ids continue, the lock still binds.
+    let result = s
+        .env
+        .agent_spend(&s.env.agent, &s.env.merchant, millinear(100))
+        .await?;
+    assert_eq!(events(&result, "spend_initiated")[0]["spend_id"], "1");
+    assert!(result.assert_success().json::<bool>()?);
+    assert_fails_with(
+        s.env
+            .call(&second, "withdraw", json!({ "amount": near(1) }), ONE_YOCTO)
+            .await?,
+        &format!("Withdrawals are locked until {until}"),
+    );
+
+    // And the intents path works on the upgraded vault, end to end.
+    s.set_up().await?;
+    s.deposit_to_intents(&owner, &wnear, 2 * WHOLE)
+        .await?
+        .assert_success();
+    s.set_intent_policy(&owner, &s.both_ways())
+        .await?
+        .assert_success();
+    let record = s.sell_wnear_signed(WHOLE, 3 * WHOLE).await?;
+    assert_eq!(
+        record["intent_id"], "2",
+        "intent ids continue the spend ids"
+    );
+    let solver = Solver::new(&s, 5 * WHOLE).await?;
+    let counter = solver.counter_intent(&s, &record).await?;
+    solver
+        .execute(&s, vec![record["signed_data"].clone(), counter])
+        .await?
+        .assert_success();
+    let result = s.settle(&s.env.stranger, "2").await?;
+    assert_eq!(result.assert_success().json::<String>()?, "executed");
+    assert_eq!(
+        s.intents_snapshot().await?,
+        [WHOLE, 3 * WHOLE, WHOLE, 3 * WHOLE]
+    );
+    // The Ref-swap bookkeeping master keeps is untouched by all of it.
+    assert_eq!(s.vault_token(&owner, &wnear).await?, WHOLE);
+    assert_eq!(s.vault_token(&owner, &usdt).await?, WHOLE);
     Ok(())
 }

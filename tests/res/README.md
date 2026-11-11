@@ -10,6 +10,7 @@ hash below before using it.
 | `ref_exchange_v1.9.21.wasm` | Code of `v2.ref-finance.near`, the Rhea (Ref) V1 exchange on mainnet, fetched with RPC `view_code` on 2026-11-09 (block 223785783) | ref-exchange 1.9.21 (`metadata().version`) | `GZmkbfVLcN7ErxU9RDxP24YTaKmoVixhM6XyycP15Qvi` |
 | `intatto_j5mo.wasm` | Code of `vault-v1.intatto-dev.testnet` since 2026-11-08, fetched with RPC `view_code` on 2026-11-09 (block 276908989) | this repo at commit b85cece (`cargo near build reproducible-wasm`), the build before the swap fee | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL` |
 | `w_near.wasm` | Code of `wrap.testnet`, fetched with RPC `view_code` on 2026-11-02 | wrapped NEAR (NEP-141) | `DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa` |
+| `intatto_3z1w5.wasm` | Reproducible build of master's mainnet commit `6cfa90e00890a510750d248b24dae0f86b5211be` (the code `scripts/mainnet-deploy.sh` deploys), rebuilt on 2026-11-11 by running cargo-near 0.22.0's container command (`sourcescan/cargo-near:0.21.1-rust-1.96.0`, image pinned by digest in that commit's Cargo.toml, `cargo near build non-reproducible-wasm --locked` with the NEP-330 variables naming that commit) with host networking added for crate downloads; its embedded source metadata names that commit | the swap-fee build, master's current contract | `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J` (sha256 hex `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`), the hashes published in README.md and `.github/workflows/reproducible-build.yml` |
 | `intents_near_0.4.5.wasm` | Code of `intents.near`, the NEAR Intents Verifier on mainnet, fetched with RPC `view_code` on 2026-11-11 (block 224083628) | defuse 0.4.5, built from near/intents `16d04f6ec4401263f8914638710260da50bb46b0` (`contract_source_metadata`) | `BtA1BEFNS619KkvXFsgcpQ21Tb5yMm32aaUkn7xNothk` (sha256 hex `a1afab98916d9f213746544dcf8e4e6bdb22c0be6bc5dfbd8ea8814c9922b547`) |
 
 The exchange hash also matches `ref_exchange_release_v1919.wasm` and the 1.9.19 entry in the
@@ -30,6 +31,11 @@ what intents.near governance can do to the vault's account there (salt invalidat
 cleanup). The MPC signer has no binary here: `tests/contracts/mock-mpc-signer` is built from
 source by the tests. It keeps `v1.signer`'s interface (`sign` with yield-resume,
 `derived_public_key`, `fail_on_timeout`), and a sandbox account plays the MPC nodes.
+
+`master_3z1w5_state_survives_the_intents_upgrade` in `tests/chain_signatures.rs` deploys
+`intatto_3z1w5.wasm`, writes state with it (two owners, token balances, a spend, a withdrawal
+lock), replaces it with the current build, checks that every view reads back unchanged, and then
+runs an intent swap end to end on the upgraded vault.
 
 `tests/upgrade.rs` deploys `intatto_v1.wasm`, writes state with it, then replaces it with the
 current build to check that the current code reads v1 state unchanged.

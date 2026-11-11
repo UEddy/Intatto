@@ -59,8 +59,9 @@ const NS_PER_SEC: u64 = 1_000_000_000;
 const MAX_SIGNER_ANSWER_BYTES: usize = 2_048;
 
 // Gas, in TGas. Each callback reserves what the rest of its chain needs.
-/// The MPC `sign` call (v1.signer needs at least 15, of which 7 go to its resume callback).
-pub const MPC_SIGN_TGAS: u64 = 25;
+/// The MPC `sign` call: v1.signer needs at least 15 (7 of them for its resume callback); the
+/// rest is headroom for loading its state, which is far larger on mainnet than in the sandbox.
+pub const MPC_SIGN_TGAS: u64 = 50;
 pub const ON_INTENT_SIGNED_TGAS: u64 = 20;
 pub const ON_INTENT_SALT_TGAS: u64 = 30 + MPC_SIGN_TGAS + ON_INTENT_SIGNED_TGAS;
 /// Minimum gas an agent must attach to `agent_intent_swap`.

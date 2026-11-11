@@ -277,6 +277,13 @@ deposits on Rhea. Per-owner amounts are the vault's bookkeeping (`get_intents_ba
       executes a swap, then has the sandbox DAO invalidate the salt and clean the nonce. Then
       `is_nonce_used` is false, and settlement still refuses to refund.
 
+**Upgrade compatibility.** Everything the intents path stores lives under its own keys: the
+config (`i`), intents balances (`n`), intent policies (`q`) and unsettled swaps (`s`). The Borsh
+layouts of `Contract` and `Vault` are unchanged, so this build can replace master's code (the
+reproducible build `3z1W5Sfh…`) over its state without a migration.
+`master_3z1w5_state_survives_the_intents_upgrade` checks that every view reads back unchanged
+and that spend ids continue, then runs an intent swap on the upgraded vault.
+
 ### Trust assumptions (intents path)
 
 All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 224,086,400).
