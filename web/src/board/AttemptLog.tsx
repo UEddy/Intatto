@@ -8,6 +8,7 @@ import type { ActivitySource } from "../indexer/types";
 import { formatNear } from "../near/units";
 import { formatAgo, formatDateTime, formatInt } from "../ui/format";
 import { SectionMark, Skeleton, TxLink } from "../ui/primitives";
+import { IndexerDown } from "../ui/IndexerDown";
 import { TokenAmount } from "../ui/TokenAmount";
 import { useArrivals } from "../ui/useArrivals";
 import { useNow } from "../ui/useNow";
@@ -57,11 +58,11 @@ export function AttemptLog({ query, subject }: { query: UseQueryResult<Data>; su
           ))}
         </ul>
       ) : query.isError && !data ? (
-        <p className="empty">
-          {query.error instanceof IndexerUnavailableError
-            ? "The transaction indexers are not answering right now. The page keeps retrying, backing off between tries."
-            : `Could not load attempts: ${String(query.error)}`}
-        </p>
+        query.error instanceof IndexerUnavailableError ? (
+          <IndexerDown error={query.error} />
+        ) : (
+          <p className="empty">{`Could not load attempts: ${String(query.error)}`}</p>
+        )
       ) : data && data.attempts.length === 0 ? (
         <div className="empty">
           <p className="empty-title">No attempts yet.</p>

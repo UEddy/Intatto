@@ -4,13 +4,24 @@
 
 Author: [UEddy](https://github.com/UEddy)
 
-Intatto is a NEAR smart contract that holds an owner's NEAR and NEP-141 tokens and lets one AI
-agent spend or swap them only within limits the owner sets on chain. The agent signs with a
-function-call access key. The contract, not the agent's software, checks every limit, so an agent
-that is buggy, compromised or prompt-injected can move no more than the policy allows.
+**The agent's key is public. Take the money if you can.**
 
-The repository has three parts: the vault contract (`src/`), a web app with an owner console and a
-public canary board (`web/`), and testnet scripts (`scripts/`).
+The canary is an AI agent's vault on NEAR testnet holding 0.9974 NEAR, and the agent's signing key
+is published in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
+`agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
+contract, and the contract refuses every one. Nothing has left the canary since it was set up
+(balance still 997400000000000000000000 yoctoNEAR at block 277,204,809). Watch every attempt live
+on the board at **[intatto.pages.dev](https://intatto.pages.dev)**, or try one yourself in
+[Try it](#try-it).
+
+That is what Intatto does: a NEAR contract that holds an owner's NEAR and NEP-141 tokens and lets
+one AI agent spend or swap them only within limits the owner sets on chain. The agent signs with a
+function-call key. The contract, not the agent's software, checks every limit, so an agent that is
+buggy, compromised, prompt-injected, or whose key is simply public can move no more than the owner
+allowed. For the canary that is nothing at all.
+
+The repository has three parts: the vault contract (`src/`), a web app with an owner console and the
+public canary board (`web/`), and scripts for testnet and mainnet (`scripts/`).
 
 ## The problem
 
@@ -23,15 +34,19 @@ and an optional time lock on the owner's own withdrawals.
 
 ## What is deployed
 
-Testnet only. Mainnet is not deployed yet.
+Testnet only. Mainnet is not deployed yet. The board is live at
+[intatto.pages.dev](https://intatto.pages.dev) and reads testnet.
 
 | | Testnet |
 |---|---|
-| Vault contract | [`vault-v1.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v1.intatto-dev.testnet) |
-| Code hash | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL`, the reproducible build of commit [`b85cece`](https://github.com/UEddy/Intatto/commit/b85cece7e8afc49e8f3476cb8ae69f0792d99444), deployed in [`A3KLQkGa…`](https://explorer.testnet.near.org/transactions/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
-| Exchange it is bound to | `ref-finance-101.testnet` (Rhea / Ref V1, ref-exchange 1.9.19) |
+| Canary vault contract | [`vault-v1.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v1.intatto-dev.testnet), no fee |
+| Its code hash | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL`, the reproducible build of commit [`b85cece`](https://github.com/UEddy/Intatto/commit/b85cece7e8afc49e8f3476cb8ae69f0792d99444), deployed in [`A3KLQkGa…`](https://explorer.testnet.near.org/transactions/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
 | Canary owner | `canary.intatto-dev.testnet` |
 | Canary agent | `canary-agent.intatto-dev.testnet` (its function-call private key is published, see below) |
+| Fee vault contract | [`vault-v2.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v2.intatto-dev.testnet), the 10 bps swap fee live (`get_fee_bps` = 10, treasury `intatto-dev.testnet`); first fee-paying swap [`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2) |
+| Its code hash | `7aiNbHTnDs4irAQaaGuudHmEgcQvjuMDRzxUSGrZHHiR`, a local `non-reproducible-wasm` build, so it cannot be checked against source. Mainnet gets the reproducible build of commit `6cfa90e` (`3z1W5Sfh…`, see [Status](#status-and-known-gaps)). |
+| Prompt-injection demo vault | `demo-owner.intatto-dev.testnet`'s vault on vault-v2; agent `demo-agent.intatto-dev.testnet`, whose key is also published ([agent/README.md](agent/README.md)) |
+| Exchange both are bound to | `ref-finance-101.testnet` (Rhea / Ref V1, ref-exchange 1.9.19) |
 | Earlier v0 deployment | `vault.intatto-dev.testnet` (spending only, no swaps) |
 
 The canary is a vault whose agent key is public. Anyone can sign with it and try to take the
@@ -106,8 +121,8 @@ cd web && npm ci && npm run dev
 
 Open the printed URL (it ends in `/Intatto/`). The board reads the canary from testnet: its
 balance against the baseline, the code-hash check, and every transaction signed with the
-published key. The owner console (`#/console`) connects a NEAR wallet on testnet. The board is
-not hosted publicly yet.
+published key. The owner console (`#/console`) connects a NEAR wallet on testnet. The same board
+is hosted at [intatto.pages.dev](https://intatto.pages.dev).
 
 ## Tests
 
@@ -127,9 +142,10 @@ from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 |---|---|---|
 | Unit tests (timing edges, callback outcomes, fee math) | [src/tests.rs](src/tests.rs) | 87 |
 | Spending, caps, roles | [tests/test_basics.rs](tests/test_basics.rs) | 15 |
-| Swaps through the real exchange, fees, J5Mo upgrade | [tests/swap.rs](tests/swap.rs) | 15 |
+| Swaps through the real exchange, fees, J5Mo upgrade, a vault blacklisted on 1.9.21 | [tests/swap.rs](tests/swap.rs) | 17 |
 | Withdrawal lock | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs) | 3 |
 | v1 state survives a code upgrade | [tests/upgrade.rs](tests/upgrade.rs) | 1 |
+| **Total** (`cargo test -- --list`, 2026-11-11) | | **123** |
 
 The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. To run
 them against the mainnet binary (1.9.21, `v2.ref-finance.near`), and against the reproducible build
@@ -140,10 +156,12 @@ INTATTO_TEST_EXCHANGE=1.9.21 cargo test
 INTATTO_TEST_WASM=target/near/intatto.wasm INTATTO_TEST_WASM_SHA256=3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J cargo test
 ```
 
-The web app's tests run separately:
+The web app's and the demo agent's tests run separately:
 
 ```bash
-cd web && npm ci && npm test        # 90 unit tests (vitest)
+cd web && npm ci && npm test        # 122 unit tests (vitest)
+cd web && npm run test:prod         # the Cloudflare build under its real CSP, against live testnet (Playwright)
+node --test agent/*.test.mjs        # 8 tests: the demo agent's transaction signer and secret redaction
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy and
@@ -220,8 +238,9 @@ it. `canary-agent.intatto-dev.testnet` also has a full-access key, held by the d
 account's own NEAR, but through the vault it is bound by the same policy as the published key. It
 also means the account cannot lock itself out when the published key's allowance runs out.
 
-The canary's private key is published on purpose, as bait, and is the only private key in this
-repository. It is a testnet function-call key whose permission is shown above. Every other
+Two private keys are published on purpose, both testnet function-call keys: the canary's, as
+bait, with the permission shown above, and the prompt-injection demo agent's
+([agent/README.md](agent/README.md)), which can call only `agent_spend` on vault-v2. Every other
 `ed25519:` string in the repository is a public key or a transaction signature from recorded
 testnet data in `web/src/test/fixtures/`.
 
@@ -250,12 +269,15 @@ is the contract's storage stake (2.55 NEAR for this build) plus deployment gas.
 
 ## Business model
 
-**Planned, not deployed yet.** The deployed contract (vault-v1) charges no fee. The fee is written
-and tested in this repository ([src/fees.rs](src/fees.rs)) and goes live with a fresh testnet
-vault, vault-v2.
+**Live on testnet in vault-v2; not on mainnet yet.** The canary's contract (vault-v1) charges no
+fee. The fee is in [src/fees.rs](src/fees.rs).
 
-The plan is a protocol fee of 0.10% (10 basis points) on the output of agent swaps, fixed in the
-contract code as a compile-time constant, with no method that can change it. The fee is taken
+A protocol fee of 0.10% (10 basis points) on the output of agent swaps, fixed in the contract code
+as a compile-time constant, with no method that can change it. In vault-v2's first fee-paying swap,
+[`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2),
+0.1 wNEAR became 0.124142266 USDT; the `swap_completed` event shows a fee of 0.000124142 USDT
+(`124142266245632723653` of `124142266245632723653642` units, exactly 10 bps rounded down) and
+the owner credited the rest. The fee is taken
 from the amount the exchange returns: the owner is credited the output minus the fee, and the fee
 accrues to a treasury balance kept separate from owner balances. The treasury account can
 withdraw only accrued fees. Spends, deposits, withdrawals and reclaims carry no fee, and neither
@@ -269,12 +291,14 @@ Per completed swap, the agent pays about 0.0036 NEAR of gas whatever the size (t
 
 ## Tracks
 
-- **AI Security & Defense (`security`).** The project is a policy engine for agent spending,
-  enforced on chain. The agent signs with a function-call key scoped to one contract; its limits
-  are explained above. The public canary invites anyone to break it.
-- **Unstoppable DeFi (`defi`).** It is a vault with a trading agent: swaps go through Rhea (Ref
-  V1) under on-chain pool, pair, cap and slippage rules. It does not use NEAR Intents yet;
-  Intents support is planned for mainnet.
+- **Unstoppable DeFi (`defi`).** A vault with a trading agent: swaps go through Rhea (Ref V1)
+  under on-chain pool, pair, cap and slippage rules, the slippage checked against the exchange's
+  own quote, with a 10 bps protocol fee fixed in the code (live on testnet). It does not use NEAR
+  Intents yet; Intents support is planned for mainnet.
+- **AI Security & Defense (`security`).** The agent's key is public and the money is still there:
+  the canary invites anyone to drain it with the published key, and the board shows every attempt
+  and the contract's reason for refusing it. The prompt-injection demo shows the same contract
+  refusing an agent that obeys the injection.
 - **Agent Economy (`agents`).** It gives an agent a wallet it can spend from without holding the
   owner's key, within a budget the owner sets and can freeze at any time.
 
@@ -315,16 +339,21 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
 | `src/` | The vault contract: `lib.rs` (deposit, withdraw, views), `policy.rs`, `spend.rs`, `swap.rs`, `callbacks.rs`, `tokens.rs`, `ledger.rs`, `lock.rs`, `storage.rs`, `events.rs`; unit tests in `tests.rs` |
 | `tests/` | Sandbox tests and the contract binaries they deploy (`tests/res/`) |
 | `web/` | Owner console and canary board (React, Vite) |
-| `scripts/` | Testnet smoke tests and canary setup (near-cli-rs) |
+| `scripts/` | Testnet smoke tests and canary setup; mainnet deploy, canary and smoke scripts, dry run by default (near-cli-rs) |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Invariants, trust assumptions, what counts as a canary break |
 | [CANARY.md](CANARY.md) | The public canary: accounts, key, baseline, how to try |
 
 ## Status and known gaps
 
 - The contract has not been audited.
-- Not on mainnet yet. Planned before submission: the swap fee above, passkey sign-in, a mainnet
-  deployment, and NEAR Intents (mainnet only).
-- The web app is not hosted publicly yet; run it locally (step 6).
+- Not on mainnet yet. Planned before submission: the mainnet deployment (with the swap fee),
+  passkey sign-in, and NEAR Intents (mainnet only). [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh)
+  deploys only the reproducible build of commit `6cfa90e` (code hash
+  `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`, sha256
+  `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`); so far it has only been dry-run.
+- vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
+  checked against source; vault-v1 and mainnet use reproducible builds.
+- The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev) (testnet).
 
 ## License
 

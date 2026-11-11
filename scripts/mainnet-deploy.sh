@@ -21,8 +21,9 @@
 #   VAULT_ID            the vault account, e.g. vault.intatto.near (required)
 #   ROOT_ACCOUNT        optional parent of VAULT_ID, created first
 #   TREASURY_ID         the only account that can withdraw fees; fixed at init (required)
-#   WASM                default target/near/intatto.wasm (cargo near build reproducible-wasm)
+#   WASM                the reproducible build (default target/near/intatto.wasm; pass it explicitly)
 #   EXPECTED_CODE_HASH  default: the reproducible build of commit 6cfa90e
+#   EXPECTED_SHA256     the same hash as hex; the wasm must match both
 #
 # The vault account keeps its full-access key, as vault-v1 does on testnet: whoever holds it can
 # replace the code (THREAT_MODEL.md). Keep it offline.
@@ -31,6 +32,12 @@ shopt -s inherit_errexit
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
 
 EXPECTED_CODE_HASH=${EXPECTED_CODE_HASH:-3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J}
+# The same hash as hex, for `sha256sum`: base58-decoding 3z1W5Sfh... gives these 32 bytes. Checked
+# separately from the helper, so the file must match both.
+EXPECTED_SHA256=${EXPECTED_SHA256:-2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5}
+# Pass the reproducible build explicitly. target/near/intatto.wasm is overwritten by every local
+# `cargo near build` (on 2026-11-11 it held the testnet vault-v2 build, 7aiNbHTn...), which this
+# script refuses.
 WASM=${WASM:-target/near/intatto.wasm}
 VAULT_ID=${VAULT_ID:-}
 ROOT_ACCOUNT=${ROOT_ACCOUNT:-}
@@ -77,12 +84,13 @@ else
   [ -f "$KEYCHAIN/$DEPLOYER.json" ] || die "no key file $KEYCHAIN/$DEPLOYER.json"
 fi
 PAYER=$DEPLOYER
-[ -f "$WASM" ] || die "$WASM not found; build it with: cargo near build reproducible-wasm"
+[ -f "$WASM" ] || die "$WASM not found; pass WASM=<path to the reproducible build of 6cfa90e>"
 WASM_HASH=$(helper file-hash "$WASM")
+WASM_SHA256=$(sha256sum "$WASM" | cut -d' ' -f1)
 WASM_BYTES=$(helper file-size "$WASM")
-echo "    wasm:      $WASM, $WASM_BYTES bytes, code hash $WASM_HASH"
-[ "$WASM_HASH" = "$EXPECTED_CODE_HASH" ] ||
-  die "$WASM is not the expected reproducible build ($EXPECTED_CODE_HASH)"
+echo "    wasm:      $WASM, $WASM_BYTES bytes, code hash $WASM_HASH, sha256 $WASM_SHA256"
+[ "$WASM_HASH" = "$EXPECTED_CODE_HASH" ] && [ "$WASM_SHA256" = "$EXPECTED_SHA256" ] ||
+  die "$WASM is not the expected reproducible build (code hash $EXPECTED_CODE_HASH, sha256 $EXPECTED_SHA256); pass WASM=<path> to the output of \`cargo near build reproducible-wasm\` of commit 6cfa90e"
 exchange_check
 TREASURY_STATE=$(account "$TREASURY_ID")
 if [ "$TREASURY_STATE" = missing ]; then

@@ -2,8 +2,9 @@
  * NearBlocks API v3 (api-testnet.nearblocks.io / api.nearblocks.io), keyless fallback.
  *
  *   GET /v3/accounts/{id}/receipts?limit=&next=   receipts to or from the account (feed)
- *   GET /v3/accounts/{id}/txns?limit=&next=       transactions signed by or sent to it (attempts)
  *   GET /v3/txns/{hash}/receipts                  the receipt tree with logs and outcomes
+ *
+ * Not used: /v3/accounts/{id}/txns, which lists only what the account received (see listsBySigner).
  *
  * Keyless limits, from its source: 6 per minute, 1 per second, 333 per day, 10,000 per month, per
  * IP. Attribution is required wherever its data is shown. Cursors are opaque (meta.next_page).
@@ -68,6 +69,12 @@ const treeResponse = z.object({ data: receiptTree });
 export class NearBlocksSource implements ActivitySource {
   readonly id = "nearblocks" as const;
   readonly attribution = { text: "Powered by Nearblocks.io APIs", url: "https://nearblocks.io" };
+  /**
+   * `/v3/accounts/{id}/txns` lists the transactions an account received, and `signer=` only
+   * narrows that list: for demo-agent it returned its one ADD_KEY and none of the five
+   * agent_spend calls it signed to vault-v2 (2026-11-11). NearBlocks has no list by signer.
+   */
+  readonly listsBySigner = false;
 
   constructor(
     readonly baseUrl: string,
@@ -75,9 +82,9 @@ export class NearBlocksSource implements ActivitySource {
   ) {}
 
   async listTxs(accountId: string, options: { limit: number; cursor?: string | null; signerOnly?: boolean }): Promise<TxPage> {
-    const kind = options.signerOnly ? "txns" : "receipts";
+    if (options.signerOnly) throw new IndexerError(this.id, "cannot list the transactions an account signed", false);
+    const kind = "receipts";
     const params = new URLSearchParams({ limit: String(Math.min(options.limit, 25)) });
-    if (options.signerOnly) params.set("signer", accountId);
     if (options.cursor) params.set("next", options.cursor);
     const url = `${this.baseUrl}/v3/accounts/${encodeURIComponent(accountId)}/${kind}?${params}`;
     const json = await getJson(this.id, url, { method: "GET" }, this.http);
@@ -86,7 +93,6 @@ export class NearBlocksSource implements ActivitySource {
     const seen = new Set<string>();
     const txs = [];
     for (const row of parsed.data.data) {
-      if (options.signerOnly && row.signer_account_id !== undefined && row.signer_account_id !== accountId) continue;
       if (seen.has(row.transaction_hash)) continue;
       seen.add(row.transaction_hash);
       txs.push({ hash: row.transaction_hash, blockHeight: Number(row.block.block_height), blockTimestampNs: row.block.block_timestamp });

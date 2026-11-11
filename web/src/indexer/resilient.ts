@@ -8,6 +8,12 @@ import { IndexerError, type ActivitySource, type IndexedTx, type TxPage } from "
 
 export const FIRST_COOLDOWN_MS = 15_000;
 export const MAX_COOLDOWN_MS = 5 * 60_000;
+/**
+ * A request that got no answer at all (a DNS blip, a dropped connection) is tried once more after
+ * this delay before the source cools down; otherwise one blip hands the page to the fallback, or
+ * to an error, for 15 s or more.
+ */
+export const TRANSIENT_RETRY_MS = 1_000;
 
 interface SourceState {
   cooldownUntil: number;
@@ -47,6 +53,7 @@ export class ResilientIndexer {
     private readonly cache: TxCache,
     private readonly network: string,
     private readonly now: () => number = Date.now,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
   ) {
     for (const s of sources) this.state.set(s.id, { cooldownUntil: 0, nextCooldownMs: FIRST_COOLDOWN_MS, lastError: null });
   }
@@ -63,17 +70,41 @@ export class ResilientIndexer {
     return this.sources.find((s) => s.id === id);
   }
 
-  private async withSource<T>(run: (source: ActivitySource) => Promise<T>, prefer?: ActivitySource["id"]): Promise<[T, ActivitySource]> {
+  /**
+   * Runs `run` on the first source that is eligible and not cooling down. A source that is not
+   * eligible (it cannot answer this kind of request) is skipped without a cooldown, so other
+   * requests still use it.
+   */
+  private async withSource<T>(
+    run: (source: ActivitySource) => Promise<T>,
+    options: { prefer?: ActivitySource["id"]; eligible?: (source: ActivitySource) => string | null } = {},
+  ): Promise<[T, ActivitySource]> {
+    const { prefer, eligible } = options;
     const errors: string[] = [];
+    const considered: SourceState[] = [];
     const ordered = prefer ? [...this.sources].sort((a, b) => (a.id === prefer ? -1 : b.id === prefer ? 1 : 0)) : this.sources;
     for (const source of ordered) {
       const st = this.state.get(source.id)!;
+      const unable = eligible?.(source) ?? null;
+      if (unable !== null) {
+        errors.push(`${source.id} ${unable}`);
+        continue;
+      }
+      considered.push(st);
       if (st.cooldownUntil > this.now()) {
-        errors.push(`${source.id} cooling down`);
+        // Keep the reason: "cooling down" alone hides why no request goes out.
+        errors.push(`${source.id} cooling down after: ${st.lastError ?? "an error"}`);
         continue;
       }
       try {
-        const value = await run(source);
+        let value: T;
+        try {
+          value = await run(source);
+        } catch (e) {
+          if (!(e instanceof IndexerError && e.transient)) throw e;
+          await this.sleep(TRANSIENT_RETRY_MS);
+          value = await run(source);
+        }
         st.nextCooldownMs = FIRST_COOLDOWN_MS;
         st.lastError = null;
         return [value, source];
@@ -88,7 +119,7 @@ export class ResilientIndexer {
         if (!(e instanceof IndexerError)) throw e;
       }
     }
-    const retryAt = Math.min(...[...this.state.values()].map((s) => s.cooldownUntil));
+    const retryAt = considered.length > 0 ? Math.min(...considered.map((s) => s.cooldownUntil)) : this.now();
     throw new IndexerUnavailableError(retryAt, errors);
   }
 
@@ -100,12 +131,14 @@ export class ResilientIndexer {
     accountId: string,
     options: { limit: number; cursor?: string | null; signerOnly?: boolean; finalBlockTimestampNs: bigint },
   ): Promise<ActivityResult> {
-    const [page, lister] = await this.withSource<TxPage>((s) =>
-      s.listTxs(accountId, {
-        limit: options.limit,
-        ...(options.cursor ? { cursor: options.cursor } : {}),
-        ...(options.signerOnly ? { signerOnly: true } : {}),
-      }),
+    const [page, lister] = await this.withSource<TxPage>(
+      (s) =>
+        s.listTxs(accountId, {
+          limit: options.limit,
+          ...(options.cursor ? { cursor: options.cursor } : {}),
+          ...(options.signerOnly ? { signerOnly: true } : {}),
+        }),
+      { eligible: (s) => (options.signerOnly && !s.listsBySigner ? "cannot list the transactions an account signed" : null) },
     );
     const hashes = page.txs.map((t) => t.hash);
     const cached = await this.cache.get(this.network, hashes);
@@ -114,7 +147,7 @@ export class ResilientIndexer {
     for (const tx of cached.values()) sources.add(tx.source);
     const fetched = new Map<string, IndexedTx>();
     if (missing.length > 0) {
-      const [txs, fetcher] = await this.withSource((s) => s.getTxs(missing), lister.id);
+      const [txs, fetcher] = await this.withSource((s) => s.getTxs(missing), { prefer: lister.id });
       sources.add(fetcher.id);
       for (const tx of txs) fetched.set(tx.hash, tx);
       await this.cache.put(

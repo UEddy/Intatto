@@ -5,6 +5,7 @@ import { ftMetadata } from "../contract/views";
 import { IndexerUnavailableError } from "../indexer/resilient";
 import type { ActivitySource } from "../indexer/types";
 import { formatAgo, formatDateTime, formatInt } from "../ui/format";
+import { IndexerDown } from "../ui/IndexerDown";
 import { SectionMark, Skeleton, TxLink } from "../ui/primitives";
 import { useArrivals } from "../ui/useArrivals";
 import { useNow } from "../ui/useNow";
@@ -63,9 +64,11 @@ export function ActivityFeed({ ownerId }: { ownerId: string; vault?: VaultView |
           ))}
         </ul>
       ) : feed.isError && !feed.data ? (
-        <p className="empty">
-          {feed.error instanceof IndexerUnavailableError ? "The transaction indexers are not answering right now. The page keeps retrying, backing off between tries." : `Could not load activity: ${String(feed.error)}`}
-        </p>
+        feed.error instanceof IndexerUnavailableError ? (
+          <IndexerDown error={feed.error} />
+        ) : (
+          <p className="empty">{`Could not load activity: ${String(feed.error)}`}</p>
+        )
       ) : items.length === 0 ? (
         <div className="empty">
           <p className="empty-title">Nothing yet.</p>

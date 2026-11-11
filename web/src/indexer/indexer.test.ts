@@ -9,7 +9,7 @@ import { fakeFetch } from "../test/fakeFetch";
 import { IdbTxCache, MemoryTxCache, SETTLE_NS, isSettled } from "./cache";
 import { FastNearSource, parseFastNearTransactions } from "./fastnear";
 import { NearBlocksSource, parseNearBlocksTree } from "./nearblocks";
-import { FIRST_COOLDOWN_MS, IndexerUnavailableError, ResilientIndexer } from "./resilient";
+import { FIRST_COOLDOWN_MS, IndexerUnavailableError, ResilientIndexer, TRANSIENT_RETRY_MS } from "./resilient";
 import { IndexerError, type ActivitySource, type IndexedTx } from "./types";
 
 const FAR_FUTURE = 10n ** 30n;
@@ -103,14 +103,23 @@ describe("ResilientIndexer", () => {
   const all = parseFastNearTransactions(txsVault);
   const refs = all.map((t) => ({ hash: t.hash, blockHeight: t.blockHeight, blockTimestampNs: t.blockTimestampNs }));
 
-  function source(id: ActivitySource["id"], behaviour: { fail?: boolean }): ActivitySource & { calls: string[] } {
+  function source(
+    id: ActivitySource["id"],
+    behaviour: { fail?: boolean; transientFailures?: number; listsBySigner?: boolean },
+  ): ActivitySource & { calls: string[] } {
     const calls: string[] = [];
+    let transientLeft = behaviour.transientFailures ?? 0;
     return {
       id,
       attribution: id === "nearblocks" ? { text: "Powered by Nearblocks.io APIs", url: "https://nearblocks.io" } : null,
+      listsBySigner: behaviour.listsBySigner ?? id === "fastnear",
       calls,
       async listTxs() {
         calls.push("list");
+        if (transientLeft > 0) {
+          transientLeft--;
+          throw new IndexerError(id, "network error (TypeError: Failed to fetch); possibly rate limited", true, "", true);
+        }
         if (behaviour.fail) throw new IndexerError(id, "down", true);
         return { txs: refs, next: null };
       },
@@ -164,5 +173,72 @@ describe("ResilientIndexer", () => {
     const err = await idx.activity("v", { limit: 1, finalBlockTimestampNs: 0n }).catch((e) => e);
     expect(err).toBeInstanceOf(IndexerUnavailableError);
     expect(err.retryAt).toBe(5 + FIRST_COOLDOWN_MS);
+  });
+
+  it("never lists signed transactions from a source that cannot, and does not cool it down for that", async () => {
+    // The board's attempt log: NearBlocks would answer with a partial list, shown as "no attempts".
+    const fast = source("fastnear", { fail: true });
+    const nb = source("nearblocks", {});
+    const idx = new ResilientIndexer([fast, nb], new MemoryTxCache(), "testnet", () => 5, async () => {});
+    const err = await idx.activity("canary-agent.intatto-dev.testnet", { limit: 50, signerOnly: true, finalBlockTimestampNs: 0n }).catch((e) => e);
+    expect(err).toBeInstanceOf(IndexerUnavailableError);
+    expect(nb.calls).toEqual([]);
+    expect(err.errors).toEqual(["fastnear: down", "nearblocks cannot list the transactions an account signed"]);
+    expect(idx.status()[1]!.coolingDownUntil).toBeNull();
+    // NearBlocks still serves the feed, which lists receipts.
+    const feed = await idx.activity("vault-v1.intatto-dev.testnet", { limit: 50, finalBlockTimestampNs: FAR_FUTURE });
+    expect([...feed.sources]).toEqual(["nearblocks"]);
+  });
+
+  it("tries a source once more after a request that got no answer, before cooling it down", async () => {
+    const waits: number[] = [];
+    const fast = source("fastnear", { transientFailures: 1 });
+    const idx = new ResilientIndexer([fast], new MemoryTxCache(), "testnet", () => 5, async (ms) => void waits.push(ms));
+    const r = await idx.activity("v", { limit: 50, signerOnly: true, finalBlockTimestampNs: FAR_FUTURE });
+    expect(r.txs).toHaveLength(19);
+    expect(fast.calls).toEqual(["list", "list", "get:19"]);
+    expect(waits).toEqual([TRANSIENT_RETRY_MS]);
+    expect(idx.status()[0]!.coolingDownUntil).toBeNull();
+  });
+
+  it("retries a transient failure only once, and does not retry other errors", async () => {
+    const twice = source("fastnear", { transientFailures: 2 });
+    const a = new ResilientIndexer([twice], new MemoryTxCache(), "testnet", () => 5, async () => {});
+    await expect(a.activity("v", { limit: 1, finalBlockTimestampNs: 0n })).rejects.toBeInstanceOf(IndexerUnavailableError);
+    expect(twice.calls).toEqual(["list", "list"]);
+    const down = source("fastnear", { fail: true });
+    const b = new ResilientIndexer([down], new MemoryTxCache(), "testnet", () => 5, async () => {});
+    await expect(b.activity("v", { limit: 1, finalBlockTimestampNs: 0n })).rejects.toBeInstanceOf(IndexerUnavailableError);
+    expect(down.calls).toEqual(["list"]);
+  });
+
+  it("keeps the last error while a source cools down, so the page can say why nothing is asked", async () => {
+    const idx = new ResilientIndexer([source("fastnear", { fail: true })], new MemoryTxCache(), "testnet", () => 5, async () => {});
+    await idx.activity("v", { limit: 1, finalBlockTimestampNs: 0n }).catch(() => {});
+    const err = await idx.activity("v", { limit: 1, finalBlockTimestampNs: 0n }).catch((e) => e);
+    expect(err.errors).toEqual(["fastnear cooling down after: fastnear: down"]);
+  });
+});
+
+describe("signed-transaction lists", () => {
+  it("FastNEAR asks the server for signed transactions only", async () => {
+    const f = fakeFetch([{ status: 200, body: JSON.stringify({ account_txs: [], txs_count: 0 }) }]);
+    await new FastNearSource("https://x", { fetch: f.fetch }).listTxs("demo-agent.intatto-dev.testnet", { limit: 50, signerOnly: true });
+    expect(f.calls[0]!.body).toEqual({ account_id: "demo-agent.intatto-dev.testnet", limit: 50, is_signer: true });
+  });
+
+  it("NearBlocks refuses without a request: /txns lists what an account received", async () => {
+    const f = fakeFetch([{ status: 200, body: "{}" }]);
+    const nb = new NearBlocksSource("https://api-testnet.nearblocks.io", { fetch: f.fetch });
+    expect(nb.listsBySigner).toBe(false);
+    await expect(nb.listTxs("demo-agent.intatto-dev.testnet", { limit: 25, signerOnly: true })).rejects.toBeInstanceOf(IndexerError);
+    expect(f.calls).toEqual([]);
+  });
+
+  it("a network failure is transient; an HTTP error is not", async () => {
+    const net = new FastNearSource("https://x", { fetch: fakeFetch([{ throws: new TypeError("Failed to fetch") }]).fetch });
+    await expect(net.listTxs("a.testnet", { limit: 1 })).rejects.toMatchObject({ transient: true });
+    const http = new FastNearSource("https://x", { fetch: fakeFetch([{ status: 503, body: "" }]).fetch });
+    await expect(http.listTxs("a.testnet", { limit: 1 })).rejects.toMatchObject({ transient: false });
   });
 });

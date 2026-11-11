@@ -58,6 +58,11 @@ export interface ActivitySource {
   /** Shown wherever this source's data is shown, when the provider's terms require it. */
   readonly attribution: { readonly text: string; readonly url: string } | null;
   /**
+   * Whether `listTxs` can answer `signerOnly` completely. A source that cannot is never asked:
+   * a partial list of what a key signed reads as "no attempts" on the board, a false all-clear.
+   */
+  readonly listsBySigner: boolean;
+  /**
    * Transactions that touched `accountId`, newest first. With `signerOnly`, only those it signed
    * (the board's attempt log); otherwise every transaction with a receipt to or from it (the feed,
    * which must include receipt-only ones such as an ft_transfer_call deposit).
@@ -78,6 +83,8 @@ export class IndexerError extends Error {
     /** True if this looks like rate limiting (429, or a CORS-less network failure). */
     readonly rateLimited: boolean,
     readonly raw: string = "",
+    /** No answer at all (network error, DNS failure, timeout): worth one quick retry. */
+    readonly transient: boolean = false,
   ) {
     super(`${source}: ${message}`);
     this.name = "IndexerError";

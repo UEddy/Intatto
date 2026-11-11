@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
@@ -87,6 +89,23 @@ function csp(): Plugin {
         if (req.url?.split("?")[0] !== `${BASE}boot.js`) return next();
         res.setHeader("Content-Type", "text/javascript");
         res.end(boot(false));
+      });
+    },
+    // `vite preview` of the Cloudflare build (INTATTO_BASE=/) sends the built _headers on every
+    // response, as Cloudflare Pages does, so a preview runs under the real header CSP as well as
+    // the <meta> one. The GitHub Pages build is previewed without headers, as GitHub serves it.
+    configurePreviewServer(server) {
+      if (BASE !== "/") return;
+      const file = resolve(server.config.root, server.config.build.outDir, "_headers");
+      const sent: [string, string][] = [];
+      for (const line of readFileSync(file, "utf8").split("\n")) {
+        const m = /^\s+([A-Za-z-]+):\s*(.+)$/.exec(line);
+        if (m) sent.push([m[1]!, m[2]!]);
+      }
+      if (!sent.some(([name]) => name === "Content-Security-Policy")) throw new Error(`${file} has no Content-Security-Policy`);
+      server.middlewares.use((_req, res, next) => {
+        for (const [name, value] of sent) res.setHeader(name, value);
+        next();
       });
     },
     generateBundle() {

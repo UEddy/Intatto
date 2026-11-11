@@ -13,6 +13,8 @@ test("break-price board renders live testnet data", async ({ page }, info) => {
   await expect(page.locator(".hfig").first().locator(".hfig-value .skeleton")).toHaveCount(0, { timeout: 45_000 });
   await expect(page.locator(".hash-row").first().locator(".skeleton")).toHaveCount(0, { timeout: 45_000 });
   await expect(page.locator(".attempt-log .entry--skeleton")).toHaveCount(0, { timeout: 60_000 });
+  // No skeletons is also true of the "indexers are not answering" state; that must fail the test.
+  await expect(page.locator(".attempt-log .indexer-down")).toHaveCount(0);
   // Since the 2026-11-08 upgrade, vault-v1 runs the published build, and the run's start
   // transaction verifies: the integrity check must say so (live testnet, not a mock).
   await expect(page.locator(".integrity-title")).toContainText("Matches the published build");

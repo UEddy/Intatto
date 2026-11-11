@@ -10,8 +10,9 @@ const widths = [
 
 export default defineConfig({
   testDir: "e2e",
-  // The console specs need the E2E build: playwright.console.config.ts.
-  testIgnore: ["console/**"],
+  // The console specs need the E2E build: playwright.console.config.ts. The prod specs need the
+  // Cloudflare build with its headers: playwright.prod.config.ts.
+  testIgnore: ["console/**", "prod/**"],
   outputDir: "test-results",
   timeout: 90_000,
   fullyParallel: false,

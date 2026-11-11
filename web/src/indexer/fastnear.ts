@@ -70,6 +70,7 @@ const txsResponse = z.object({
 export class FastNearSource implements ActivitySource {
   readonly id = "fastnear" as const;
   readonly attribution = null;
+  readonly listsBySigner = true;
 
   constructor(
     readonly baseUrl: string,
@@ -78,6 +79,9 @@ export class FastNearSource implements ActivitySource {
 
   async listTxs(accountId: string, options: { limit: number; cursor?: string | null; signerOnly?: boolean }): Promise<TxPage> {
     const body: Record<string, unknown> = { account_id: accountId, limit: Math.min(options.limit, FASTNEAR_MAX_LIMIT) };
+    // Filtered by the server, so a page holds `limit` signed transactions however many the account
+    // received; the client-side filter below stays as a check.
+    if (options.signerOnly) body.is_signer = true;
     if (options.cursor) body.resume_token = options.cursor;
     const json = await getJson(this.id, `${this.baseUrl}/v0/account`, { method: "POST", body }, this.http);
     const parsed = accountResponse.safeParse(json);

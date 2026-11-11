@@ -35,7 +35,7 @@ export async function getJson(
     raw = await res.text();
   } catch (e) {
     const what = controller.signal.aborted ? "timed out" : `network error (${String(e)})`;
-    throw new IndexerError(source, `${what}; possibly rate limited`, true);
+    throw new IndexerError(source, `${what}; possibly rate limited`, true, "", true);
   } finally {
     clearTimeout(timer);
   }
