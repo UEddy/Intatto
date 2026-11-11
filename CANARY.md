@@ -4,8 +4,8 @@ Each canary is a vault whose agent key is public. Anyone may sign with it and tr
 money. The vault contract's policy says that key can move nothing; the canary tests whether that
 holds.
 
-Live status: the break-price board at <https://ueddy.github.io/Intatto/> (mainnet; add
-`?network=testnet` for the testnet canary). Full rules and context:
+Live status: the break-price board at <https://intatto.pages.dev/?network=mainnet> (for the
+testnet canary, use `?network=testnet` instead). Full rules and context:
 [THREAT_MODEL.md](THREAT_MODEL.md), section "What counts as a canary break".
 
 There are two, one per network, set up the same way. Mainnet comes first.

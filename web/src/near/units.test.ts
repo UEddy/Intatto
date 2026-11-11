@@ -10,6 +10,10 @@ describe("formatUnits", () => {
   });
   it("truncates instead of rounding, and says so", () => {
     expect(formatNear(1999999999999999999999999n, { maxFraction: 4 })).toBe("1.9999…");
+    // Unmarked: rounded down, never up, and no ellipsis (the board's bounty and baseline).
+    expect(formatNear(997610000000000000000000n, { maxFraction: 4, mark: false })).toBe("0.9976");
+    expect(formatNear(1999999999999999999999999n, { maxFraction: 4, mark: false })).toBe("1.9999");
+    expect(formatNear(1500000000000000000000000n, { maxFraction: 4, mark: false })).toBe("1.5");
     expect(formatNear(1500000000000000000000000n, { maxFraction: 4 })).toBe("1.5");
   });
   it("never shows a non-zero amount as zero", () => {

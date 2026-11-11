@@ -235,7 +235,7 @@ withdraw_fees_step() { # 2. the treasury takes the accrued fees
       continue
     fi
     register_for "$ROOT_ACCOUNT" "$token" "$TREASURY_ID"
-    call="near contract call-function as-transaction $VAULT_ID withdraw_fees json-args '{\"token_id\":\"$token\",\"amount\":\"$fees\"}' prepaid-gas '50 Tgas' attached-deposit '1 yoctoNEAR' sign-as $TREASURY_ID network-config $NETWORK"
+    call="near contract call-function as-transaction $VAULT_ID withdraw_fees json-args '{\"token_id\":\"$token\",\"amount\":\"$fees\"}' prepaid-gas '50 Tgas' attached-deposit '1 yoctoNEAR' sign-as $TREASURY_ID network-config $(live_connection)"
     if key_in_keychain "$TREASURY_ID"; then
       call_step success "$TREASURY_ID" keychain "$VAULT_ID" withdraw_fees "{\"token_id\":\"$token\",\"amount\":\"$fees\"}" "$ONE_YOCTO" 50 \
         "treasury $TREASURY_ID withdraws $fees $token units of fees"

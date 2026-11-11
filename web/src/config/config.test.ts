@@ -8,6 +8,10 @@ describe("network selection", () => {
     expect(resolveNetwork("", "mainnet", "testnet")).toBe("mainnet");
     expect(resolveNetwork("", null, "mainnet")).toBe("mainnet");
     expect(resolveNetwork("?network=testnet", "mainnet", "mainnet")).toBe("testnet");
+    // A visitor who chose testnet earlier keeps it; the README's ?network=mainnet links override it
+    // for that page load without changing the saved choice.
+    expect(resolveNetwork("", "testnet", undefined)).toBe("testnet");
+    expect(resolveNetwork("?network=mainnet", "testnet", undefined)).toBe("mainnet");
     expect(resolveNetwork("?network=devnet", "bogus", undefined)).toBe("mainnet");
   });
 });

@@ -51,6 +51,9 @@ export function BoardPage() {
   const missingYocto = state.seal === "broken" ? baselineYocto - (state.bountyYocto ?? 0n) : null;
   // Ticks between polls from the chain time of the last read; boardState decides whether it counts.
   const unbrokenNs = state.unbrokenForNs !== null && runStart && nowNs !== null ? nowNs - runStart.atNs : null;
+  // The bounty and baseline headline figures: rounded down to 4 decimals, no ellipsis; the exact
+  // amounts are in the source row and the baseline's note.
+  const FIGURE = { maxFraction: 4, mark: false } as const;
   const lockLeftNs = state.lockedUntilNs !== null && nowNs !== null ? state.lockedUntilNs - nowNs : null;
   const attempts = b.attempts.data?.attempts;
   const vaultSource = b.vault.data?.source;
@@ -81,7 +84,7 @@ export function BoardPage() {
               <>
                 {frozen ? <Badge tone="frost">Frozen</Badge> : <Badge tone="ok">Intact</Badge>}
                 <span>
-                  {frozen ? "Frozen by its owner. " : ""}Balance at or above the {formatNear(baselineYocto, { maxFraction: 4 })} NEAR baseline
+                  {frozen ? "Frozen by its owner. " : ""}Balance at or above the {formatNear(baselineYocto, FIGURE)} NEAR baseline
                   {vaultSource ? <> as of block <span className="mono">{formatInt(vaultSource.blockHeight)}</span></> : null}.
                 </span>
               </>
@@ -117,7 +120,7 @@ export function BoardPage() {
           <h2 className="hfig-label">Bounty</h2>
           <Traceable source={vaultSource} path=".balance" extra={<RawRow label="Raw" value={`${b.vault.data?.value?.balance ?? "…"} yocto`} />}>
             <p className="hfig-value">
-              {state.bountyYocto !== null ? formatNear(state.bountyYocto, { maxFraction: 4 }) : <Skeleton />}
+              {state.bountyYocto !== null ? formatNear(state.bountyYocto, FIGURE) : <Skeleton />}
               <span className="hfig-unit">NEAR</span>
             </p>
           </Traceable>
@@ -202,10 +205,10 @@ export function BoardPage() {
         <article className="mfig">
           <h2 className="mfig-label">Baseline</h2>
           <p className="mfig-value">
-            {formatNear(baselineYocto, { maxFraction: 4 })} <span className="mfig-unit">NEAR</span>
+            {formatNear(baselineYocto, FIGURE)} <span className="mfig-unit">NEAR</span>
           </p>
           <p className="mfig-note">
-            Set by <TxLink hash={canary.baseline.txHash} />, the last setup transaction.
+            Exactly <span className="mono">{canary.baseline.balanceYocto}</span> yocto, set by <TxLink hash={canary.baseline.txHash} />, the last setup transaction.
           </p>
         </article>
       </section>

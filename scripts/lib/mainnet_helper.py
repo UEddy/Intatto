@@ -36,6 +36,11 @@ file or a short argument (an amount, an account id, a path; never data of unboun
     call-result <rpc response>         what a view call returned, as JSON (null if no account/code)
     json <file> <python expr over v>   evaluates the expression over the JSON in <file>
     account <rpc response>             "missing", or "<amount> <code hash or none>"
+    logged <exact|prefix> <description> <log file>...
+                                       "<seq> <hash>" for each line "<hash> <description>" of the
+                                       transaction logs (in the order given) whose description is
+                                       <description> (exact) or starts with it (prefix); <seq>
+                                       orders lines across all the files
     outcome <tx response> <hash> <explorer> <vault> <expect>
                                        checks a transaction: expect is "success" or
                                        "reject:<reason>" (a spend_rejected / swap_rejected event
@@ -212,6 +217,20 @@ def main(cmd, args):
     elif cmd == "events":
         for event in vault_events(load(args[0]), args[1]):
             print(json.dumps(event))
+    elif cmd == "logged":
+        mode, text, files = args[0], args[1], args[2:]
+        if mode not in ("exact", "prefix"):
+            sys.exit(f"bad mode {mode}")
+        seq = 0
+        for name in files:
+            with open(name, encoding="utf-8") as f:
+                for line in f:
+                    seq += 1
+                    tx_hash, _, description = line.rstrip("\n").partition(" ")
+                    if not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{43,44}", tx_hash):
+                        sys.exit(f"{name}: not a transaction log line: {line.strip()!r}")
+                    if description == text or (mode == "prefix" and description.startswith(text)):
+                        print(seq, tx_hash)
     elif cmd == "outcome":
         path, tx_hash, explorer, vault, expect = args
         print(f"    tx:        {explorer}{tx_hash}")

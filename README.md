@@ -11,7 +11,7 @@ is published in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any 
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
 contract, and the contract refuses every one. Nothing has left the canary since it was set up
 (balance still 997400000000000000000000 yoctoNEAR at block 277,204,809). Watch every attempt live
-on the board at **[intatto.pages.dev](https://intatto.pages.dev)**, or try one yourself in
+on the board at **[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)**, or try one yourself in
 [Try it](#try-it).
 
 That is what Intatto does: a NEAR contract that holds an owner's NEAR and NEP-141 tokens and lets
@@ -35,7 +35,7 @@ and an optional time lock on the owner's own withdrawals.
 ## What is deployed
 
 Testnet only. Mainnet is not deployed yet. The board is live at
-[intatto.pages.dev](https://intatto.pages.dev) and reads testnet.
+[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet) and reads testnet.
 
 | | Testnet |
 |---|---|
@@ -122,7 +122,7 @@ cd web && npm ci && npm run dev
 Open the printed URL (it ends in `/Intatto/`). The board reads the canary from testnet: its
 balance against the baseline, the code-hash check, and every transaction signed with the
 published key. The owner console (`#/console`) connects a NEAR wallet on testnet. The same board
-is hosted at [intatto.pages.dev](https://intatto.pages.dev).
+is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet).
 
 ## Tests
 
@@ -355,7 +355,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   [run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828); so far it has only been dry-run.
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and mainnet use reproducible builds.
-- The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev) (testnet).
+- The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet) (testnet).
 
 ## License
 

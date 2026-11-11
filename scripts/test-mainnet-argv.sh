@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression test for the mainnet deploy failure of 2026-11-11: step 3 died with
+# Regression tests for the mainnet scripts' failures of 2026-11-11. The deploy's step 3 died with
 #   scripts/lib/mainnet.sh: line 67: /usr/bin/python3: Argument list too long
 # because tx() put the signed deploy transaction (the wasm, base64: ~357 KB) into argv, and Linux
 # refuses any single argument over 128 KiB (MAX_ARG_STRLEN, E2BIG).
@@ -259,6 +259,95 @@ if [ "$rc" = 0 ] && [ "$deploy_dtgas" = 816 ]; then
   pass "deploy of the $WASM_BYTES-byte wasm with new(): 81.6 TGas (50 prepaid + 31.6 fees)"
 else
   fail "deploy gas: wanted 81.6 TGas, got ${deploy_dtgas:-?} (tenths; $out)"
+fi
+
+# ---- 4. signing is retried only before anything is signed; a send never is ----------------------
+# The smoke test's --send of 2026-11-11 stopped at step 6 with near CLI's "Cannot sign a transaction
+# due to an error while fetching the most recent nonce value ... error sending request for url
+# (https://archival-rpc.mainnet.fastnear.com/)". Nothing was signed, so that is safe to retry.
+mkdir "$T/bin4"
+cat >"$T/bin4/near" <<'STUB'
+#!/usr/bin/env bash
+# Stub near CLI: `display` fails as $STUB_MODE says for the first $FAILS calls; sends always fail.
+# (Not $MODE: scripts/lib/mainnet.sh sets that when sourced.)
+set -euo pipefail
+case " $* " in
+*" display "*)
+  n=$(($(cat "$FIXTURE/sign.count" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FIXTURE/sign.count"
+  if [ "$n" -le "$FAILS" ]; then
+    case "$STUB_MODE" in
+    transient) echo "Error: Cannot sign a transaction due to an error while fetching the most recent nonce value: error sending request for url (https://archival-rpc.mainnet.fastnear.com/)" >&2 ;;
+    fatal) echo "Error: Cannot sign a transaction due to an error while fetching the most recent nonce value: Access key for public key ed25519:x does not exist while viewing" >&2 ;;
+    esac
+    exit 1
+  fi
+  cat "$FIXTURE/display.txt" ;;
+*" send-signed-transaction "*)
+  n=$(($(cat "$FIXTURE/send.count" 2>/dev/null || echo 0) + 1)); echo "$n" >"$FIXTURE/send.count"
+  echo "Error: error sending request for url (https://archival-rpc.mainnet.fastnear.com/)" >&2; exit 1 ;;
+*) echo "near stub: unexpected command: $*" >&2; exit 2 ;;
+esac
+STUB
+chmod 700 "$T/bin4/near"
+# sign4 <mode> <fails>: runs tx() once against the stub; prints "<exit> <signs> <sends> <reads>".
+sign4() {
+  rm -f "$T/sign.count" "$T/send.count" "$T/read.count"
+  mkdir -p "$T/run4"
+  set +e
+  (
+    set -e
+    cd "$T/run4"
+    export PATH="$T/bin4:$PATH" FIXTURE="$T" STUB_MODE=$1 FAILS=$2
+    # shellcheck source=lib/mainnet.sh
+    source "$LIB/mainnet.sh"
+    SIGN_FIRST_DELAY_S=0
+    rpc() {
+      case "$1" in
+      tx) echo x >>"$T/read.count"; cat "$T/outcome.json" ;;
+      *) die "rpc stub: unexpected $1" ;;
+      esac
+    }
+    PHASE=send GAS_PRICE=100000000 VAULT_ID=vault.intatto.near
+    tx success vault.intatto.near keychain 0 50 "deploy the test wasm" \
+      contract deploy vault.intatto.near use-file "$WASM" with-init-call new json-args '{}' \
+      prepaid-gas '50 Tgas' attached-deposit '0 NEAR'
+  ) >"$T/sign4.out" 2>&1
+  local rc=$?
+  set -e
+  echo "$rc $(cat "$T/sign.count" 2>/dev/null || echo 0) $(cat "$T/send.count" 2>/dev/null || echo 0) $(cat "$T/read.count" 2>/dev/null | wc -l)"
+}
+if ! grep -q 'SIGN_ATTEMPTS' "$LIB/mainnet.sh"; then
+  fail "this lib has no signing retry (sign_tx)"
+else
+  read -r rc signs sends reads <<<"$(sign4 transient 2)"
+  if [ "$rc" = 0 ] && [ "$signs" = 3 ] && [ "$sends" = 1 ] && [ "$reads" = 1 ]; then
+    pass "a nonce fetch that fails twice is retried; then signed once, sent once, read back by hash"
+  else
+    fail "transient signing failure: exit $rc, $signs signs, $sends sends, $reads reads"
+    sed 's/^/    | /' "$T/sign4.out"
+  fi
+  read -r rc signs sends reads <<<"$(sign4 transient 99)"
+  if [ "$rc" != 0 ] && [ "$signs" = 5 ] && [ "$sends" = 0 ] && grep -q 'could not sign' "$T/sign4.out"; then
+    pass "signing gives up after 5 tries and sends nothing"
+  else
+    fail "persistent signing failure: exit $rc, $signs signs, $sends sends"
+    sed 's/^/    | /' "$T/sign4.out"
+  fi
+  read -r rc signs sends reads <<<"$(sign4 fatal 99)"
+  if [ "$rc" != 0 ] && [ "$signs" = 1 ] && [ "$sends" = 0 ]; then
+    pass "a missing access key is not retried"
+  else
+    fail "fatal signing failure: exit $rc, $signs signs, $sends sends"
+    sed 's/^/    | /' "$T/sign4.out"
+  fi
+  # The send itself fails (a connection error): it is not re-sent; its outcome is read by hash.
+  read -r rc signs sends reads <<<"$(sign4 none 0)"
+  if [ "$rc" = 0 ] && [ "$signs" = 1 ] && [ "$sends" = 1 ] && [ "$reads" = 1 ]; then
+    pass "a failed send is never re-sent: its outcome is read back by hash instead"
+  else
+    fail "failed send: exit $rc, $signs signs, $sends sends, $reads reads"
+    sed 's/^/    | /' "$T/sign4.out"
+  fi
 fi
 
 echo "== $PASSED passed, $FAILED failed"

@@ -19,9 +19,14 @@ export interface FormatOptions {
   readonly maxFraction?: number;
   /** Group the whole part in thousands. Default true. */
   readonly group?: boolean;
+  /**
+   * Mark truncation with a trailing "…". Default true. False shows the value rounded down to
+   * maxFraction digits with no mark, for headline figures whose exact amount is shown nearby.
+   */
+  readonly mark?: boolean;
 }
 
-/** 1234500000 with 6 decimals -> "1,234.5". Truncation is marked with a trailing "…". */
+/** 1234500000 with 6 decimals -> "1,234.5". Truncation is marked with a trailing "…" (see `mark`). */
 export function formatUnits(amount: bigint, decimals: number, options: FormatOptions = {}): string {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) throw new Error(`bad decimals ${decimals}`);
   const negative = amount < 0n;
@@ -38,7 +43,7 @@ export function formatUnits(amount: bigint, decimals: number, options: FormatOpt
   const wholeText = options.group === false ? whole.toString() : groupThousands(whole.toString());
   // A non-zero amount that shows as 0 says so instead of claiming zero.
   if (whole === 0n && fraction === "" && abs !== 0n) return `${negative ? "-" : ""}<0.${"0".repeat(Math.max(0, (max ?? 1) - 1))}1`;
-  return `${negative ? "-" : ""}${wholeText}${fraction ? `.${fraction}` : ""}${truncated ? "…" : ""}`;
+  return `${negative ? "-" : ""}${wholeText}${fraction ? `.${fraction}` : ""}${truncated && options.mark !== false ? "…" : ""}`;
 }
 
 function groupThousands(digits: string): string {

@@ -2,6 +2,8 @@
 """Read-only NEAR JSON-RPC client for the testnet scripts.
 
     near_rpc.py endpoint <network>            print the RPC URL near CLI uses for <network>
+    near_rpc.py network-name <network>        print that connection's network_name (near CLI files
+                                              its legacy keychain under ~/.near-credentials/<it>)
     near_rpc.py call <network> <method> <params json>
                                               print the response, one JSON object on one line
     near_rpc.py call <network> <method> -     the same, reading the params JSON from stdin, for
@@ -15,8 +17,11 @@ The endpoint, and its API key if any, come from near CLI's own config (near-cli-
 A response is printed only if it is one complete JSON-RPC 2.0 object answering this request:
 either a result, or an error that is a definitive answer (UNKNOWN_ACCOUNT, NO_CONTRACT_CODE, ...).
 Rate limiting (HTTP 429, or a rate-limit message in the body), other HTTP errors, network errors,
-bodies that are not exactly one JSON object, and errors the node reports as transient are retried
-with exponential backoff, up to ATTEMPTS times. After that, or for an error this client does not
+bodies that are not exactly one JSON object, and errors the node reports as transient are retried,
+up to ATTEMPTS times. Each wait honors a positive Retry-After (seconds or an HTTP date), capped at
+MAX_DELAY_S; otherwise, including Retry-After: 0, it backs off exponentially with jitter (about 1,
+2, 4, 8, 16 s). No wait is ever shorter than MIN_DELAY_S: on 2026-11-12 FastNEAR answered HTTP 429
+with Retry-After: 0, and five retries at 0.0 s all failed. After that, or for an error this client does not
 know, it prints why and the raw response to stderr and exits with status 3. It never turns an
 unusable response into an answer.
 
@@ -24,6 +29,7 @@ Error names are those of near-jsonrpc-primitives 0.37.3 (the version near-cli-rs
 `error.name` is HANDLER_ERROR, REQUEST_VALIDATION_ERROR or INTERNAL_ERROR, and `error.cause.name`
 the specific error.
 """
+import email.utils
 import json
 import os
 import random
@@ -32,8 +38,9 @@ import time
 import urllib.error
 import urllib.request
 
-ATTEMPTS = 5
+ATTEMPTS = 6
 FIRST_DELAY_S = 1.0
+MIN_DELAY_S = 1.0
 MAX_DELAY_S = 30.0
 TIMEOUT_S = 90
 RAW_SHOWN = 4000
@@ -112,17 +119,50 @@ def connection(network):
     return connection["rpc_url"], connection.get("rpc_api_key")
 
 
+def network_name(network):
+    connection(network)  # exists, with an rpc_url
+    import tomllib
+
+    with open(config_path(), "rb") as file:
+        name = tomllib.load(file)["network_connection"][network].get("network_name")
+    if not name:
+        sys.exit(f"near CLI config {config_path()} has no network_connection.{network}.network_name")
+    return name
+
+
 def is_rate_limit(text):
     text = text.lower()
     return any(marker in text for marker in RATE_LIMIT_MARKERS)
 
 
-def retry_after(headers):
+def retry_after(headers, now=None):
+    """Seconds a positive Retry-After header asks to wait (delta-seconds or HTTP date), capped at
+    MAX_DELAY_S; None if the header is absent, unparsable, zero or in the past."""
     value = headers.get("Retry-After") if headers else None
-    try:
-        return min(max(float(value), 0.0), MAX_DELAY_S)
-    except (TypeError, ValueError):
+    if value is None:
         return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = email.utils.parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            return None
+        if when is None:
+            return None
+        seconds = when.timestamp() - (time.time() if now is None else now)
+    if seconds != seconds or seconds <= 0:  # NaN, zero or past: no usable hint
+        return None
+    return min(seconds, MAX_DELAY_S)
+
+
+def backoff(number, delay=None):
+    """The wait before attempt number + 1: `delay` (a server's Retry-After) if given, else
+    FIRST_DELAY_S * 2^(number - 1) with +/-20% jitter, capped at MAX_DELAY_S; never below
+    MIN_DELAY_S."""
+    if delay is None:
+        delay = min(FIRST_DELAY_S * 2 ** (number - 1), MAX_DELAY_S) * random.uniform(0.8, 1.2)
+    return max(delay, MIN_DELAY_S)
 
 
 def attempt(url, api_key, method, params, request_id):
@@ -203,9 +243,7 @@ def call(network, method, params):
             settled = None
         if number == ATTEMPTS:
             break
-        delay = failure.delay
-        if delay is None:
-            delay = min(FIRST_DELAY_S * 2 ** (number - 1), MAX_DELAY_S) * random.uniform(0.8, 1.2)
+        delay = backoff(number, failure.delay)
         print(
             f"near_rpc: {method} attempt {number}/{ATTEMPTS} failed ({failure.reason}); "
             f"retrying in {delay:.1f}s",
@@ -230,6 +268,8 @@ def fail(method, url, attempts, reason, raw):
 def main(argv):
     if len(argv) == 2 and argv[0] == "endpoint":
         print(connection(argv[1])[0])
+    elif len(argv) == 2 and argv[0] == "network-name":
+        print(network_name(argv[1]))
     elif len(argv) == 4 and argv[0] == "call":
         try:
             params = json.loads(sys.stdin.read() if argv[3] == "-" else argv[3])

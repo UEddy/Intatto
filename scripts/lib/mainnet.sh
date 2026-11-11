@@ -139,11 +139,35 @@ require_tools() {
   for tool in near python3; do command -v "$tool" >/dev/null || die "$tool is not installed"; done
   python3 -I -c 'import tomllib' 2>/dev/null || die "python3 3.11 or later is needed"
   near --version 2>/dev/null | grep -q '0\.30\.' || echo "    note:      tested with near-cli-rs 0.30.1; you have $(near --version 2>/dev/null)"
+  check_connections
 }
 
-# rpc <method> <params json>: one JSON-RPC response (see scripts/lib/near_rpc.py). The params go on
-# stdin (printf is a builtin, so no argv limit applies).
-rpc() { printf '%s' "$2" | python3 -I "$RPC_CLIENT" call "$NETWORK" "$1" -; }
+# Endpoints: near CLI's connections, from its config (scripts/lib/near_rpc.py reads the same
+# file). Live reads, signing (nonce and block hash), sending and the read-back of a transaction
+# just sent all go to the non-archival `<network>-fastnear` connection. The archival `<network>`
+# connection rate-limits bursts much sooner (about 15 requests, measured 2026-11-08; on
+# 2026-11-11 it refused the smoke test's nonce fetch), so it is used only to look up transactions
+# of earlier runs (verify_logged), which a non-archival node may no longer have.
+live_connection() { printf '%s' "$NETWORK-fastnear"; }
+archival_connection() { printf '%s' "$NETWORK"; }
+
+# check_connections: both exist, the live one is not the archival one, and it is for $NETWORK, so
+# near CLI's legacy keychain is $KEYCHAIN.
+check_connections() {
+  local live archival name
+  live=$(python3 -I "$RPC_CLIENT" endpoint "$(live_connection)") || die "near CLI's config has no $(live_connection) connection"
+  archival=$(python3 -I "$RPC_CLIENT" endpoint "$(archival_connection)") || die "near CLI's config has no $(archival_connection) connection"
+  [ "$live" != "$archival" ] && [[ "$live" != *archival* ]] || die "near CLI's $(live_connection) connection is archival ($live)"
+  name=$(python3 -I "$RPC_CLIENT" network-name "$(live_connection)") || die "near CLI's $(live_connection) connection has no network_name"
+  [ "$name" = "$NETWORK" ] || die "near CLI's $(live_connection) connection is for network $name, not $NETWORK (its keychain would not be $KEYCHAIN)"
+  echo "    rpc:       $live (reads, signing, sending); archival $archival (earlier runs' transactions only)"
+}
+
+# rpc <method> <params json>: one JSON-RPC response from the live endpoint (see
+# scripts/lib/near_rpc.py). The params go on stdin (printf is a builtin, so no argv limit applies).
+rpc() { printf '%s' "$2" | python3 -I "$RPC_CLIENT" call "$(live_connection)" "$1" -; }
+# rpc_archival <method> <params json>: the same from the archival endpoint, for old transactions.
+rpc_archival() { printf '%s' "$2" | python3 -I "$RPC_CLIENT" call "$(archival_connection)" "$1" -; }
 
 # view <contract> <method> <args json>: what the view call returned, as JSON; null if no such
 # account or code.
@@ -265,20 +289,20 @@ tx() {
       "$STEP_NO" "$what" "$signer" "$(helper near "$cost")" "$(helper near "$deposit")" "$tgas" \
       "$(python3 -I -c 'import sys; print(round((int(sys.argv[1]) + int(sys.argv[2])) / 1e12, 2))' "$send" "$exec")" \
       "$([ "$charge" = 0 ] || echo " + $(helper near "$charge") NEAR account creation")" "$(helper near "$upfront")"
-    printf " %q" "$@" network-config "$NETWORK" $(sign_args "$spec") send
+    printf " %q" "$@" network-config "$(live_connection)" $(sign_args "$spec") send
     printf '\n'
     return 0
   fi
   echo "── $STEP_NO. $what"
   local -a signing
   mapfile -t signing < <(sign_args "$spec")
-  near_cli "$@" network-config "$NETWORK" "${signing[@]}" display >"$WORK/sign.log" 2>&1 ||
+  sign_tx "$@" network-config "$(live_connection)" "${signing[@]}" display ||
     { sed 's/^/    | /' "$WORK/sign.log"; die "could not sign: $what"; }
   local tx_hash
   rm -f "$WORK/signed.json"
   tx_hash=$(helper signed-tx "$WORK/sign.log" "$WORK/signed.json") || die "could not read the signed transaction: $what"
   near_cli transaction send-signed-transaction file-with-base64-signed-transaction "$WORK/signed.json" \
-    network-config "$NETWORK" send >"$WORK/send.log" 2>&1 || true
+    network-config "$(live_connection)" send >"$WORK/send.log" 2>&1 || true
   rm -f "$WORK/signed.json" "$WORK/sign.log"
   rpc tx "{\"tx_hash\":\"$tx_hash\",\"sender_account_id\":\"$signer\",\"wait_until\":\"FINAL\"}" >"$WORK/outcome.json" ||
     die "could not read the outcome of $tx_hash over RPC; check $EXPLORER$tx_hash before re-running"
@@ -291,6 +315,96 @@ tx() {
     # "try": a best-effort step (an unregistration) whose failure changes nothing else.
     [ "$expect" = try ] || die "unexpected outcome: $what"
     echo "    WARNING:   $what failed; continuing (nothing else depends on it)"
+  fi
+}
+
+# Signing: near CLI fetches the signer's nonce and a recent block hash over RPC, then signs
+# (`display` prints the signed transaction; it sends nothing). A failure while fetching them
+# (connection, DNS, timeout, rate limit, a 5xx) means nothing was signed, so sign_tx retries it,
+# SIGN_ATTEMPTS times in all, with backoff. Any other failure (a missing key, a bad argument) stops
+# at once. Nothing is ever retried after `send-signed-transaction`: tx() reads that transaction's
+# outcome by its hash instead, and stops if it cannot.
+SIGN_ATTEMPTS=5
+SIGN_FIRST_DELAY_S=2
+PRESIGN_TRANSIENT='error sending request|connection (refused|reset|closed)|timed? ?out|dns error|failed to lookup|temporary failure in name resolution|too many requests|rate.?limit|\b429\b|\b50[234]\b|bad gateway|service unavailable'
+PRESIGN_FATAL='does not exist|UnknownAccessKey|UNKNOWN_ACCESS_KEY|UnknownAccount|UNKNOWN_ACCOUNT|No such file|Permission denied'
+sign_tx() {
+  local attempt=1 delay=$SIGN_FIRST_DELAY_S
+  while :; do
+    rm -f "$WORK/sign.log"
+    near_cli "$@" >"$WORK/sign.log" 2>&1 && return 0
+    if [ "$attempt" -ge "$SIGN_ATTEMPTS" ] || ! grep -qiE "$PRESIGN_TRANSIENT" "$WORK/sign.log" || grep -qiE "$PRESIGN_FATAL" "$WORK/sign.log"; then
+      return 1
+    fi
+    echo "    retry:     near CLI could not fetch the nonce or block hash; nothing was signed (try $attempt of $SIGN_ATTEMPTS, next in ${delay}s)"
+    grep -iE "$PRESIGN_TRANSIENT" "$WORK/sign.log" | head -2 | cut -c1-200 | sed 's/^/    | /'
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
+# ---- Resuming (scripts/mainnet-smoke.sh) ----
+# A step is skipped only when its effect is verified on chain and its transaction, from an earlier
+# run's log (TX_LOG: mainnet-<script>-*.txs in this directory, kept after every run), re-checks
+# over RPC.
+
+# The logs of earlier runs of this script, oldest first. The current run's log is not written yet
+# while the plan is estimated.
+run_logs() {
+  local f
+  # The same name as TX_LOG, any time.
+  for f in "$(pwd)/mainnet-$(basename "$0" .sh)"-*.txs; do [ -f "$f" ] && echo "$f"; done
+}
+
+# logged <exact|prefix> <description>: "<seq> <hash>" of every logged transaction with that
+# description, oldest first; nothing if none.
+logged() {
+  local -a logs
+  mapfile -t logs < <(run_logs)
+  [ "${#logs[@]}" -gt 0 ] || return 0
+  helper logged "$1" "$2" "${logs[@]}"
+}
+
+# last_logged <exact|prefix> <description>: "<seq> <hash>" of the latest one, or nothing.
+last_logged() { logged "$1" "$2" | tail -n 1; }
+
+# only_logged <exact|prefix> <description>: the hash of the one logged transaction with that
+# description; nothing if none; stops if there are several (a step that must run once).
+only_logged() {
+  local found
+  found=$(logged "$1" "$2")
+  [ "$(printf '%s' "$found" | grep -c . || true)" -le 1 ] || die "the transaction logs have \"$2\" more than once; refusing to resume"
+  printf '%s' "${found#* }"
+}
+
+# verify_logged <hash> <signer> <expect> <description>: re-reads a logged transaction's outcome
+# (to $WORK/logged.json) and checks it as tx() did when it was sent. Stops if it does not check.
+verify_logged() {
+  rpc_archival tx "{\"tx_hash\":\"$1\",\"sender_account_id\":\"$2\",\"wait_until\":\"FINAL\"}" >"$WORK/logged.json" ||
+    die "could not read the logged transaction $1 ($4) over RPC; refusing to resume"
+  helper outcome "$WORK/logged.json" "$1" "$EXPLORER" "${VAULT_ID:-none}" "$3" >"$WORK/logged-check.txt" ||
+    { sed 's/^/  /' "$WORK/logged-check.txt"; die "the logged transaction $1 ($4) does not check as $3; refusing to resume"; }
+}
+
+# What earlier runs' verified steps spent at most, per signer, for the balance check of resume.
+declare -A DONE_COST=()
+
+# done_step <signer> <hash> <description> [<deposit yocto> <prepaid TGas> <send gas> <exec gas> [<charge>]]:
+# a step verified done. It keeps its number. With costs, what it spent at most (as tx() estimates
+# it, at the current gas price) is added to the signer's DONE_COST.
+done_step() {
+  local signer=$1 hash=$2 what=$3
+  STEP_NO=$((STEP_NO + 1))
+  if [ $# -ge 7 ]; then
+    local gas
+    gas=$(helper mul "$(helper add "$6" "$(helper add "$7" "$(helper mul "$5" 1000000000000)")")" "$GAS_PRICE")
+    DONE_COST[$signer]=$(helper add "${DONE_COST[$signer]:-0}" "$4" "$gas" "${8:-0}")
+  fi
+  if [ "$PHASE" = estimate ]; then
+    printf '  %2d. %s: done, verified (%s)\n' "$STEP_NO" "$what" "$hash"
+  else
+    echo "── $STEP_NO. done: $what ($hash, verified)"
   fi
 }
 
