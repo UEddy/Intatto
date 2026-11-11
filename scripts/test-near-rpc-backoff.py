@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 
+sys.dont_write_bytecode = True  # no __pycache__ next to scripts/lib/near_rpc.py
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("near_rpc", os.path.join(HERE, "lib", "near_rpc.py"))
 near_rpc = importlib.util.module_from_spec(spec)
