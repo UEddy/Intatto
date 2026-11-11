@@ -4,6 +4,9 @@
     near_rpc.py endpoint <network>            print the RPC URL near CLI uses for <network>
     near_rpc.py call <network> <method> <params json>
                                               print the response, one JSON object on one line
+    near_rpc.py call <network> <method> -     the same, reading the params JSON from stdin, for
+                                              params of any size (one argv string is capped at
+                                              128 KiB on Linux)
 
 The endpoint, and its API key if any, come from near CLI's own config (near-cli-rs 0.30.1:
 `dirs::config_dir()/near-cli/config.toml`, connection `network_connection.<network>`, key sent as
@@ -229,7 +232,7 @@ def main(argv):
         print(connection(argv[1])[0])
     elif len(argv) == 4 and argv[0] == "call":
         try:
-            params = json.loads(argv[3])
+            params = json.loads(sys.stdin.read() if argv[3] == "-" else argv[3])
         except ValueError as error:
             sys.exit(f"near_rpc.py: params are not JSON: {error}")
         print(json.dumps(call(argv[1], argv[2], params), separators=(",", ":")))

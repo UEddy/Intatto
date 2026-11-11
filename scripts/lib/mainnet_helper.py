@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pure helpers for the mainnet scripts (scripts/mainnet-*.sh). No network access: every input is a
-file or an argument. Exit status 0 means yes / PASS, anything else no / FAIL.
+file or a short argument (an amount, an account id, a path; never data of unbounded size). Exit status 0 means yes / PASS, anything else no / FAIL.
 
     yocto <NEAR>                       NEAR (decimal) -> yoctoNEAR
     near <yocto>                       yoctoNEAR -> NEAR, exact
@@ -9,10 +9,29 @@ file or an argument. Exit status 0 means yes / PASS, anything else no / FAIL.
     mul <a> <b>                        product (bash arithmetic overflows at 2^63)
     sub <a> <b>                        a - b; fails if negative
     ge <a> <b>                         a >= b
+    max <a> <b>                        the larger
+    fees <protocol config> <kind> <bytes>...
+                                       "<send gas> <exec gas>": the protocol's static fees for one
+                                       transaction of <kind> (prepaid gas comes on top):
+                                         call <method + args bytes>   one FunctionCall
+                                         deploy <code bytes> <method + args bytes>
+                                                                      DeployContract + FunctionCall
+                                         create                       CreateAccount + Transfer +
+                                                                      AddKey (full access)
+                                         add-fc-key <receiver + method names bytes>
+                                       Send fees are the larger of the sir/not-sir values.
+    fc-allowance <access key list> <public key>
+                                       that key's allowance in yoctoNEAR, or "unlimited"
     file-hash <path>                   base58 sha256, as NEAR reports code hashes
     file-size <path>                   bytes
-    signed-b64 <near display output>   the base64 signed transaction near CLI printed
-    tx-hash <base64 signed tx>         the transaction hash (sha256 of the unsigned part)
+    signed-tx <near display output> <out file>
+                                       writes the base64 signed transaction near CLI printed to
+                                       <out file> (new, mode 600) as the JSON that `near transaction
+                                       send-signed-transaction file-with-base64-signed-transaction`
+                                       reads, and prints its hash (sha256 of the unsigned part).
+                                       The transaction itself never passes through argv or stdout:
+                                       a deploy's is ~360 KB of base64, and Linux refuses any single
+                                       argument over 128 KiB (E2BIG, "Argument list too long").
     result <rpc response>              the `result` object, as JSON
     call-result <rpc response>         what a view call returned, as JSON (null if no account/code)
     json <file> <python expr over v>   evaluates the expression over the JSON in <file>
@@ -114,29 +133,68 @@ def main(cmd, args):
         print(a - b)
     elif cmd == "ge":
         sys.exit(0 if int(args[0]) >= int(args[1]) else 1)
+    elif cmd == "max":
+        print(max(int(args[0]), int(args[1])))
+    elif cmd == "fees":
+        costs = load(args[0])["result"]["runtime_config"]["transaction_costs"]
+        action = costs["action_creation_config"]
+        def fee(f, n=1):
+            return n * max(int(f["send_sir"]), int(f["send_not_sir"])), n * int(f["execution"])
+        parts = [fee(costs["action_receipt_creation_config"])]
+        kind = args[1]
+        if kind in ("call", "deploy"):
+            call_bytes = int(args[-1])
+            parts += [fee(action["function_call_cost"]), fee(action["function_call_cost_per_byte"], call_bytes)]
+        if kind == "deploy":
+            parts += [fee(action["deploy_contract_cost"]), fee(action["deploy_contract_cost_per_byte"], int(args[2]))]
+        elif kind == "create":
+            parts += [fee(action["create_account_cost"]), fee(action["transfer_cost"]),
+                      fee(action["add_key_cost"]["full_access_cost"])]
+        elif kind == "add-fc-key":
+            parts += [fee(action["add_key_cost"]["function_call_cost"]),
+                      fee(action["add_key_cost"]["function_call_cost_per_byte"], int(args[2]))]
+        elif kind != "call":
+            sys.exit(f"fees: unknown kind {kind}")
+        print(sum(p[0] for p in parts), sum(p[1] for p in parts))
+    elif cmd == "fc-allowance":
+        for key in load(args[0])["result"]["keys"]:
+            if key["public_key"] == args[1]:
+                permission = key["access_key"]["permission"]
+                allowance = permission["FunctionCall"].get("allowance") if isinstance(permission, dict) else None
+                print(allowance if allowance is not None else "unlimited")
+                return
+        sys.exit(f"no key {args[1]}")
     elif cmd == "file-hash":
         with open(args[0], "rb") as f:
             print(b58encode(hashlib.sha256(f.read()).digest()))
     elif cmd == "file-size":
         print(os.path.getsize(args[0]))
-    elif cmd == "signed-b64":
-        with open(args[0]) as f:
+    elif cmd == "signed-tx":
+        log, out = args
+        with open(log) as f:
             text = re.sub(r"\x1b\[[0-9;]*m", "", f.read())
         match = re.search(r"Signed transaction \(serialized as base64\):\s+(\S+)", text)
         if not match:
             sys.exit("no signed transaction found in near CLI output")
-        print(match.group(1))
-    elif cmd == "tx-hash":
-        raw = base64.b64decode(args[0])
-        if raw[-65] != 0:
+        signed = match.group(1)
+        raw = base64.b64decode(signed, validate=True)
+        if len(raw) < 65 or raw[-65] != 0:
             sys.exit("expected an ed25519-signed transaction")
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"signed_transaction_as_base64": signed}, f)
         print(b58encode(hashlib.sha256(raw[:-65]).digest()))
     elif cmd == "result":
         print(json.dumps(load(args[0])["result"]))
     elif cmd == "call-result":
         response = load(args[0])
-        if unknown_account(response):
+        result = response.get("result") or {}
+        # An account with no code: some nodes answer NO_CONTRACT_CODE, others a result whose
+        # `error` is "...CompilationError(CodeDoesNotExist ...)". Both mean no contract.
+        if unknown_account(response) or "CodeDoesNotExist" in str(result.get("error", "")):
             print("null")
+        elif "error" in response or "error" in result:
+            sys.exit(f"view failed: {json.dumps(response.get('error') or result.get('error'))}")
         elif "error" in response:
             sys.exit(f"view failed: {json.dumps(response['error'])}")
         else:

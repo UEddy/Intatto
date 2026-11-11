@@ -18,7 +18,8 @@
 # Environment:
 #   VAULT_ID, SMOKE_OWNER, SMOKE_AGENT, FUNDER     required (FUNDER creates and funds the two)
 #   SWAP_NEAR           default 0.5
-#   FC_ALLOWANCE        default 0.2 NEAR (each agent_swap reserves 300 TGas = 0.03 NEAR of it)
+#   FC_ALLOWANCE        default 0.5 NEAR (each agent_swap needs 300 TGas at the 1e9 purchase
+#                       price, ~0.301 NEAR, at hand; the unused part is refunded)
 #   EXPECTED_CODE_HASH  default: the reproducible build of commit 6cfa90e
 set -euo pipefail
 shopt -s inherit_errexit

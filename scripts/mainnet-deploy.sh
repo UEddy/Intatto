@@ -16,6 +16,19 @@
 #   3. The vault account registers its own storage on the exchange, wrap.near and USDt.
 #   4. Checks: code hash, exchange, treasury, fee bps, the three registrations.
 #
+# Resuming after a failed --send: run the same command again, with the same settings.
+#   - Steps 1 and 2 (creating ROOT_ACCOUNT and VAULT_ID) are skipped only if the account already
+#     exists with no code (code hash 111...1), no state, and the balance this plan gives it:
+#     VAULT_ID exactly its funding; ROOT_ACCOUNT its funding, less VAULT_ID's funding if VAULT_ID
+#     exists, less at most RESUME_GAS_SLACK NEAR of gas for the transaction it signed. Anything
+#     else (other code, state, another balance, other BOUNTY/SMOKE settings) is refused.
+#   - Step 3 (deploy) runs only if VAULT_ID has no code. It is skipped only if VAULT_ID runs
+#     exactly EXPECTED_CODE_HASH and its views return exchange EXCHANGE, treasury TREASURY_ID and
+#     fee FEE_BPS (deploy_state in lib/mainnet.sh); any other code, or other values, is refused.
+#   - ROOT_ACCOUNT's expected funding is what the transaction log of the run that created it says
+#     (mainnet-mainnet-deploy-*.txs in the current directory), else this plan's formula.
+#   - Steps 4-6 (registrations) are skipped if the registration is already on chain.
+#
 # Environment:
 #   DEPLOYER            implicit account from `keygen` (key file in ~/.near-credentials/mainnet)
 #   VAULT_ID            the vault account, e.g. vault.intatto.near (required)
@@ -62,6 +75,9 @@ EXCHANGE_STORAGE=0.01
 TOKEN_STORAGE=0.00125 # storage_balance_bounds().min of wrap.near and usdt.tether-token.near
 # On top of code storage: the account record, its key, the contract's own state, and gas.
 VAULT_MARGIN=0.1
+# Resuming: how much less than planned ROOT_ACCOUNT may hold, for the gas of the one transaction it
+# signs (creating VAULT_ID). On 2026-11-11 that transaction (BXYjPyR5...) cost 0.007115 NEAR.
+RESUME_GAS_SLACK=0.01
 
 if [ "${1:-}" = keygen ]; then
   require_tools
@@ -132,27 +148,71 @@ register_step() {
     "register $VAULT_ID on $contract ($deposit NEAR)"
 }
 
+# create_or_resume <account> <funding NEAR> <funder> <expected balance yocto> <slack yocto>: creates
+# <account> if it does not exist. If it exists, skips the step only if the account is exactly what
+# an earlier run of this plan left: no code, no state, and a balance between <expected> - <slack>
+# and <expected>. Anything else stops the script.
+create_or_resume() {
+  local id=$1 amount=$2 funder=$3 expected=$4 slack=$5
+  local state balance code values low
+  state=$(account "$id")
+  if [ "$state" = missing ]; then
+    create_account_step "$id" "$amount" "$funder"
+    return 0
+  fi
+  balance=${state%% *}
+  code=${state#* }
+  [ "$code" = none ] || die "$id exists and has code ($code); refusing to resume"
+  rpc query "{\"request_type\":\"view_state\",\"finality\":\"final\",\"account_id\":\"$id\",\"prefix_base64\":\"\"}" \
+    >"$WORK/state.json" || die "view_state $id failed"
+  values=$(helper json "$WORK/state.json" 'len(v["result"]["values"])') || die "could not read the state of $id"
+  [ "$values" = 0 ] || die "$id exists and has $values state keys; refusing to resume"
+  low=$(helper sub "$expected" "$slack")
+  if ! helper ge "$balance" "$low" || ! helper ge "$expected" "$balance"; then
+    if [ "$slack" = 0 ]; then
+      die "$id exists and holds $(helper near "$balance") NEAR, not the $(helper near "$expected") NEAR this plan gives it; refusing to resume (same BOUNTY, SMOKE and WASM as the first run?)"
+    fi
+    die "$id exists and holds $(helper near "$balance") NEAR, outside the $(helper near "$low")-$(helper near "$expected") NEAR this plan leaves it; refusing to resume (same BOUNTY, SMOKE and WASM as the first run?)"
+  fi
+  skip "create $id (exists: no code, no state, holds $(helper near "$balance") NEAR as planned)"
+}
+
 # reserve_yocto: what mainnet-canary.sh and mainnet-smoke.sh will take from ROOT_ACCOUNT as their
-# FUNDER, at most: each account's initial balance plus the gas of the transaction creating it.
+# FUNDER, at most: each account's initial balance plus the cost of the transaction creating it
+# (create_cost_yocto: fees plus the account creation charge; all four are sub-accounts of it).
 reserve_yocto() {
-  local total=0 create_gas
-  create_gas=$(helper mul "$(helper mul "$CREATE_ACCOUNT_TGAS" 1000000000000)" "$GAS_PRICE")
+  local total=0 create
+  create=$(create_cost_yocto "sub.$ROOT_ACCOUNT" "$ROOT_ACCOUNT")
   if [ -n "$BOUNTY" ] && [ "$BOUNTY" != 0 ]; then
     total=$(helper add "$total" "$(canary_owner_yocto "$BOUNTY")")
     total=$(helper add "$total" "$(canary_agent_yocto "$CANARY_FC_ALLOWANCE_DEFAULT")")
-    total=$(helper add "$total" "$(helper mul 2 "$create_gas")")
+    total=$(helper add "$total" "$(helper mul 2 "$create")")
   fi
   if [ "$SMOKE" = 1 ]; then
     total=$(helper add "$total" "$(smoke_owner_yocto "$SMOKE_SWAP_NEAR_DEFAULT")")
     total=$(helper add "$total" "$(smoke_agent_yocto "$SMOKE_FC_ALLOWANCE_DEFAULT")")
-    total=$(helper add "$total" "$(helper mul 2 "$create_gas")")
+    total=$(helper add "$total" "$(helper mul 2 "$create")")
   fi
   echo "$total"
 }
 
+# logged_funding <account>: the NEAR amount an earlier --send of this script created <account>
+# with, from its transaction logs (mainnet-mainnet-deploy-*.txs here), or nothing. Resuming checks
+# the account against what it was actually given, which stays right when this plan's formulas
+# change.
+logged_funding() {
+  local logs=() amounts pattern
+  for f in mainnet-mainnet-deploy-*.txs; do [ -f "$f" ] && logs+=("$f"); done
+  [ "${#logs[@]}" -gt 0 ] || return 0
+  pattern="^[1-9A-HJ-NP-Za-km-z]\{43,44\} create ${1//./\\.} with \([0-9.]*\) NEAR .*"
+  amounts=$(sed -n "s/$pattern/\1/p" "${logs[@]}" | sort -u)
+  [ "$(printf '%s' "$amounts" | grep -c . || true)" -le 1 ] || die "the transaction logs create $1 more than once ($amounts)"
+  printf '%s' "$amounts"
+}
+
 steps() {
   if [ -n "$ROOT_ACCOUNT" ]; then
-    local root_funding reserve
+    local root_funding reserve root_expected
     reserve=$(reserve_yocto)
     # The vault's funding, 0.1 NEAR for ROOT_ACCOUNT's own record and the gas of creating the vault,
     # and the canary and smoke reserve.
@@ -161,22 +221,37 @@ steps() {
       echo "    $ROOT_ACCOUNT funding: vault $VAULT_FUNDING + own 0.1 + reserve $(helper near "$reserve") NEAR" \
         "(canary: ${BOUNTY:-0} NEAR bounty; smoke: $([ "$SMOKE" = 1 ] && echo "$SMOKE_SWAP_NEAR_DEFAULT NEAR swap" || echo none))"
     fi
-    create_account_step "$ROOT_ACCOUNT" "$root_funding" "$DEPLOYER"
-    create_account_step "$VAULT_ID" "$VAULT_FUNDING" "$ROOT_ACCOUNT"
+    # What ROOT_ACCOUNT holds if it was created by this plan: its funding (as logged when it was
+    # created, if it was), less the vault's once it has created the vault, less the gas of that
+    # one transaction (checked by create_or_resume).
+    local logged
+    logged=$(logged_funding "$ROOT_ACCOUNT")
+    if [ "$(account "$ROOT_ACCOUNT")" != missing ] && [ -n "$logged" ]; then
+      [ "$PHASE" != estimate ] || echo "    $ROOT_ACCOUNT was created with $logged NEAR (transaction log); checking it against that"
+      root_expected=$(helper yocto "$logged")
+    else
+      root_expected=$(helper yocto "$root_funding")
+    fi
+    if [ "$(account "$VAULT_ID")" != missing ]; then
+      root_expected=$(helper sub "$root_expected" "$(helper yocto "$VAULT_FUNDING")")
+    fi
+    create_or_resume "$ROOT_ACCOUNT" "$root_funding" "$DEPLOYER" "$root_expected" "$(helper yocto "$RESUME_GAS_SLACK")"
+    create_or_resume "$VAULT_ID" "$VAULT_FUNDING" "$ROOT_ACCOUNT" "$(helper yocto "$VAULT_FUNDING")" 0
   else
-    create_account_step "$VAULT_ID" "$VAULT_FUNDING" "$DEPLOYER"
+    create_or_resume "$VAULT_ID" "$VAULT_FUNDING" "$DEPLOYER" "$(helper yocto "$VAULT_FUNDING")" 0
   fi
-  local state code
-  state=$(account "$VAULT_ID")
-  code=${state#* }
-  if [ "$code" = "$EXPECTED_CODE_HASH" ]; then
-    skip "deploy $WASM_HASH to $VAULT_ID"
-  elif [ "$state" = missing ] || [ "$code" = none ]; then
-    tx success "$VAULT_ID" keychain 0 50 "deploy $WASM_HASH to $VAULT_ID with new($INIT_ARGS)" \
+  local deploy fees
+  deploy=$(deploy_state "$VAULT_ID" "$EXPECTED_CODE_HASH" "$EXCHANGE" "$TREASURY_ID" "$FEE_BPS")
+  if [ "$deploy" = deploy ]; then
+    fees=$(helper fees "$WORK/protocol.json" deploy "$WASM_BYTES" "$((3 + ${#INIT_ARGS}))")
+    # shellcheck disable=SC2086 # $fees is "<send> <exec>"
+    # Storage: the code, plus what new() writes (the contract struct and the treasury: ~200 bytes).
+    tx --fees $fees --storage "$((WASM_BYTES + 1000))" success "$VAULT_ID" keychain 0 50 \
+      "deploy $WASM_HASH to $VAULT_ID with new($INIT_ARGS)" \
       contract deploy "$VAULT_ID" use-file "$WASM" with-init-call new json-args "$INIT_ARGS" \
       prepaid-gas '50 Tgas' attached-deposit '0 NEAR'
   else
-    die "$VAULT_ID already runs other code ($code); use a fresh account"
+    skip "deploy $EXPECTED_CODE_HASH to $VAULT_ID (it runs it, with exchange $EXCHANGE, treasury $TREASURY_ID, fee $FEE_BPS bps)"
   fi
   register_step "$EXCHANGE" "$EXCHANGE_STORAGE" false
   register_step "$WNEAR" "$TOKEN_STORAGE" true
@@ -186,8 +261,8 @@ steps() {
 # After the plan's cost: how much to send the deployer, and whether SENDING covers it.
 after_estimate() {
   local need
-  need=$(helper add "${SIGNER_COST[$PAYER]:-0}" "$(helper yocto "$DEPLOYER_KEEP")")
-  echo "== Send the deployer at least $(helper near "$need") NEAR (the plan's at most $(helper near "${SIGNER_COST[$PAYER]:-0}") + $DEPLOYER_KEEP left on it)"
+  need=$(helper add "${SIGNER_NEED[$PAYER]:-0}" "$(helper yocto "$DEPLOYER_KEEP")")
+  echo "== Send the deployer at least $(helper near "$need") NEAR (the most the plan needs it to hold at once, $(helper near "${SIGNER_NEED[$PAYER]:-0}"), + $DEPLOYER_KEEP left on it)"
   if [ -n "$SENDING" ]; then
     if helper ge "$(helper yocto "$SENDING")" "$need"; then
       echo "   You plan to send $SENDING NEAR: enough, $(helper near "$(helper sub "$(helper yocto "$SENDING")" "$need")") NEAR to spare."
