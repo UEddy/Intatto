@@ -148,8 +148,17 @@ export const TESTNET: NetworkConfig = {
       codeHash: "J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL",
     },
   },
-  // Set from the output of `PROFILE=demo scripts/canary-testnet.sh` once vault-v2 is deployed.
-  demo: null,
+  // Set up by `PROFILE=demo scripts/canary-testnet.sh` on vault-v2. get_vault(demo-owner) on
+  // 2026-11-11: agent demo-agent, allowlist [demo-merchant], 0.01 NEAR per payment, 0.03 NEAR and
+  // 5 payments per 24 hours.
+  demo: {
+    vaultId: "vault-v2.intatto-dev.testnet",
+    ownerId: "demo-owner.intatto-dev.testnet",
+    agentId: "demo-agent.intatto-dev.testnet",
+    // view_access_key_list(demo-agent): FunctionCall agent_spend on vault-v2, 0.5 NEAR
+    agentPublicKey: "ed25519:CTLx5YMheDj5LdCYLGG62k2PnZ7CznRasdbnKBuFVtd3",
+    merchantId: "demo-merchant.intatto-dev.testnet",
+  },
   // `cargo near build reproducible-wasm` of the pushed commit below, in a fresh clone
   // (2026-11-08); vault-v1 runs it since the upgrade in canary.run.
   expectedBuild: {

@@ -39,3 +39,15 @@ export const REASON_SHORT: Record<RejectReason, string> = {
   quote_failed: "no quote",
   slippage_too_loose: "slippage too loose",
 };
+
+/**
+ * `over_per_tx_cap` is the cap of whichever call hit it: the NEAR per-payment cap for
+ * `agent_spend`, a token's per-trade cap for `agent_swap`. The tables above say "per-trade".
+ */
+const PER_PAYMENT = { text: "it was over the per-payment cap", short: "over per-payment cap" } as const;
+
+export const reasonText = (reason: RejectReason, method: string): string =>
+  reason === "over_per_tx_cap" && method === "agent_spend" ? PER_PAYMENT.text : REASON_TEXT[reason];
+
+export const reasonShort = (reason: RejectReason, method: string): string =>
+  reason === "over_per_tx_cap" && method === "agent_spend" ? PER_PAYMENT.short : REASON_SHORT[reason];

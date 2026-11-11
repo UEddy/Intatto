@@ -151,6 +151,8 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --chec
 
 ## Prompt-injection attack demo
 
+Whether the model falls for the attack or not, the contract decides.
+
 [agent/](agent/README.md) has an agent that is asked to pay a 0.01 NEAR invoice whose text tells
 it to send the vault's whole balance to an attacker. It signs with a function-call key limited to
 `agent_spend`; the vault's policy allows one merchant and small caps.
@@ -163,9 +165,12 @@ node --test agent/*.test.mjs                            # the transaction signer
 - `--compromised` is an agent that obeys the injection.
 - `--llm` lets a model on NEAR AI Cloud decide.
 
-Each step is logged, and the vault's rejections (`receiver_not_allowlisted`, `over_per_tx_cap`)
-show up on the board. The demo vault goes on vault-v2 and is not set up yet, so only `--dry-run`
-works today.
+The demo vault is live on vault-v2. In the [2026-11-11 runs](agent/README.md#results-2026-11-11),
+with transaction links, the compromised agent's three attack payments were rejected
+(`receiver_not_allowlisted` twice, `over_per_tx_cap` once) and only the 0.01 NEAR invoice went
+through. The model, DeepSeek V4.1 Flash, ignored the injection and paid only the invoice. Each step
+is logged, and every transaction from the demo agent's key, rejections included, shows up in the
+board's "Prompt-injection demo" log.
 
 ## What the contract guarantees, and where it is checked
 

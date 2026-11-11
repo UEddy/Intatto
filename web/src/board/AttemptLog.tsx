@@ -1,5 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { REASON_SHORT, REASON_TEXT } from "../activity/reasons";
+import { reasonShort, reasonText } from "../activity/reasons";
 import type { Attempt } from "../canary/attempts";
 import type { CanaryConfig, DemoConfig } from "../config/networks";
 import { useServices } from "../app/services";
@@ -121,15 +121,15 @@ function Call({ attempt }: { attempt: Attempt }) {
   );
 }
 
-export function verdict(o: Attempt["outcome"], subject: LogSubject["kind"]): { label: string; tone: "rejected" | "failed" | "through" | "allowed" } {
-  if (o.kind === "rejected") return { label: `Rejected · ${REASON_SHORT[o.reason]}`, tone: "rejected" };
+export function verdict(o: Attempt["outcome"], subject: LogSubject["kind"], method: string): { label: string; tone: "rejected" | "failed" | "through" | "allowed" } {
+  if (o.kind === "rejected") return { label: `Rejected · ${reasonShort(o.reason, method)}`, tone: "rejected" };
   if (o.kind === "failed") return { label: "Failed · before policy", tone: "failed" };
   return subject === "demo" ? { label: "Paid · within policy", tone: "allowed" } : { label: "Went through", tone: "through" };
 }
 
 function LedgerEntry({ attempt, canary, number, fresh }: { attempt: Attempt; canary: LogSubject; number: number | null; fresh: boolean }) {
   const o = attempt.outcome;
-  const v = verdict(o, canary.kind);
+  const v = verdict(o, canary.kind, attempt.method);
   const owner = attempt.args && typeof attempt.args === "object" ? (attempt.args as Record<string, unknown>).owner_id : null;
   return (
     <li className={`entry entry--${v.tone}${fresh ? " is-new" : ""}`}>
@@ -145,7 +145,7 @@ function LedgerEntry({ attempt, canary, number, fresh }: { attempt: Attempt; can
         <Call attempt={attempt} />
         <p className="entry-why">
           {o.kind === "rejected"
-            ? `Refused by the contract: ${REASON_TEXT[o.reason]}.`
+            ? `Refused by the contract: ${reasonText(o.reason, attempt.method)}.`
             : o.kind === "failed"
               ? `Failed before any policy check: ${o.message}`
               : canary.kind === "demo"
