@@ -10,6 +10,7 @@ use common::intents::*;
 use common::*;
 use ed25519_dalek::{Signature, Verifier as _};
 use near_api::NearGas;
+use near_sdk::json_types::U128;
 use near_sdk::serde_json::{Value, json};
 use testresult::TestResult;
 
@@ -182,5 +183,253 @@ async fn mock_signer_fails_like_v1_signer() -> TestResult {
     );
     checked?;
     assert_fails_with(signed?, "Request has timed out.");
+    Ok(())
+}
+
+// ---- Step 2: the vault's intents.near account and its one MPC-derived key ----
+
+/// Only the vault account can bind the Verifier and signer, once. The key comes from the
+/// signer's `derived_public_key` for the vault, is registered as the vault's only key on the
+/// Verifier, and the check that it is the only one passes.
+#[tokio::test]
+async fn vault_registers_exactly_its_mpc_derived_key() -> TestResult {
+    let s = CsEnv::new().await?;
+    let vault = s.env.vault_id().clone();
+    assert_fails_with(
+        s.register_key_as(&s.env.owner).await?,
+        "Intents are not set up on this vault",
+    );
+    assert_fails_with(
+        s.setup_intents_as(&s.env.owner).await?,
+        "Method setup_intents is private",
+    );
+    s.setup_intents_as(&vault).await?.assert_success();
+    assert_fails_with(
+        s.setup_intents_as(&vault).await?,
+        "Intents are already set up",
+    );
+    // Anyone may register the key, but it takes exactly 1 yoctoNEAR.
+    let free = s
+        .env
+        .call_on(
+            &vault,
+            &s.env.stranger,
+            "register_intents_key",
+            json!({}),
+            NO_DEPOSIT,
+            tgas(150),
+        )
+        .await?;
+    assert_fails_with(free, "Requires attached deposit of exactly 1 yoctoNEAR");
+
+    let result = s.register_key_as(&s.env.stranger).await?;
+    let checked = events(&result, "intents_key_checked");
+    assert!(result.assert_success().json::<bool>()?);
+    let expected = ed25519_string(&derived_signing_key(&vault, intatto::INTENTS_KEY_PATH));
+    assert_eq!(checked.len(), 1);
+    assert_eq!(checked[0]["expected"], expected);
+    assert_eq!(checked[0]["found"], json!([expected]));
+    let config = s.config().await?.expect("intents are set up");
+    assert_eq!(config.public_key.as_deref(), Some(expected.as_str()));
+    assert!(config.key_verified);
+    assert_eq!(config.intents_id, s.it.intents);
+    assert_eq!(config.signer_id, s.it.signer);
+    assert_eq!(
+        s.public_keys_on_verifier(&vault).await?,
+        vec![expected.clone()]
+    );
+
+    // Registering again changes nothing.
+    assert!(
+        s.register_key_as(&s.env.owner)
+            .await?
+            .assert_success()
+            .json::<bool>()?
+    );
+    assert_eq!(s.public_keys_on_verifier(&vault).await?, vec![expected]);
+    Ok(())
+}
+
+/// A second key on the vault's Verifier account (here added with the vault account's own
+/// full-access key) fails the check, which anyone can run; removing it passes it again.
+#[tokio::test]
+async fn an_extra_key_on_the_verifier_fails_the_key_check() -> TestResult {
+    let s = CsEnv::new().await?;
+    s.set_up().await?;
+    let vault = s.env.vault_id().clone();
+    let verify = || async {
+        s.env
+            .call_on(
+                &vault,
+                &s.env.stranger,
+                "verify_intents_key",
+                json!({}),
+                NO_DEPOSIT,
+                tgas(60),
+            )
+            .await
+    };
+    assert!(verify().await?.assert_success().json::<bool>()?);
+
+    let extra = ed25519_string(&derived_signing_key(&vault, "someone-else"));
+    let args = json!({ "public_key": extra });
+    s.env
+        .call_on(
+            &s.it.intents,
+            &vault,
+            "add_public_key",
+            args.clone(),
+            ONE_YOCTO,
+            tgas(30),
+        )
+        .await?
+        .assert_success();
+    let result = verify().await?;
+    assert_eq!(events(&result, "intents_key_checked")[0]["verified"], false);
+    assert!(!result.assert_success().json::<bool>()?);
+    assert!(!s.config().await?.expect("set up").key_verified);
+
+    s.env
+        .call_on(
+            &s.it.intents,
+            &vault,
+            "remove_public_key",
+            args,
+            ONE_YOCTO,
+            tgas(30),
+        )
+        .await?
+        .assert_success();
+    assert!(verify().await?.assert_success().json::<bool>()?);
+    assert!(s.config().await?.expect("set up").key_verified);
+    Ok(())
+}
+
+/// Once registered, the vault's key never changes: if the signer later derives a different key,
+/// registering again fails and the stored key stays.
+#[tokio::test]
+async fn a_changed_derived_key_is_refused() -> TestResult {
+    let s = CsEnv::new().await?;
+    s.set_up().await?;
+    let vault = s.env.vault_id().clone();
+    let before = s.config().await?.expect("set up");
+    let other = ed25519_string(&derived_signing_key(&vault, "another-path"));
+    let args =
+        json!({ "predecessor": vault, "path": intatto::INTENTS_KEY_PATH, "public_key": other });
+    s.env
+        .call_on(
+            &s.it.signer,
+            &s.it.responder,
+            "set_derived_public_key",
+            args,
+            NO_DEPOSIT,
+            tgas(30),
+        )
+        .await?
+        .assert_success();
+    assert_fails_with(s.register_key_as(&s.env.owner).await?, "now derives");
+    assert_eq!(s.config().await?.expect("set up"), before);
+    assert_eq!(s.public_keys_on_verifier(&vault).await?.len(), 1);
+    Ok(())
+}
+
+/// Deposits and withdrawals move tokens between the owner's vault balance and the vault's own
+/// account on the Verifier, as the vault (predecessor auth), and the owner bookkeeping matches
+/// what the Verifier holds.
+#[tokio::test]
+async fn deposits_and_withdrawals_go_through_the_vaults_own_verifier_account() -> TestResult {
+    let s = CsEnv::new().await?;
+    s.set_up().await?;
+    let (owner, vault, wnear) = (
+        s.env.owner.clone(),
+        s.env.vault_id().clone(),
+        s.it.wnear.clone(),
+    );
+    s.fund_vault(&owner, &wnear, 2 * WHOLE).await?;
+
+    let result = s.deposit_to_intents(&owner, &wnear, 2 * WHOLE).await?;
+    assert_eq!(events(&result, "intents_deposit").len(), 1);
+    assert_eq!(result.assert_success().json::<U128>()?, U128(2 * WHOLE));
+    assert_eq!(s.vault_token(&owner, &wnear).await?, 0);
+    assert_eq!(s.intents_balance(&owner, &wnear).await?, 2 * WHOLE);
+    assert_eq!(s.on_verifier(&vault, &wnear).await?, 2 * WHOLE);
+    assert_eq!(s.on_verifier(&owner, &wnear).await?, 0);
+
+    let result = s.withdraw_from_intents(&owner, &wnear, WHOLE / 2).await?;
+    assert_eq!(result.assert_success().json::<U128>()?, U128(WHOLE / 2));
+    assert_eq!(s.vault_token(&owner, &wnear).await?, WHOLE / 2);
+    assert_eq!(s.intents_balance(&owner, &wnear).await?, 3 * WHOLE / 2);
+    assert_eq!(s.on_verifier(&vault, &wnear).await?, 3 * WHOLE / 2);
+
+    // Nobody else can touch it, and nobody can take more than they have.
+    assert_fails_with(
+        s.withdraw_from_intents(&s.env.stranger, &wnear, 1).await?,
+        "exceeds the intents",
+    );
+    assert_fails_with(
+        s.withdraw_from_intents(&owner, &wnear, 2 * WHOLE).await?,
+        "exceeds the intents",
+    );
+    assert_fails_with(
+        s.deposit_to_intents(&owner, &wnear, WHOLE).await?,
+        "exceeds the vault's",
+    );
+    // A function-call key cannot attach the yoctoNEAR these need.
+    let args = json!({ "token_id": wnear, "amount": U128(1) });
+    let free = s
+        .env
+        .call_on(
+            &vault,
+            &owner,
+            "withdraw_from_intents",
+            args,
+            NO_DEPOSIT,
+            tgas(150),
+        )
+        .await?;
+    assert_fails_with(free, "Requires attached deposit of exactly 1 yoctoNEAR");
+    Ok(())
+}
+
+/// When the Verifier refuses (paused by its governance), a deposit comes back to the vault
+/// balance and a withdrawal back to the intents balance: nothing is lost or credited twice.
+#[tokio::test]
+async fn a_paused_verifier_refunds_deposits_and_withdrawals() -> TestResult {
+    let s = CsEnv::new().await?;
+    s.set_up().await?;
+    let (owner, vault, wnear) = (
+        s.env.owner.clone(),
+        s.env.vault_id().clone(),
+        s.it.wnear.clone(),
+    );
+    s.fund_vault(&owner, &wnear, 2 * WHOLE).await?;
+    s.deposit_to_intents(&owner, &wnear, WHOLE)
+        .await?
+        .assert_success();
+
+    s.as_dao("pa_pause_feature", json!({ "key": "ALL" }), NO_DEPOSIT)
+        .await?
+        .assert_success();
+    let result = s.deposit_to_intents(&owner, &wnear, WHOLE).await?;
+    assert_eq!(events(&result, "intents_deposit_refunded").len(), 1);
+    assert_eq!(result.assert_success().json::<U128>()?, U128(0));
+    assert_eq!(s.vault_token(&owner, &wnear).await?, WHOLE);
+    assert_eq!(s.intents_balance(&owner, &wnear).await?, WHOLE);
+
+    let result = s.withdraw_from_intents(&owner, &wnear, WHOLE).await?;
+    assert_eq!(events(&result, "intents_withdraw_refunded").len(), 1);
+    assert_eq!(result.assert_success().json::<U128>()?, U128(0));
+    assert_eq!(s.vault_token(&owner, &wnear).await?, WHOLE);
+    assert_eq!(s.intents_balance(&owner, &wnear).await?, WHOLE);
+    assert_eq!(s.on_verifier(&vault, &wnear).await?, WHOLE);
+
+    s.as_dao("pa_unpause_feature", json!({ "key": "ALL" }), NO_DEPOSIT)
+        .await?
+        .assert_success();
+    s.withdraw_from_intents(&owner, &wnear, WHOLE)
+        .await?
+        .assert_success();
+    assert_eq!(s.vault_token(&owner, &wnear).await?, 2 * WHOLE);
+    assert_eq!(s.on_verifier(&vault, &wnear).await?, 0);
     Ok(())
 }

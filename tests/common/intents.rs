@@ -10,7 +10,11 @@ use near_sdk::serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use testresult::TestResult;
 
-use super::{NO_DEPOSIT, TestEnv, near, res_wasm};
+use intatto::{INTENTS_KEY_PATH, IntentsBalance, IntentsConfig, Policy, TokenPolicy};
+use near_api::types::transaction::result::TransactionResult;
+use near_sdk::json_types::U128;
+
+use super::{NO_DEPOSIT, ONE_YOCTO, TOKEN_STORAGE, TestEnv, contract_wasm, near, res_wasm};
 
 /// SHA-256 (base58) of tests/res/intents_near_0.4.5.wasm, the code of intents.near on mainnet.
 pub const INTENTS_SHA256: &str = "BtA1BEFNS619KkvXFsgcpQ21Tb5yMm32aaUkn7xNothk";
@@ -257,5 +261,246 @@ impl Intents {
     pub async fn time_out_pending(&self, env: &TestEnv) -> TestResult {
         env.sandbox.fast_forward(250).await?;
         Ok(())
+    }
+}
+
+pub const fn tgas(tgas: u64) -> NearGas {
+    NearGas::from_tgas(tgas)
+}
+
+/// 10^24 smallest units: one whole wNEAR, or one whole stand-in USDT (also a wNEAR binary).
+pub const WHOLE: u128 = 1_000_000_000_000_000_000_000_000;
+
+/// The vault next to the Verifier and the mock signer. The owner's vault holds 10 NEAR, and its
+/// agent is registered under `standard_policy` plus caps for wNEAR and USDT (1 per swap, 3 per 24
+/// hours each). The vault, the Verifier and the owner are registered with both tokens.
+/// `setup_intents` has not been called.
+pub struct CsEnv {
+    pub env: TestEnv,
+    pub it: Intents,
+}
+
+impl CsEnv {
+    pub async fn new() -> TestResult<Self> {
+        Self::on_code(contract_wasm()).await
+    }
+
+    pub async fn on_code(wasm: Vec<u8>) -> TestResult<Self> {
+        let env = TestEnv::with_code(wasm).await?;
+        let it = Intents::deploy(&env, env.vault_id(), INTENTS_KEY_PATH).await?;
+        let s = Self { env, it };
+        s.env
+            .deposit(&s.env.owner, near(10))
+            .await?
+            .assert_success();
+        s.env
+            .set_agent(&s.env.owner, &s.env.agent, &s.policy())
+            .await?
+            .assert_success();
+        for token in [&s.it.wnear, &s.it.usdt] {
+            for account in [s.env.vault_id(), &s.it.intents, &s.env.owner] {
+                s.register(token, account).await?;
+            }
+        }
+        Ok(s)
+    }
+
+    pub fn policy(&self) -> Policy {
+        let caps = |token_id: &AccountId| TokenPolicy {
+            token_id: token_id.clone(),
+            per_tx_cap: U128(WHOLE),
+            daily_cap: U128(3 * WHOLE),
+        };
+        Policy {
+            tokens: vec![caps(&self.it.wnear), caps(&self.it.usdt)],
+            ..self.env.standard_policy()
+        }
+    }
+
+    pub async fn register(&self, token: &AccountId, account: &AccountId) -> TestResult {
+        let args = json!({ "account_id": account, "registration_only": true });
+        self.env
+            .call_on(
+                token,
+                &self.env.owner,
+                "storage_deposit",
+                args,
+                TOKEN_STORAGE,
+                tgas(30),
+            )
+            .await?
+            .assert_success();
+        Ok(())
+    }
+
+    /// `setup_intents(intents, signer)`, signed by `signer_id`.
+    pub async fn setup_intents_as(&self, signer_id: &AccountId) -> TestResult<TransactionResult> {
+        let args = json!({ "intents_id": self.it.intents, "signer_id": self.it.signer });
+        self.env
+            .call_on(
+                self.env.vault_id(),
+                signer_id,
+                "setup_intents",
+                args,
+                NO_DEPOSIT,
+                tgas(30),
+            )
+            .await
+    }
+
+    /// `register_intents_key()`, signed by `signer_id` with 1 yoctoNEAR.
+    pub async fn register_key_as(&self, signer_id: &AccountId) -> TestResult<TransactionResult> {
+        self.env
+            .call_on(
+                self.env.vault_id(),
+                signer_id,
+                "register_intents_key",
+                json!({}),
+                ONE_YOCTO,
+                tgas(150),
+            )
+            .await
+    }
+
+    /// Sets up intents and registers the vault's key, both of which must succeed.
+    pub async fn set_up(&self) -> TestResult {
+        self.setup_intents_as(self.env.vault_id())
+            .await?
+            .assert_success();
+        let verified: bool = self
+            .register_key_as(&self.env.owner)
+            .await?
+            .assert_success()
+            .json()?;
+        assert!(verified, "the vault's intents key should check out");
+        Ok(())
+    }
+
+    pub async fn config(&self) -> TestResult<Option<IntentsConfig>> {
+        self.env
+            .view_on(self.env.vault_id(), "get_intents_config", json!({}))
+            .await
+    }
+
+    /// Mints `amount` of `token` to `who` (`near_deposit`) and deposits it into their vault.
+    pub async fn fund_vault(&self, who: &AccountId, token: &AccountId, amount: u128) -> TestResult {
+        self.env
+            .call_on(
+                token,
+                who,
+                "near_deposit",
+                json!({}),
+                near_api::NearToken::from_yoctonear(amount),
+                tgas(30),
+            )
+            .await?
+            .assert_success();
+        let args = json!({ "receiver_id": self.env.vault_id(), "amount": U128(amount), "msg": "" });
+        self.env
+            .call_on(token, who, "ft_transfer_call", args, ONE_YOCTO, tgas(100))
+            .await?
+            .assert_success();
+        Ok(())
+    }
+
+    pub async fn deposit_to_intents(
+        &self,
+        who: &AccountId,
+        token: &AccountId,
+        amount: u128,
+    ) -> TestResult<TransactionResult> {
+        let args = json!({ "token_id": token, "amount": U128(amount) });
+        self.env
+            .call_on(
+                self.env.vault_id(),
+                who,
+                "deposit_to_intents",
+                args,
+                ONE_YOCTO,
+                tgas(150),
+            )
+            .await
+    }
+
+    pub async fn withdraw_from_intents(
+        &self,
+        who: &AccountId,
+        token: &AccountId,
+        amount: u128,
+    ) -> TestResult<TransactionResult> {
+        let args = json!({ "token_id": token, "amount": U128(amount) });
+        self.env
+            .call_on(
+                self.env.vault_id(),
+                who,
+                "withdraw_from_intents",
+                args,
+                ONE_YOCTO,
+                tgas(150),
+            )
+            .await
+    }
+
+    /// The owner's intents bookkeeping of `token` on the vault.
+    pub async fn intents_balance(&self, who: &AccountId, token: &AccountId) -> TestResult<u128> {
+        let balances: Vec<IntentsBalance> = self
+            .env
+            .view_on(
+                self.env.vault_id(),
+                "get_intents_balances",
+                json!({ "owner_id": who }),
+            )
+            .await?;
+        Ok(balances
+            .iter()
+            .find(|entry| &entry.token_id == token)
+            .map_or(0, |entry| entry.balance.0))
+    }
+
+    /// What the Verifier itself holds for `account` in `token` (`mt_balance_of`).
+    pub async fn on_verifier(&self, account: &AccountId, token: &AccountId) -> TestResult<u128> {
+        let balance: U128 = self
+            .env
+            .view_on(
+                &self.it.intents,
+                "mt_balance_of",
+                json!({ "account_id": account, "token_id": format!("nep141:{token}") }),
+            )
+            .await?;
+        Ok(balance.0)
+    }
+
+    /// The owner's vault balance of `token`.
+    pub async fn vault_token(&self, who: &AccountId, token: &AccountId) -> TestResult<u128> {
+        Ok(self.env.vault(who).await?.token_balance(token))
+    }
+
+    pub async fn public_keys_on_verifier(&self, account: &AccountId) -> TestResult<Vec<String>> {
+        self.env
+            .view_on(
+                &self.it.intents,
+                "public_keys_of",
+                json!({ "account_id": account }),
+            )
+            .await
+    }
+
+    /// Calls the Verifier as its DAO.
+    pub async fn as_dao(
+        &self,
+        method: &str,
+        args: Value,
+        deposit: near_api::NearToken,
+    ) -> TestResult<TransactionResult> {
+        self.env
+            .call_on(
+                &self.it.intents,
+                &self.it.dao,
+                method,
+                args,
+                deposit,
+                tgas(100),
+            )
+            .await
     }
 }

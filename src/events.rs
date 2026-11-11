@@ -214,6 +214,53 @@ pub enum VaultEvent {
         token_id: AccountId,
         amount: U128,
     },
+    /// The vault's intents account is bound to this Verifier and MPC signer, for good.
+    #[event_version("1.0.0")]
+    IntentsSetup {
+        intents_id: AccountId,
+        signer_id: AccountId,
+    },
+    /// `add_public_key(public_key)` on the Verifier finished, successfully or not.
+    #[event_version("1.0.0")]
+    IntentsKeyAdded { public_key: String, succeeded: bool },
+    /// The Verifier listed `found` as the vault's keys; `verified` iff that is exactly
+    /// `expected`, the MPC-derived key.
+    #[event_version("1.0.0")]
+    IntentsKeyChecked {
+        expected: Option<String>,
+        found: Vec<String>,
+        verified: bool,
+    },
+    /// `amount` left the owner's vault balance for the vault's intents account; its transfer to
+    /// the Verifier is in flight.
+    #[event_version("1.0.0")]
+    IntentsDeposit {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// The Verifier did not keep `amount` of a deposit; it went back to the owner's vault balance.
+    #[event_version("1.0.0")]
+    IntentsDepositRefunded {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// `amount` left the owner's intents balance; its withdrawal to the vault is in flight.
+    #[event_version("1.0.0")]
+    IntentsWithdraw {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// `amount` of a withdrawal stayed in the vault's intents account and went back to the
+    /// owner's intents balance.
+    #[event_version("1.0.0")]
+    IntentsWithdrawRefunded {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
 }
 
 /// What an agent asked for, kept so every rejection can be logged.

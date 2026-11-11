@@ -191,6 +191,120 @@ exchange beyond rejected calls.
   holds it can deploy any code to the vault account, including code that sends every owner's
   funds anywhere, or delete the account. See the limitations below.
 
+## Chain Signatures intents path (branch `chain-signatures`, not deployed)
+
+This section covers code that exists only on the `chain-signatures` branch. Nothing here is
+deployed, and master does not depend on it. It adds a second way for the agent to swap: through
+NEAR Intents, with the vault's intents account signed for by the MPC network.
+
+**What it adds.** The vault gets one account of its own on the Verifier, intents.near, under
+the vault's account id. All owners' intents balances sit in that one account, like their exchange
+deposits on Rhea. Per-owner amounts are the vault's bookkeeping (`get_intents_balances`).
+- Deposits and withdrawals there use predecessor auth: the vault calls intents.near as itself
+  (`ft_transfer_call` to it, `ft_withdraw` from it).
+- Intents are authenticated by signature. intents.near executes a NEP-413 payload for the vault's
+  account only if it is signed by a key registered for that account. That key is the vault's
+  Ed25519 key derived by v1.signer (domain 1) from the vault's account id and the fixed path
+  `intatto/intents.near/v1`. Only a `sign` request whose predecessor is the vault contract can
+  produce a signature under it.
+
+### Invariants (intents path)
+
+14. **The Verifier and signer are fixed once.** `setup_intents(intents_id, signer_id)` can be
+    called only by the vault account itself (`#[private]`, i.e. its full-access key) and only
+    once. Nothing changes them afterwards.
+15. **The vault's intents account has exactly one key, and it is the MPC-derived one.**
+    - `register_intents_key` reads the key from the signer's
+      `derived_public_key(path, vault, 1)` in a callback, then registers it with
+      `add_public_key`.
+    - It then reads `public_keys_of(vault)` and records `key_verified` only if that is exactly
+      the derived key.
+    - The stored key never changes: if the signer later derives a different one, registering
+      again fails.
+    - Anyone can re-run the check (`verify_intents_key`). If another key ever appears on the
+      vault's account, the check fails and agent intent swaps stop until the key set is right
+      again (`an_extra_key_on_the_verifier_fails_the_key_check`).
+16. **Moving tokens to and from the intents account touches only the caller's own amounts.**
+    - `deposit_to_intents` and `withdraw_from_intents` act on the caller's vault and need
+      exactly 1 yoctoNEAR (full-access key only).
+    - Each debits before its promise. The tokens stay in the vault's custody, so neither is
+      blocked by freeze or a withdrawal lock.
+    - If the Verifier keeps less than was sent, or delivers less than was asked, the
+      difference goes back exactly once: to the vault balance for a deposit, to the intents
+      balance for a withdrawal, where intents.near re-credits the vault's account
+      (`a_paused_verifier_refunds_deposits_and_withdrawals`).
+    - Balance entries are created by the call that starts a flow and paid for by that owner,
+      so callbacks never add storage.
+
+### Trust assumptions (intents path)
+
+All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 224,086,400).
+
+- **The MPC network (`v1.signer`).** near/mpc 3.18.0, built from `e691bdb`
+  (`contract_source_metadata`). The protocol state is Running with **16 participants and a
+  threshold of 11**, and domain 1 is Ed25519 (FROST) with reconstruction threshold 11.
+  - **Safety:** any 11 participants together can sign anything under the vault's derived key.
+    That includes intents that move every owner's tokens out of the vault's intents account. The
+    vault cannot limit what the MPC network signs; it can only limit what it asks for. Treat
+    the intents balance as held jointly by the vault and the MPC network.
+  - **Liveness:** if 6 or more participants are down or refuse, nothing gets signed. Agent intent
+    swaps then fail and are refunded after the protocol's yield timeout (200 blocks). Deposits and
+    withdrawals use predecessor auth, not signatures, so they still work.
+  - **Upgrades:** v1.signer has no full-access key. Its code and config change by a
+    governance-threshold vote of the current participants (`vote_contract_update`), so the same
+    11-of-16 can replace the code, or turn off new requests (`accept_requests`, for example
+    after a failed TEE attestation). New requests then fail, which the vault treats as a failed
+    signature.
+- **intents.near governance.** defuse 0.4.5, code hash `BtA1BEFNS619KkvXFsgcpQ21Tb5yMm32aaUkn7xNothk`,
+  built from near/intents `16d04f6`. The account has no full-access key (9 function-call keys:
+  relayer keys).
+  - **Who holds roles.** Super admins are `intents.sputnik-dao.near` and `intents.near` itself.
+    The DAO role is held by `intents.sputnik-dao.near` and Upgrader by `ctl-intents.near`.
+    PauseManager is held by `pm.bridge.near` and 6 implicit accounts, UnrestrictedAccountLocker
+    by 2 implicit accounts, and RelayerKeysManager by `relay-key-manager.near`. SaltManager,
+    GarbageCollector, FeesManager, UnrestrictedWithdrawer, UnrestrictedAccountManager and
+    UnpauseManager had no grantees. The DAO can do all of those itself, and super admins can
+    grant any role.
+  - **What they can do to the vault's account there:**
+    - Replace the contract's code: `upgrade` (DAO, Upgrader). That can do anything to any balance.
+    - Run arbitrary calls and transfers as intents.near (`admin_call`, DAO), or add a full-access
+      key to it (`add_full_access_key`, DAO).
+    - Withdraw any account's tokens to anyone (`ft_force_withdraw` and the other force
+      withdrawals; DAO, UnrestrictedWithdrawer).
+    - Lock the vault's account (`force_lock_account`; DAO, UnrestrictedAccountLocker). Deposits
+      still arrive, but withdrawals and intents by the vault fail.
+    - Turn off the vault's predecessor auth (`force_disable_auth_by_predecessor_ids`). Deposits
+      and withdrawals by the vault then fail.
+    - Pause the contract (PauseManager). Deposits are refunded to the vault balance and
+      withdrawals to the intents balance (tested).
+    - Rotate or invalidate nonce salts (`update_current_salt`, `invalidate_salts`; DAO,
+      SaltManager), and clean up nonces whose salt is invalid or whose deadline passed
+      (`cleanup_nonces`; DAO, GarbageCollector). Settlement depends on this; see the intent swap
+      invariants.
+    - Change the protocol fee (DAO, FeesManager). It is charged on the selling side of a
+      `token_diff` and collected from the counterparty, so the vault's own deltas stay exact.
+  - `force_add_public_keys` exists in the source but only in the `far` build, not in
+    intents.near's.
+- **The vault account's full-access key.** This is unchanged, but it reaches further now.
+  Whoever can deploy code to the vault account can make the vault ask v1.signer for any
+  signature under its derived key. That means any intent for the vault's intents account, as
+  well as everything listed above.
+
+### Known limitations (intents path)
+
+- **A shortfall in the shared intents account falls on whoever withdraws last.** There is no
+  ledger check like the exchange's (invariant 11). If tokens leave the vault's intents account
+  outside the vault's flows (governance force-withdrawal, a malicious upgrade, or 11 MPC
+  participants), earlier `withdraw_from_intents` calls succeed in full. Later ones fail, and
+  their amounts go back to those owners' intents balances.
+- **The Message Bus key's role is unverified.** The agent publishes signed intents through the
+  Message Bus (`solver-relay-v2.chaindefuser.com`). Its documentation says it needs a Partner
+  Portal JWT, and documents access only for KYC'd market-maker keys. On 2026-11-11 the relay
+  answered `quote`, `publish_intent` and `get_status` identically with our Distribution Channel
+  key, a malformed key, and no key. So it did not enforce authentication, and whether our key
+  type is accepted is untested. Nothing on chain depends on it: the relay can only submit what
+  the vault signed.
+
 ## Frontend
 
 The site in `web/` (served from GitHub Pages) holds no keys and enforces nothing. **Every rule is
