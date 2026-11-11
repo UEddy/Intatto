@@ -1553,3 +1553,167 @@ fn treasury_cannot_be_the_contract() {
     set_context(owner(), NearToken::from_yoctonear(0), T0);
     let _ = Contract::new(exchange(), contract_id());
 }
+
+// ---- Chain Signatures intent swaps: the callback paths the sandbox cannot time or reach ----
+
+const INTENTS_KEY: &str = "ed25519:4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw";
+
+fn intents_id() -> AccountId {
+    "intents.near".parse().unwrap()
+}
+
+fn intent_ticket(amount_in: u128, amount_out: u128) -> crate::intent_swap::IntentTicket {
+    crate::intent_swap::IntentTicket {
+        owner_id: owner(),
+        token_in: wnear(),
+        token_out: usdt(),
+        amount_in: U128(amount_in),
+        amount_out: U128(amount_out),
+    }
+}
+
+/// `setup()` plus intents: the Verifier and signer bound, the key registered and verified, 500
+/// of the owner's wNEAR moved to the intents account, and wNEAR → usdt allowed at 2 per 1.
+fn intents_setup() -> Contract {
+    let mut contract = setup();
+    set_context(contract_id(), NearToken::from_yoctonear(0), T0);
+    contract.setup_intents(intents_id(), "signer.near".parse().unwrap());
+    contract
+        .on_intents_key_derived(Ok(INTENTS_KEY.to_string()))
+        .detach();
+    assert!(contract.on_intents_keys_listed(Ok(vec![INTENTS_KEY.to_string()])));
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.deposit_to_intents(wnear(), U128(500)).detach();
+    set_context(contract_id(), NearToken::from_yoctonear(0), T0);
+    let used = contract.on_intents_deposited(owner(), wnear(), U128(500), Ok(U128(500)));
+    assert_eq!(used, U128(500));
+    set_context(owner(), NearToken::from_yoctonear(1), T0);
+    contract.set_intent_policy(IntentPolicy {
+        pairs: vec![IntentPair {
+            token_in: wnear(),
+            token_out: usdt(),
+            min_out: U128(2),
+            per_in: U128(1),
+        }],
+    });
+    contract
+}
+
+/// intents.near's salt reaching `on_intent_salt` at `timestamp`.
+fn salt_arrives(contract: &mut Contract, salt: Result<String, PromiseError>, timestamp: u64) {
+    set_context(contract_id(), NearToken::from_yoctonear(0), timestamp);
+    contract
+        .on_intent_salt(agent(), intent_ticket(100, 200), salt)
+        .detach();
+}
+
+#[test]
+fn intent_salt_callback_reserves_records_and_builds_the_signed_bytes() {
+    let mut contract = intents_setup();
+    let near_before = contract.vaults.get(&owner()).unwrap().balance;
+    salt_arrives(&mut contract, Ok("252812b3".to_string()), T0);
+
+    let balances = contract.get_intents_balances(owner());
+    let held = |token: AccountId| {
+        balances
+            .iter()
+            .find(|entry| entry.token_id == token)
+            .map(|entry| entry.balance.0)
+    };
+    assert_eq!(held(wnear()), Some(400), "amount_in is reserved");
+    assert_eq!(
+        held(usdt()),
+        Some(0),
+        "the output's entry exists before any callback"
+    );
+    let vault = contract.vaults.get(&owner()).unwrap();
+    assert_eq!(vault.recent_spends.len(), 1);
+    assert!(
+        vault.balance < near_before,
+        "the sign deposit and the record's storage are the owner's"
+    );
+
+    let view = contract.get_intent_swap(U64(0)).expect("recorded");
+    let swap = view.swap;
+    assert_eq!(swap.status, IntentSwapStatus::Signing);
+    assert!(view.signed_data.is_none());
+    assert_eq!(swap.signature, "0".repeat(128));
+    let deadline_secs = T0 / 1_000_000_000 + INTENT_DEADLINE_SECS;
+    assert_eq!(swap.deadline.0, deadline_secs * 1_000_000_000);
+    assert_eq!(
+        swap.nonce_deadline.0,
+        (deadline_secs + NONCE_VALIDITY_SECS) * 1_000_000_000
+    );
+    assert_eq!(
+        swap.message,
+        intent_message(
+            &contract_id(),
+            &rfc3339(deadline_secs),
+            &wnear(),
+            100,
+            &usdt(),
+            200
+        )
+    );
+    let nonce: [u8; 32] = near_sdk::base64::Engine::decode(
+        &near_sdk::base64::engine::general_purpose::STANDARD,
+        &swap.nonce,
+    )
+    .unwrap()
+    .try_into()
+    .unwrap();
+    assert_eq!(nonce[5..9], [0x25, 0x28, 0x12, 0xb3], "the Verifier's salt");
+    let hash = nep413_hash(&swap.message, &nonce, &intents_id());
+    let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(swap.payload_hash, hex);
+}
+
+#[test]
+#[should_panic(expected = "intents.near did not report a usable salt")]
+fn a_failed_salt_query_rejects_the_intent_swap() {
+    let mut contract = intents_setup();
+    salt_arrives(&mut contract, Err(PromiseError::Failed), T0);
+}
+
+#[test]
+#[should_panic(expected = "intents.near did not report a usable salt")]
+fn a_malformed_salt_rejects_the_intent_swap() {
+    let mut contract = intents_setup();
+    salt_arrives(&mut contract, Ok("not-hex!".to_string()), T0);
+}
+
+#[test]
+#[should_panic(expected = "Vault is frozen")]
+fn a_freeze_while_the_salt_is_in_flight_rejects_the_intent_swap() {
+    let mut contract = intents_setup();
+    set_context(agent(), NearToken::from_yoctonear(0), T0);
+    contract
+        .agent_intent_swap(owner(), wnear(), usdt(), U128(100), U128(200))
+        .detach();
+    set_context(owner(), NearToken::from_yoctonear(0), T0);
+    contract.freeze();
+    salt_arrives(&mut contract, Ok("252812b3".to_string()), T0);
+}
+
+#[test]
+#[should_panic(expected = "Vault already holds the maximum of 20 tokens on intents")]
+fn a_full_intents_token_list_rejects_the_intent_swap() {
+    let mut contract = intents_setup();
+    for i in 0..19 {
+        let token: AccountId = format!("token{i}.near").parse().unwrap();
+        assert!(crate::intents::update_balance(
+            &owner(),
+            &token,
+            |balance| balance
+        ));
+    }
+    salt_arrives(&mut contract, Ok("252812b3".to_string()), T0);
+}
+
+#[test]
+#[should_panic(expected = "cannot cover the signer's 1 yoctoNEAR deposit")]
+fn no_near_for_the_sign_deposit_rejects_the_intent_swap() {
+    let mut contract = intents_setup();
+    contract.vaults.get_mut(&owner()).unwrap().balance = NearToken::from_yoctonear(0);
+    salt_arrives(&mut contract, Ok("252812b3".to_string()), T0);
+}

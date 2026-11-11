@@ -3,6 +3,8 @@
 /mainnet-*.txs
 # Secrets for the prompt-injection demo (NEAR_AI_API_KEY, DEMO_AGENT_KEY). Never commit.
 /agent/.env
+# Build output of the test-only contracts (the mock MPC signer).
+/tests/contracts/*/target
 
 # Local Claude Code config
 /.claude/

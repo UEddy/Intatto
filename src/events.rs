@@ -2,6 +2,7 @@
 use near_sdk::json_types::{U64, U128};
 use near_sdk::{AccountId, NearToken, env, near};
 
+use crate::intent_swap::{IntentPolicy, IntentRefundReason, IntentSwap, IntentTicket};
 use crate::policy::Policy;
 use crate::swap::{SwapStep, SwapTicket};
 
@@ -28,6 +29,16 @@ pub enum RejectReason {
     QuoteFailed,
     /// `min_amount_out` is further below the exchange's quote than the pool's `max_slippage_bps`.
     SlippageTooLoose,
+    /// The vault's intents key is not registered and verified on the Verifier.
+    IntentsNotReady,
+    /// The pair is not in the owner's intent policy.
+    PairNotAllowlisted,
+    /// `amount_out` for `amount_in` is below the owner's price floor for the pair.
+    BelowPriceFloor,
+    /// An amount does not fit the i128 of a `token_diff`.
+    AmountTooLarge,
+    /// intents.near did not report a usable salt for the nonce.
+    SaltUnavailable,
 }
 
 /// NEP-297 events for the activity feed, logged as
@@ -207,10 +218,116 @@ pub enum VaultEvent {
         token_id: AccountId,
         amount: U128,
     },
+    #[event_version("1.0.0")]
+    IntentPolicySet {
+        owner_id: AccountId,
+        policy: IntentPolicy,
+    },
+    /// Logged right before the panic, so it survives in the failed receipt's outcome.
+    #[event_version("1.0.0")]
+    IntentSwapRejected {
+        owner_id: AccountId,
+        caller_id: AccountId,
+        token_in: AccountId,
+        token_out: AccountId,
+        amount_in: U128,
+        amount_out: U128,
+        reason: RejectReason,
+    },
+    /// The swap passed every check: `amount_in` is reserved, the swap is recorded with the exact
+    /// message, nonce and hash to be signed, and the signature request is in flight.
+    #[event_version("1.0.0")]
+    IntentSwapInitiated { swap: IntentSwap },
+    /// The MPC network signed; `signed_data` is the NEP-413 `MultiPayload` to publish before
+    /// `deadline` (ns).
+    #[event_version("1.0.0")]
+    IntentSwapSigned {
+        intent_id: U64,
+        owner_id: AccountId,
+        deadline: U64,
+        signed_data: near_sdk::serde_json::Value,
+    },
+    /// intents.near executed the intent: the owner was credited exactly `amount_out`.
+    #[event_version("1.0.0")]
+    IntentSwapSettled {
+        intent_id: U64,
+        owner_id: AccountId,
+        token_in: AccountId,
+        amount_in: U128,
+        token_out: AccountId,
+        amount_out: U128,
+    },
+    /// The intent did not and cannot execute; `amount_in` went back to the owner's intents
+    /// balance and the swap's spend record was removed.
+    #[event_version("1.0.0")]
+    IntentSwapRefunded {
+        intent_id: U64,
+        owner_id: AccountId,
+        token_in: AccountId,
+        amount_in: U128,
+        reason: IntentRefundReason,
+    },
+    /// The nonce was unused after the deadline, but the answer is not conclusive: the salt was
+    /// invalidated or the nonce's deadline passed, so intents.near may have cleaned it up.
+    /// Nothing changed; `amount_in` stays reserved.
+    #[event_version("1.0.0")]
+    IntentSwapUnresolved {
+        intent_id: U64,
+        owner_id: AccountId,
+        salt_valid: bool,
+        nonce_deadline: U64,
+    },
     /// The transfer of a fee withdrawal failed; `amount` went back to the treasury balance.
     #[event_version("1.0.0")]
     FeesWithdrawRefunded {
         treasury_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// The vault's intents account is bound to this Verifier and MPC signer, for good.
+    #[event_version("1.0.0")]
+    IntentsSetup {
+        intents_id: AccountId,
+        signer_id: AccountId,
+    },
+    /// `add_public_key(public_key)` on the Verifier finished, successfully or not.
+    #[event_version("1.0.0")]
+    IntentsKeyAdded { public_key: String, succeeded: bool },
+    /// The Verifier listed `found` as the vault's keys; `verified` iff that is exactly
+    /// `expected`, the MPC-derived key.
+    #[event_version("1.0.0")]
+    IntentsKeyChecked {
+        expected: Option<String>,
+        found: Vec<String>,
+        verified: bool,
+    },
+    /// `amount` left the owner's vault balance for the vault's intents account; its transfer to
+    /// the Verifier is in flight.
+    #[event_version("1.0.0")]
+    IntentsDeposit {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// The Verifier did not keep `amount` of a deposit; it went back to the owner's vault balance.
+    #[event_version("1.0.0")]
+    IntentsDepositRefunded {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// `amount` left the owner's intents balance; its withdrawal to the vault is in flight.
+    #[event_version("1.0.0")]
+    IntentsWithdraw {
+        owner_id: AccountId,
+        token_id: AccountId,
+        amount: U128,
+    },
+    /// `amount` of a withdrawal stayed in the vault's intents account and went back to the
+    /// owner's intents balance.
+    #[event_version("1.0.0")]
+    IntentsWithdrawRefunded {
+        owner_id: AccountId,
         token_id: AccountId,
         amount: U128,
     },
@@ -227,6 +344,10 @@ pub enum Attempt<'a> {
     Swap {
         caller_id: &'a AccountId,
         ticket: &'a SwapTicket,
+    },
+    IntentSwap {
+        caller_id: &'a AccountId,
+        ticket: &'a IntentTicket,
     },
 }
 
@@ -263,6 +384,16 @@ impl Attempt<'_> {
                 token_out: ticket.token_out.clone(),
                 amount_in: ticket.amount_in,
                 min_amount_out: ticket.min_amount_out,
+                reason,
+            }
+            .emit(),
+            Self::IntentSwap { caller_id, ticket } => VaultEvent::IntentSwapRejected {
+                owner_id: ticket.owner_id.clone(),
+                caller_id: (*caller_id).clone(),
+                token_in: ticket.token_in.clone(),
+                token_out: ticket.token_out.clone(),
+                amount_in: ticket.amount_in,
+                amount_out: ticket.amount_out,
                 reason,
             }
             .emit(),

@@ -8,6 +8,8 @@ use near_sdk::{
 mod callbacks;
 mod events;
 mod fees;
+mod intent_swap;
+mod intents;
 mod ledger;
 mod lock;
 mod policy;
@@ -18,6 +20,15 @@ mod tokens;
 
 pub use events::{RejectReason, VaultEvent};
 pub use fees::{FEE_BPS, MAX_FEE_BPS, split_fee};
+pub use intent_swap::{
+    AGENT_INTENT_SWAP_TGAS, INTENT_DEADLINE_SECS, IntentOutcome, IntentPair, IntentPolicy,
+    IntentRefundReason, IntentSwap, IntentSwapStatus, IntentSwapView, MAX_INTENT_PAIRS,
+    NONCE_VALIDITY_SECS, SETTLE_INTENT_TGAS, intent_message, meets_floor, nep413_hash, rfc3339,
+};
+pub use intents::{
+    INTENTS_KEY_PATH, IntentsBalance, IntentsConfig, IntentsVerifier, MPC_ED25519_DOMAIN,
+    MpcSigner, REGISTER_KEY_TGAS, VERIFY_KEY_TGAS, ext_intents, ext_mpc_signer,
+};
 pub use ledger::ExchangeLedger;
 pub use policy::{
     MAX_ALLOWLIST_LEN, MAX_POLICY_POOLS, MAX_POLICY_TOKENS, MAX_SLIPPAGE_BPS,
