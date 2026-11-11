@@ -18,7 +18,10 @@
 # Environment:
 #   VAULT_ID, SMOKE_OWNER, SMOKE_AGENT, FUNDER     required (FUNDER creates and funds the two)
 #   SWAP_NEAR           default 0.5
-#   FC_ALLOWANCE        default 0.2 NEAR (each agent_swap reserves 300 TGas = 0.03 NEAR of it)
+#   FC_ALLOWANCE        default 2 NEAR: a cap on the gas the agent's key may buy, not funds. The
+#                       gas is paid from the agent's balance (SMOKE_AGENT_BALANCE, 0.55 NEAR, in
+#                       scripts/lib/mainnet.sh); each agent_swap needs ~0.301 NEAR of it at hand,
+#                       and the unused part is refunded.
 #   EXPECTED_CODE_HASH  default: the reproducible build of commit 6cfa90e
 set -euo pipefail
 shopt -s inherit_errexit
@@ -81,7 +84,7 @@ agent_swap_step() {
 
 steps() {
   create_account_step "$SMOKE_OWNER" "$(helper near "$(smoke_owner_yocto "$SWAP_NEAR")")" "$FUNDER"
-  create_account_step "$SMOKE_AGENT" "$(helper near "$(smoke_agent_yocto "$FC_ALLOWANCE")")" "$FUNDER"
+  create_account_step "$SMOKE_AGENT" "$(helper near "$(smoke_agent_yocto)")" "$FUNDER"
   vault_of_owner
   if [ "$(helper json "$WORK/vault.json" 'v is None')" = true ]; then
     call_step success "$SMOKE_OWNER" keychain "$VAULT_ID" deposit '{}' "$VAULT_NEAR" 30 "deposit $VAULT_NEAR NEAR for the vault record's storage"

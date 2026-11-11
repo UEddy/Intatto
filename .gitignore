@@ -5,3 +5,7 @@
 /agent/.env
 # Build output of the test-only contracts (the mock MPC signer).
 /tests/contracts/*/target
+
+# Local Claude Code config
+/.claude/
+/CLAUDE.md
