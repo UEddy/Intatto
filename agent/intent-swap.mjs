@@ -16,11 +16,13 @@
 //   node agent/intent-swap.mjs --vault V --agent A --settle <intent_id>
 //
 // Secrets, never printed (every log line goes through redact()):
-//   INTENT_AGENT_KEY  the agent's function-call private key (environment, or agent/.env)
+//   INTENT_AGENT_KEY  the agent's function-call private key (environment, or agent/.env), or
+//   INTENT_AGENT_KEY_FILE  a near CLI key file holding it ({"private_key": "ed25519:..."}), as
+//                     scripts/mainnet-intents.sh passes the legacy-keychain key file
 //   NEAR_INTENTS_JWT  ~/.config/intatto/intents.env only, mode 600 (intents-env.mjs)
 // NEAR_RPC overrides the RPC (default: mainnet FastNEAR). --dry-run stops after the preflight and
 // prints the transaction it would send; it signs and sends nothing.
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -32,6 +34,22 @@ import { loadEnvFile, redact } from "./secrets.mjs";
 const here = dirname(fileURLToPath(import.meta.url));
 const SWAP_GAS = 150_000_000_000_000n;
 const SETTLE_GAS = 100_000_000_000_000n;
+
+/** The agent's private key: INTENT_AGENT_KEY, else the `private_key` of INTENT_AGENT_KEY_FILE. */
+export function agentSecret(env) {
+  if (env.INTENT_AGENT_KEY) return env.INTENT_AGENT_KEY;
+  if (!env.INTENT_AGENT_KEY_FILE) return undefined;
+  let key;
+  try {
+    key = JSON.parse(readFileSync(env.INTENT_AGENT_KEY_FILE, "utf8")).private_key;
+  } catch {
+    throw new Error(`INTENT_AGENT_KEY_FILE ${env.INTENT_AGENT_KEY_FILE} is not a readable near CLI key file`);
+  }
+  if (typeof key !== "string" || !key.startsWith("ed25519:")) {
+    throw new Error(`INTENT_AGENT_KEY_FILE ${env.INTENT_AGENT_KEY_FILE} holds no ed25519 private_key`);
+  }
+  return key;
+}
 
 /** The vault's events in a transaction outcome, from receipts the vault itself executed only. */
 export function vaultEvents(outcome, vaultId) {
@@ -183,7 +201,8 @@ async function main() {
   const env = process.env;
   loadEnvFile(env); // agent/.env, gitignored; the environment wins
   const jwt = settleOnly ? null : loadIntentsJwt();
-  const secrets = [jwt, env.INTENT_AGENT_KEY].filter((s) => typeof s === "string" && s.length >= 8);
+  const agentKey = agentSecret(env);
+  const secrets = [jwt, agentKey].filter((s) => typeof s === "string" && s.length >= 8);
   const runs = join(here, "runs");
   mkdirSync(runs, { recursive: true });
   const logFile = join(runs, `${new Date().toISOString().replace(/[:.]/g, "-")}-intent-swap${opts["dry-run"] ? "-dry" : ""}.jsonl`);
@@ -196,8 +215,8 @@ async function main() {
   };
   const chain = new Chain(env.NEAR_RPC ?? "https://rpc.mainnet.fastnear.com");
   const keys = () => {
-    if (!env.INTENT_AGENT_KEY) throw new Error("INTENT_AGENT_KEY is not set (environment or agent/.env)");
-    return keyPair(env.INTENT_AGENT_KEY);
+    if (!agentKey) throw new Error("set INTENT_AGENT_KEY (environment or agent/.env) or INTENT_AGENT_KEY_FILE");
+    return keyPair(agentKey);
   };
   const settle = async (intentId) => {
     const outcome = await chain.call({ signerId: opts.agent, keys: keys(), receiverId: opts.vault, method: "settle_intent_swap", args: { intent_id: String(intentId) }, gas: SETTLE_GAS });
@@ -237,11 +256,11 @@ async function main() {
     intentsBalance: held,
     enoughBalance: BigInt(held) >= BigInt(amountIn),
   };
-  if (env.INTENT_AGENT_KEY) {
+  if (agentKey) {
     const access = await chain.rpc("query", { request_type: "view_access_key", finality: "final", account_id: opts.agent, public_key: keys().publicKey });
     preflight.agentKeyAllowed = keyAllows(access.permission, opts.vault, ["agent_intent_swap", "settle_intent_swap"]);
   } else if (!opts["dry-run"]) {
-    throw new Error("INTENT_AGENT_KEY is not set (environment or agent/.env)");
+    throw new Error("set INTENT_AGENT_KEY (environment or agent/.env) or INTENT_AGENT_KEY_FILE");
   }
   log("preflight", preflight);
   const failed = Object.entries(preflight).filter(([k, v]) => v === false).map(([k]) => k);
@@ -282,7 +301,13 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main().catch((err) => {
-    const secrets = [process.env.INTENT_AGENT_KEY].filter(Boolean);
+    const secrets = [];
+    try {
+      const key = agentSecret(process.env);
+      if (key) secrets.push(key);
+    } catch {
+      // No key file: nothing to redact.
+    }
     try {
       secrets.push(loadIntentsJwt());
     } catch {

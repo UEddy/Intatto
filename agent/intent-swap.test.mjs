@@ -196,3 +196,19 @@ test("a transaction outlasting the RPC wait is followed with `tx` until it finis
   assert.deepEqual(result, outcome);
   assert.deepEqual(calls, ["query", "block", "send_tx", "tx", "tx", "tx"]);
 });
+
+test("the agent key comes from INTENT_AGENT_KEY or a near CLI key file, never printed in errors", async () => {
+  const { agentSecret } = await import("./intent-swap.mjs");
+  const secret = "ed25519:" + "1".repeat(80);
+  assert.equal(agentSecret({ INTENT_AGENT_KEY: secret }), secret);
+  const good = keyFile(JSON.stringify({ account_id: "a.near", public_key: "ed25519:x", private_key: secret }));
+  const bad = keyFile(JSON.stringify({ private_key: "secp256k1:nope" }));
+  try {
+    assert.equal(agentSecret({ INTENT_AGENT_KEY_FILE: good.file }), secret);
+    assert.throws(() => agentSecret({ INTENT_AGENT_KEY_FILE: bad.file }), (err) => /no ed25519 private_key/.test(err.message) && !err.message.includes("nope"));
+    assert.equal(agentSecret({}), undefined);
+  } finally {
+    good.cleanup();
+    bad.cleanup();
+  }
+});

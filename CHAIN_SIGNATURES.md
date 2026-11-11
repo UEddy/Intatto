@@ -41,61 +41,77 @@ cargo test --test chain_signatures
 node --test agent/*.test.mjs
 ```
 
-## Mainnet run (done by the operator, not by any script here)
+## Mainnet run: `scripts/mainnet-intents.sh`
 
-Nothing in this repository deploys or signs on mainnet for this path. These are the steps for
-the one real swap the cutoff asks for, with the values used in the tests. `<vault>` is a **new**
-account, not master's vault. `<owner>`, `<agent>` and `<treasury>` are accounts you control.
-Commands are near-cli-rs 0.30.1, as in the README.
+The operator runs it; nothing runs it automatically. It is built on `scripts/lib/mainnet.sh`, as
+the other mainnet scripts are:
+- **Dry run by default.** It reads live state and prints every transaction and its cost.
+- **Typed confirmation** before anything is sent.
+- **Live costs.** Static fees and the account creation charge come from the live protocol
+  config, and the gas each signer must hold at once is priced at the purchase price.
+- **Fit checks.** Every signer's balance and every function-call key's allowance is checked;
+  `--send` refuses a plan that does not fit.
+- **Safe resume.** Each step is skipped when already done. An existing account is accepted only
+  if it is exactly what the plan left.
 
-1. **Build and check.** Run `cargo near build reproducible-wasm` at the commit you deploy, then
-   `INTATTO_TEST_WASM=target/near/intatto.wasm cargo test`. The code is ~400 KB, so the account
-   needs about 4 NEAR staked for it, plus gas.
+The script also refuses `vault.intatto.near` (the canary stays on `3z1W5Sfh…`) and any account
+already running other code. It refuses intents.near or v1.signer if their code or version
+differ from what the sandbox suite ran against.
 
-   Commit `fc23fbc3abee3d503ecaeb5ced56d315374cdc20` has already been built in the pinned image
-   and passes `cargo test` (154 tests) as that exact binary:
+**The wasm comes only from the Reproducible build workflow.** Run
+[Reproducible build](.github/workflows/reproducible-build.yml) (Actions → Reproducible build →
+Run workflow) with commit `fc23fbc3abee3d503ecaeb5ced56d315374cdc20`, then download its
+`intatto-wasm-…` artifact. The script deploys only a wasm with exactly these values, recorded in
+the script and not overridable:
 
-   | | |
-   |---|---|
-   | code hash | `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC` |
-   | sha256 | `f41283390697530c7a446a9509dd73269e34e12932a1e76e2ac2895ddf191bd7` |
-   | bytes | 394,254 |
+| | |
+|---|---|
+| code hash | `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC` |
+| sha256 | `f41283390697530c7a446a9509dd73269e34e12932a1e76e2ac2895ddf191bd7` |
+| size | 394,254 bytes |
 
-   The build ran the container command cargo-near 0.22.0 prints for `reproducible-wasm`
-   (`sourcescan/cargo-near:0.21.1-rust-1.96.0` by digest, with the NEP-330 variables naming that
-   commit), plus `--network host`, because Docker on this WSL host cannot resolve crates.io
-   otherwise. Its source metadata links to GitHub, so push the commit before anyone verifies it.
-2. **Deploy to a fresh account** with `new(exchange_id: "v2.ref-finance.near", treasury_id: "<treasury>")`.
-3. **Bind the Verifier and signer, as the vault account:**
-   `near contract call-function as-transaction <vault> setup_intents json-args '{"intents_id":"intents.near","signer_id":"v1.signer"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <vault> network-config mainnet sign-with-keychain send`
-4. **Register the key (anyone):**
-   `... <vault> register_intents_key json-args '{}' prepaid-gas '150.0 Tgas' attached-deposit '1 yoctoNEAR' sign-as <owner> ...`.
-   Then check that `get_intents_config` shows `"key_verified": true`, and that
-   `intents.near public_keys_of {"account_id":"<vault>"}` lists exactly that one key.
-5. **Register the vault with both tokens:** `storage_deposit` on `usdt.tether-token.near` and
-   `wrap.near` for `<vault>`, 0.00125 NEAR each.
-6. **As the owner:**
-   - `deposit` 0.5 NEAR.
-   - `set_agent` with `agent_id: <agent>` and a policy with no NEAR outflow (`per_tx_cap`
-     `"0"`, `daily_cap` `"0"`, empty `allowlist`, `max_spends_per_24h` 5). Its `tokens` give
-     USDT `per_tx_cap` `"1000000"` / `daily_cap` `"2000000"`, and wNEAR
-     `"300000000000000000000000"` / `"600000000000000000000000"`.
-   - Send 1 USDT to `<vault>` (`ft_transfer_call`, `msg ""`), then
-     `deposit_to_intents {"token_id":"usdt.tether-token.near","amount":"1000000"}`.
-   - `set_intent_policy` with USDT→wNEAR at a floor of 0.25 wNEAR per USDT
-     (`min_out` `"250000000000000000000000"`, `per_in` `"1000000"`), and wNEAR→USDT at 3.3 USDT
-     per wNEAR (`min_out` `"3300000"`, `per_in` `"1000000000000000000000000"`). Set the floors
-     from the market on the day.
-7. **Give the agent a function-call key** for `<vault>` only, methods `agent_intent_swap` and
-   `settle_intent_swap`, allowance 0.25 NEAR. Put its private key in `agent/.env` as
-   `INTENT_AGENT_KEY=ed25519:...` (gitignored).
-8. **Run the agent:** first with `--dry-run`, which quotes and checks everything but sends
-   nothing, then without it:
-   `node agent/intent-swap.mjs --vault <vault> --owner <owner> --agent <agent> --token-in usdt.tether-token.near --token-out wrap.near --amount-in 1000000`.
-   The run is logged to `agent/runs/` (gitignored, secrets redacted). Done means the
-   `settle_intent_swap` step logs `intent_swap_settled`, and `get_intents_balances` shows the
-   wNEAR.
-9. **Bring the output home** with `withdraw_from_intents`, then `withdraw_token`.
+The wasm's source metadata must also name that commit.
+
+These values come from the same build reproduced locally on 2026-11-11. It ran in the workflow's
+pinned image, `sourcescan/cargo-near:0.21.1-rust-1.96.0` by digest, with host networking for
+crate downloads, because Docker on that WSL host could not resolve crates.io. That exact binary
+passes `cargo test` (154 tests). If the workflow's artifact differs, the script refuses it: the
+build is then not reproducible, and that needs looking into, not overriding.
+
+```bash
+# 1. Setup: intents.intatto.near, its owner and agent, all paid by intatto.near.
+TREASURY_ID=eddyhamezz.near WASM=<artifact>/intatto.wasm scripts/mainnet-intents.sh          # dry run
+TREASURY_ID=eddyhamezz.near WASM=<artifact>/intatto.wasm scripts/mainnet-intents.sh --send   # type 'send intents.intatto.near'
+# 2. The swap: the agent sells 0.3 wNEAR for USDt through NEAR Intents.
+TREASURY_ID=eddyhamezz.near scripts/mainnet-intents.sh swap          # plans, fit-checks, and runs the agent's own --dry-run
+TREASURY_ID=eddyhamezz.near scripts/mainnet-intents.sh swap --send   # type 'send swap 0.3'
+```
+
+The setup stage creates three accounts:
+- `intents.intatto.near`, funded for its code storage;
+- `intents-owner.intatto.near`, which wraps 0.3 NEAR, moves it into the vault's intents account,
+  and allows only wNEAR → USDt at no less than 3.3 USDt per wNEAR;
+- `intents-agent.intatto.near`, with a function-call key limited to `agent_intent_swap` and
+  `settle_intent_swap` on the vault, 1 NEAR of gas allowance.
+
+It then checks the result:
+- the code hash, exchange, treasury and fee;
+- that the vault is bound to intents.near and v1.signer;
+- exactly one key on intents.near for the vault, equal to v1.signer's
+  `derived_public_key(intatto/intents.near/v1, intents.intatto.near, 1)`;
+- both policies, the four token registrations and the agent key;
+- that `vault.intatto.near` still runs `3z1W5Sfh…`.
+
+The swap stage first settles any intent swap left unsettled by an earlier run. It then runs
+`agent/intent-swap.mjs` with the agent's key file. It passes the agent the file path, never the
+key itself, through argv or the environment. Done means the
+check "the intent swap settled" passes.
+
+The dry run of 2026-11-11 (gas price 1e8, purchase price 1e9) planned 17 setup steps.
+`intatto.near` must hold **5.2678649686125 NEAR** at once and spends at most 5.2660449686125 NEAR;
+it held 1.5906550313875 NEAR, so it needed **3.677209937225 NEAR** more. Every other signer, and
+the agent key's allowance, fit what the plan gives them. Rerun the dry run before sending: it
+prints the exact figure for that moment.
 
 The Message Bus key (`~/.config/intatto/intents.env`, `NEAR_INTENTS_JWT`, mode 600) is a
 Partner Portal **Distribution Channel** key. The docs document Message Bus access for KYC'd
