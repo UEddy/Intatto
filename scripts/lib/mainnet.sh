@@ -31,6 +31,27 @@ USDT_DECIMALS=6
 POOL_ID=3879
 FEE_BPS=10
 
+# What scripts/mainnet-canary.sh and scripts/mainnet-smoke.sh give the accounts they create, defined
+# once so that scripts/mainnet-deploy.sh can fund ROOT_ACCOUNT for both (run them with
+# FUNDER=ROOT_ACCOUNT). Each script still takes its own overrides (FC_ALLOWANCE, SWAP_NEAR).
+CANARY_FC_ALLOWANCE_DEFAULT=0.25
+# The canary owner's balance beyond the bounty: its account storage, the vault record, policy and
+# lock storage (charged to the vault balance), and gas.
+CANARY_OWNER_EXTRA=0.1
+CANARY_AGENT_EXTRA=0.05
+SMOKE_SWAP_NEAR_DEFAULT=0.5
+SMOKE_FC_ALLOWANCE_DEFAULT=0.2
+# The smoke owner's balance beyond the swap: vault deposit (0.05), two token registrations, gas.
+SMOKE_OWNER_EXTRA=0.2
+SMOKE_AGENT_EXTRA=0.05
+CREATE_ACCOUNT_TGAS=30
+
+# Initial balances in yoctoNEAR, from NEAR amounts.
+canary_owner_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$CANARY_OWNER_EXTRA")"; }
+canary_agent_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$CANARY_AGENT_EXTRA")"; }
+smoke_owner_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$SMOKE_OWNER_EXTRA")"; }
+smoke_agent_yocto() { helper add "$(helper yocto "$1")" "$(helper yocto "$SMOKE_AGENT_EXTRA")"; }
+
 MODE=dry-run
 PHASE=estimate
 TOTAL_YOCTO=0
@@ -101,7 +122,8 @@ sign_args() {
 
 # tx <expect> <signer account> <signer spec> <deposit yocto> <prepaid TGas> <description> <near args...>
 # One transaction. <near args> are the near CLI command up to, not including, network-config.
-# <expect> is "success" or "reject:<reason>" (a rejected agent call).
+# <expect> is "success", "reject:<reason>" (a rejected agent call), or "try" (should succeed, but a
+# failure only warns).
 tx() {
   local expect=$1 signer=$2 spec=$3 deposit=$4 tgas=$5 what=$6
   shift 6
@@ -136,8 +158,13 @@ tx() {
   cp "$WORK/outcome.json" "$WORK/last-outcome.json"
   LAST_TX_HASH=$tx_hash
   echo "$tx_hash $what" >>"$TX_LOG"
-  helper outcome "$WORK/outcome.json" "$tx_hash" "$EXPLORER" "${VAULT_ID:-none}" "$expect" ||
-    die "unexpected outcome: $what"
+  local check_as=$expect
+  [ "$expect" != try ] || check_as=success
+  if ! helper outcome "$WORK/outcome.json" "$tx_hash" "$EXPLORER" "${VAULT_ID:-none}" "$check_as"; then
+    # "try": a best-effort step (an unregistration) whose failure changes nothing else.
+    [ "$expect" = try ] || die "unexpected outcome: $what"
+    echo "    WARNING:   $what failed; continuing (nothing else depends on it)"
+  fi
 }
 
 # skip <description>: a step that is already done, shown in both phases.
@@ -167,6 +194,8 @@ run_steps() {
     echo "   (the other signers pay from balances the plan gives them)"
     payer_check
   fi
+  # A script may print more about the plan here (mainnet-deploy.sh: what to send the deployer).
+  if [ "$(type -t after_estimate)" = function ]; then after_estimate; fi
   if [ "$MODE" != send ]; then
     echo
     echo "Dry run: nothing was signed or sent. Run again with --send to send these transactions."
@@ -228,7 +257,7 @@ create_account_step() {
     skip "create $id"
     return 0
   fi
-  tx success "$funder" "$(key_file_signer "$funder")" "$(helper yocto "$amount")" 30 \
+  tx success "$funder" "$(key_file_signer "$funder")" "$(helper yocto "$amount")" "$CREATE_ACCOUNT_TGAS" \
     "create $id with $amount NEAR (key saved to $KEYCHAIN)" \
     account create-account fund-myself "$id" "$amount NEAR" autogenerate-new-keypair \
     save-to-legacy-keychain sign-as "$funder"

@@ -31,12 +31,8 @@ CANARY_AGENT=${CANARY_AGENT:-}
 FUNDER=${FUNDER:-}
 BOUNTY=${BOUNTY:-}
 LOCK_UNTIL=${LOCK_UNTIL:-2026-11-20T12:00:00Z}
-FC_ALLOWANCE=${FC_ALLOWANCE:-0.25}
+FC_ALLOWANCE=${FC_ALLOWANCE:-$CANARY_FC_ALLOWANCE_DEFAULT}
 FC_METHODS=agent_spend,agent_swap
-# The owner's balance beyond the bounty: its account storage, the vault record, policy and lock
-# storage (charged to the vault balance), and gas.
-OWNER_EXTRA=0.1
-AGENT_EXTRA=0.05
 # The smallest max_spends_per_24h set_agent accepts (1 to 100); with every cap at zero it never
 # matters.
 POLICY='{"per_tx_cap":"0","daily_cap":"0","max_spends_per_24h":1,"allowlist":[],"tokens":[],"pools":[]}'
@@ -60,8 +56,8 @@ vault_of_owner() {
 }
 
 steps() {
-  create_account_step "$CANARY_OWNER" "$(helper near "$(helper add "$(helper yocto "$BOUNTY")" "$(helper yocto "$OWNER_EXTRA")")")" "$FUNDER"
-  create_account_step "$CANARY_AGENT" "$(helper near "$(helper add "$(helper yocto "$FC_ALLOWANCE")" "$(helper yocto "$AGENT_EXTRA")")")" "$FUNDER"
+  create_account_step "$CANARY_OWNER" "$(helper near "$(canary_owner_yocto "$BOUNTY")")" "$FUNDER"
+  create_account_step "$CANARY_AGENT" "$(helper near "$(canary_agent_yocto "$FC_ALLOWANCE")")" "$FUNDER"
   vault_of_owner
   if [ "$(helper json "$WORK/vault.json" 'v is None')" = true ]; then
     call_step success "$CANARY_OWNER" keychain "$VAULT_ID" deposit '{}' "$BOUNTY" 30 "deposit the $BOUNTY NEAR bounty"

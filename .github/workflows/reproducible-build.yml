@@ -1,0 +1,121 @@
+# Reproducible build of the vault contract at a given commit, run by hand (Actions → Reproducible
+# build → Run workflow). It checks out exactly that commit, runs `cargo near build
+# reproducible-wasm` inside the Docker image pinned by digest in that commit's Cargo.toml
+# ([package.metadata.near.reproducible_build]), prints the sha256 and the NEAR code hash, and
+# uploads intatto.wasm with its hashes as an artifact.
+#
+# The build embeds NEP-330 source metadata naming the commit (`link`, `source_code_snapshot`), so
+# every commit gives a different code hash even when the contract source is the same. The mainnet
+# build is commit 6cfa90e00890a510750d248b24dae0f86b5211be:
+#   code hash 3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J
+#   sha256    2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5
+# scripts/mainnet-deploy.sh refuses any wasm that does not match both. Download the artifact,
+# unzip it, and pass WASM=<path>/intatto.wasm.
+name: Reproducible build
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Full 40-character commit to build (6cfa90e00890a510750d248b24dae0f86b5211be is the mainnet build)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Release asset of cargo-near-v0.22.0 (the version CI uses) and its published sha256.
+  CARGO_NEAR_URL: https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-x86_64-unknown-linux-gnu.tar.gz
+  CARGO_NEAR_SHA256: 9429064e30a427e96523f539cb255f3688d2345e5000d7d4e4873a8247247d1a
+
+jobs:
+  build:
+    name: Reproducible build of ${{ inputs.commit }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check the input
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::commit must be a full 40-character lowercase hex sha"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Check that exactly that commit is checked out, unmodified
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          test -z "$(git status --porcelain)"
+          git log -1 --format='%H %ad %s' --date=iso
+
+      # The host cargo reads Cargo.toml; the build itself runs in the pinned container.
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+
+      - name: Install cargo-near 0.22.0 (checked against its published sha256)
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/cargo-near.tar.gz" "$CARGO_NEAR_URL"
+          echo "$CARGO_NEAR_SHA256  $RUNNER_TEMP/cargo-near.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/cargo-near.tar.gz" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/cargo-near-x86_64-unknown-linux-gnu/cargo-near" "$HOME/.cargo/bin/cargo-near"
+          cargo near --version
+
+      - name: Show the pinned build image
+        run: sed -n '/\[package.metadata.near.reproducible_build\]/,/^\[/p' Cargo.toml
+
+      - name: cargo near build reproducible-wasm
+        run: cargo near build reproducible-wasm
+
+      - name: Hashes
+        id: hashes
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          WASM=target/near/intatto.wasm
+          SHA256=$(sha256sum "$WASM" | cut -d' ' -f1)
+          # NEAR reports a contract's code hash as base58(sha256(wasm)).
+          CODE_HASH=$(python3 -I -c '
+          import hashlib, sys
+          alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+          digest = hashlib.sha256(open(sys.argv[1], "rb").read()).digest()
+          n, out = int.from_bytes(digest, "big"), ""
+          while n:
+              n, r = divmod(n, 58)
+              out = alphabet[r] + out
+          out = "1" * (len(digest) - len(digest.lstrip(b"\0"))) + out
+          print(out)' "$WASM")
+          BYTES=$(stat -c %s "$WASM")
+          # The embedded source metadata must name this commit (source_code_snapshot "...?rev=<commit>").
+          grep -q -a -F "?rev=$COMMIT" "$WASM" || { echo "::error::the wasm's source metadata does not name commit $COMMIT"; exit 1; }
+          mkdir -p out
+          cp "$WASM" out/intatto.wasm
+          {
+            echo "commit     $COMMIT"
+            echo "bytes      $BYTES"
+            echo "sha256     $SHA256"
+            echo "code hash  $CODE_HASH"
+          } | tee out/HASHES.txt
+          echo "$SHA256  intatto.wasm" > out/SHA256SUMS
+          {
+            echo "### intatto.wasm at \`$COMMIT\`"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| bytes | $BYTES |"
+            echo "| sha256 | \`$SHA256\` |"
+            echo "| NEAR code hash | \`$CODE_HASH\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: intatto-wasm-${{ inputs.commit }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 90

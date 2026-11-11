@@ -19,7 +19,11 @@
 # Environment:
 #   DEPLOYER            implicit account from `keygen` (key file in ~/.near-credentials/mainnet)
 #   VAULT_ID            the vault account, e.g. vault.intatto.near (required)
-#   ROOT_ACCOUNT        optional parent of VAULT_ID, created first
+#   ROOT_ACCOUNT        optional parent of VAULT_ID, created first; also funded for the canary
+#                       and smoke scripts (run them with FUNDER=ROOT_ACCOUNT)
+#   BOUNTY              the canary's bounty to fund ROOT_ACCOUNT for (unset or 0: no canary)
+#   SMOKE               1 (default) to fund ROOT_ACCOUNT for the smoke test, 0 not to
+#   SENDING             what you plan to send the deployer, checked against the total
 #   TREASURY_ID         the only account that can withdraw fees; fixed at init (required)
 #   WASM                the reproducible build (default target/near/intatto.wasm; pass it explicitly)
 #   EXPECTED_CODE_HASH  default: the reproducible build of commit 6cfa90e
@@ -43,6 +47,15 @@ VAULT_ID=${VAULT_ID:-}
 ROOT_ACCOUNT=${ROOT_ACCOUNT:-}
 TREASURY_ID=${TREASURY_ID:-}
 DEPLOYER=${DEPLOYER:-}
+# With ROOT_ACCOUNT: also fund it for scripts/mainnet-canary.sh (BOUNTY NEAR; unset or 0 for none)
+# and scripts/mainnet-smoke.sh (SMOKE=1, the default; 0 for none), both run with
+# FUNDER=ROOT_ACCOUNT. Uses those scripts' default allowances and swap size (lib/mainnet.sh).
+BOUNTY=${BOUNTY:-}
+SMOKE=${SMOKE:-1}
+# What you plan to send the deployer, checked against the plan's total (optional).
+SENDING=${SENDING:-}
+# Left on the deployer after it pays: its own account record and key, with room to spare.
+DEPLOYER_KEEP=0.01
 # Storage the vault's exchange account needs: the account plus its wNEAR and USDt slots
 # (storage_balance_bounds().min is 0.00102 NEAR; 0.01 NEAR leaves room, as on testnet).
 EXCHANGE_STORAGE=0.01
@@ -119,10 +132,35 @@ register_step() {
     "register $VAULT_ID on $contract ($deposit NEAR)"
 }
 
+# reserve_yocto: what mainnet-canary.sh and mainnet-smoke.sh will take from ROOT_ACCOUNT as their
+# FUNDER, at most: each account's initial balance plus the gas of the transaction creating it.
+reserve_yocto() {
+  local total=0 create_gas
+  create_gas=$(helper mul "$(helper mul "$CREATE_ACCOUNT_TGAS" 1000000000000)" "$GAS_PRICE")
+  if [ -n "$BOUNTY" ] && [ "$BOUNTY" != 0 ]; then
+    total=$(helper add "$total" "$(canary_owner_yocto "$BOUNTY")")
+    total=$(helper add "$total" "$(canary_agent_yocto "$CANARY_FC_ALLOWANCE_DEFAULT")")
+    total=$(helper add "$total" "$(helper mul 2 "$create_gas")")
+  fi
+  if [ "$SMOKE" = 1 ]; then
+    total=$(helper add "$total" "$(smoke_owner_yocto "$SMOKE_SWAP_NEAR_DEFAULT")")
+    total=$(helper add "$total" "$(smoke_agent_yocto "$SMOKE_FC_ALLOWANCE_DEFAULT")")
+    total=$(helper add "$total" "$(helper mul 2 "$create_gas")")
+  fi
+  echo "$total"
+}
+
 steps() {
   if [ -n "$ROOT_ACCOUNT" ]; then
-    local root_funding
-    root_funding=$(helper near "$(helper add "$(helper yocto "$VAULT_FUNDING")" "$(helper yocto 0.1)")")
+    local root_funding reserve
+    reserve=$(reserve_yocto)
+    # The vault's funding, 0.1 NEAR for ROOT_ACCOUNT's own record and the gas of creating the vault,
+    # and the canary and smoke reserve.
+    root_funding=$(helper near "$(helper add "$(helper add "$(helper yocto "$VAULT_FUNDING")" "$(helper yocto 0.1)")" "$reserve")")
+    if [ "$PHASE" = estimate ]; then
+      echo "    $ROOT_ACCOUNT funding: vault $VAULT_FUNDING + own 0.1 + reserve $(helper near "$reserve") NEAR" \
+        "(canary: ${BOUNTY:-0} NEAR bounty; smoke: $([ "$SMOKE" = 1 ] && echo "$SMOKE_SWAP_NEAR_DEFAULT NEAR swap" || echo none))"
+    fi
     create_account_step "$ROOT_ACCOUNT" "$root_funding" "$DEPLOYER"
     create_account_step "$VAULT_ID" "$VAULT_FUNDING" "$ROOT_ACCOUNT"
   else
@@ -143,6 +181,20 @@ steps() {
   register_step "$EXCHANGE" "$EXCHANGE_STORAGE" false
   register_step "$WNEAR" "$TOKEN_STORAGE" true
   register_step "$USDT" "$TOKEN_STORAGE" true
+}
+
+# After the plan's cost: how much to send the deployer, and whether SENDING covers it.
+after_estimate() {
+  local need
+  need=$(helper add "${SIGNER_COST[$PAYER]:-0}" "$(helper yocto "$DEPLOYER_KEEP")")
+  echo "== Send the deployer at least $(helper near "$need") NEAR (the plan's at most $(helper near "${SIGNER_COST[$PAYER]:-0}") + $DEPLOYER_KEEP left on it)"
+  if [ -n "$SENDING" ]; then
+    if helper ge "$(helper yocto "$SENDING")" "$need"; then
+      echo "   You plan to send $SENDING NEAR: enough, $(helper near "$(helper sub "$(helper yocto "$SENDING")" "$need")") NEAR to spare."
+    else
+      echo "   WARNING: you plan to send $SENDING NEAR, which is short by $(helper near "$(helper sub "$need" "$(helper yocto "$SENDING")")") NEAR."
+    fi
+  fi
 }
 
 run_steps "$VAULT_ID"

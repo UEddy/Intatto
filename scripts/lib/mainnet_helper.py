@@ -7,6 +7,7 @@ file or an argument. Exit status 0 means yes / PASS, anything else no / FAIL.
     units <amount> <decimals>          token units -> decimal amount
     add <yocto>...                     sum
     mul <a> <b>                        product (bash arithmetic overflows at 2^63)
+    sub <a> <b>                        a - b; fails if negative
     ge <a> <b>                         a >= b
     file-hash <path>                   base58 sha256, as NEAR reports code hashes
     file-size <path>                   bytes
@@ -106,6 +107,11 @@ def main(cmd, args):
         print(sum(int(a) for a in args))
     elif cmd == "mul":
         print(int(args[0]) * int(args[1]))
+    elif cmd == "sub":
+        a, b = int(args[0]), int(args[1])
+        if a < b:
+            sys.exit(f"sub: {a} < {b}, the result would be negative")
+        print(a - b)
     elif cmd == "ge":
         sys.exit(0 if int(args[0]) >= int(args[1]) else 1)
     elif cmd == "file-hash":

@@ -29,8 +29,8 @@ VAULT_ID=${VAULT_ID:-}
 SMOKE_OWNER=${SMOKE_OWNER:-}
 SMOKE_AGENT=${SMOKE_AGENT:-}
 FUNDER=${FUNDER:-}
-SWAP_NEAR=${SWAP_NEAR:-0.5}
-FC_ALLOWANCE=${FC_ALLOWANCE:-0.2}
+SWAP_NEAR=${SWAP_NEAR:-$SMOKE_SWAP_NEAR_DEFAULT}
+FC_ALLOWANCE=${FC_ALLOWANCE:-$SMOKE_FC_ALLOWANCE_DEFAULT}
 OTHER_POOL_ID=5470 # a wNEAR/USDt simple pool the policy does not list
 MAX_SLIPPAGE_BPS=100
 AGENT_SLIPPAGE_BPS=50
@@ -80,8 +80,8 @@ agent_swap_step() {
 }
 
 steps() {
-  create_account_step "$SMOKE_OWNER" "$(helper near "$(helper add "$SWAP" "$(helper yocto 0.2)")")" "$FUNDER"
-  create_account_step "$SMOKE_AGENT" "$(helper near "$(helper add "$(helper yocto "$FC_ALLOWANCE")" "$(helper yocto 0.05)")")" "$FUNDER"
+  create_account_step "$SMOKE_OWNER" "$(helper near "$(smoke_owner_yocto "$SWAP_NEAR")")" "$FUNDER"
+  create_account_step "$SMOKE_AGENT" "$(helper near "$(smoke_agent_yocto "$FC_ALLOWANCE")")" "$FUNDER"
   vault_of_owner
   if [ "$(helper json "$WORK/vault.json" 'v is None')" = true ]; then
     call_step success "$SMOKE_OWNER" keychain "$VAULT_ID" deposit '{}' "$VAULT_NEAR" 30 "deposit $VAULT_NEAR NEAR for the vault record's storage"
