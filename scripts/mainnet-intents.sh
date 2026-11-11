@@ -5,6 +5,7 @@
 #
 #   TREASURY_ID=... WASM=<workflow artifact>/intatto.wasm scripts/mainnet-intents.sh [setup] [--send]
 #   ... scripts/mainnet-intents.sh swap [--send]
+#   TREASURY_ID=... scripts/mainnet-intents.sh check          the checks only; signs nothing
 #
 # It deploys only one binary: the Reproducible build workflow's build of BUILD_COMMIT below, with
 # exactly the recorded sha256 and code hash. Any other wasm is refused, whatever the environment.
@@ -33,6 +34,9 @@
 #    on intents.near for the vault, equal to v1.signer's derived_public_key; the policies; the
 #    registrations; the agent key; and that vault.intatto.near still runs the canary's code.
 #
+# check. Only the checks of setup, plus what intents.near holds for the vault against what the
+#    owner is credited, and any intent swap left unsettled. Reads only; refuses --send.
+#
 # swap. AGENT sells SWAP_WNEAR wNEAR for USDt through NEAR Intents with agent/intent-swap.mjs:
 #    Message Bus quote, agent_intent_swap (the vault builds the token_diff, v1.signer signs it),
 #    publish_intent, get_status, settle_intent_swap. The dry run plans both agent transactions and
@@ -57,7 +61,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
 
 STAGE=setup
 case "${1:-}" in
-setup | swap)
+setup | swap | check)
   STAGE=$1
   shift
   ;;
@@ -183,16 +187,41 @@ intents_balance() {
   helper json "$WORK/ib.json" "next((int(b['balance']) for b in (v or []) if b['token_id'] == '$1'), 0)"
 }
 intents_config() { view "$INTENTS_VAULT" get_intents_config '{}' >"$WORK/config.json"; }
-ready_or_swapped() { helper ge "$1" "$SWAP" || [ "$2" != 0 ]; }
 agent_key_present() { [[ "$(fc_key_signer "$AGENT" "$INTENTS_VAULT" "$FC_METHODS")" != *"<function-call key"* ]]; }
-# unsettled_ids: this owner's intent swaps not settled yet (intent ids are spend ids, from 0).
+# next_spend_id: the vault's next spend id, from its root state ("STATE": the Borsh Contract, whose
+# layout this build keeps from master: vaults LookupMap prefix "v", next_spend_id u64, exchange_id).
+# 0 if the vault has no state yet.
+next_spend_id() {
+  rpc query "{\"request_type\":\"view_state\",\"finality\":\"final\",\"account_id\":\"$INTENTS_VAULT\",\"prefix_base64\":\"U1RBVEU=\"}" \
+    >"$WORK/root.json" || die "view_state $INTENTS_VAULT failed"
+  python3 -I - "$WORK/root.json" "$EXCHANGE" <<'PY' || die "could not read $INTENTS_VAULT's next spend id from its state"
+import base64, json, struct, sys
+response = json.load(open(sys.argv[1]))
+values = [v for v in (response.get("result") or {}).get("values", []) if base64.b64decode(v["key"]) == b"STATE"]
+if not values:
+    print(0)
+    sys.exit(0)
+raw = base64.b64decode(values[0]["value"])
+assert raw[:5] == b"\x01\x00\x00\x00v", "unexpected vaults prefix"
+(next_id,) = struct.unpack_from("<Q", raw, 5)
+(length,) = struct.unpack_from("<I", raw, 13)
+assert raw[17:17 + length].decode() == sys.argv[2], "unexpected exchange id"
+print(next_id)
+PY
+}
+# unsettled_ids: this owner's intent swaps not settled yet. Intent ids are spend ids, below
+# next_spend_id; settled swaps are deleted, so get_intent_swap returns null for them.
 unsettled_ids() {
-  local id
-  for id in $(seq 0 63); do
+  local id next
+  next=$(next_spend_id)
+  [ "$next" -le 500 ] || die "$INTENTS_VAULT has $next spend ids; scanning them all is not supported"
+  for ((id = 0; id < next; id++)); do
     view "$INTENTS_VAULT" get_intent_swap "{\"intent_id\":\"$id\"}" >"$WORK/swap-$id.json"
     [ "$(helper json "$WORK/swap-$id.json" "v is not None and v['owner_id'] == '$OWNER'")" != true ] || echo "$id"
   done
 }
+# mt_balance <token>: what intents.near holds of nep141:<token> for the vault's own account there.
+mt_balance() { view "$INTENTS" mt_balance_of "{\"account_id\":\"$INTENTS_VAULT\",\"token_id\":\"nep141:$1\"}" | tr -d '"'; }
 same_json() { [ "$(python3 -I -c 'import json,sys; print(json.loads(sys.argv[1]) == json.loads(sys.argv[2]))' "$1" "$2")" = True ]; }
 
 # ---- setup ---------------------------------------------------------------------------------------
@@ -384,11 +413,22 @@ setup_checks() {
       check "$who registered on $token" registered "$token" "$who"
     done
   done
-  local in_intents usdt
+  local in_intents usdt mt_wnear mt_usdt unsettled
   in_intents=$(intents_balance "$WNEAR")
   usdt=$(intents_balance "$USDT")
-  echo "    intents:   $OWNER holds $(helper near "$in_intents") wNEAR and $(helper units "$usdt" "$USDT_DECIMALS") USDt there; $INTENTS holds $(view "$INTENTS" mt_balance_of "{\"account_id\":\"$INTENTS_VAULT\",\"token_id\":\"nep141:$WNEAR\"}") wNEAR units for the vault"
-  check "$SWAP_WNEAR wNEAR ready in the vault's intents account (or already swapped)" ready_or_swapped "$in_intents" "$usdt"
+  mt_wnear=$(mt_balance "$WNEAR")
+  mt_usdt=$(mt_balance "$USDT")
+  unsettled=$(unsettled_ids | wc -w)
+  echo "    on $INTENTS: the vault's account holds $(helper near "$mt_wnear") wNEAR ($mt_wnear) and $(helper units "$mt_usdt" "$USDT_DECIMALS") USDt"
+  echo "    credited:  $OWNER $(helper near "$in_intents") wNEAR ($in_intents) and $(helper units "$usdt" "$USDT_DECIMALS") USDt; $unsettled intent swap(s) unsettled"
+  if [ "$usdt" = 0 ] && [ "$unsettled" = 0 ]; then
+    # Before any swap: exactly the owner's deposit, all of it the owner's.
+    check "$INTENTS holds exactly $SWAP_WNEAR wNEAR for $INTENTS_VAULT" [ "$mt_wnear" = "$SWAP" ]
+    check "all of it credited to $OWNER" [ "$in_intents" = "$SWAP" ]
+  else
+    check "the vault's wNEAR on $INTENTS covers $OWNER's credit and any reservation" helper ge "$mt_wnear" "$in_intents"
+    check "the vault's USDt on $INTENTS covers $OWNER's credit" helper ge "$mt_usdt" "$usdt"
+  fi
   check "agent function-call key: $FC_METHODS on $INTENTS_VAULT, in $KEYCHAIN/$AGENT" agent_key_present
   canary=$(account "$CANARY_VAULT")
   check "$CANARY_VAULT still runs the canary's $CANARY_CODE_HASH" [ "${canary#* }" = "$CANARY_CODE_HASH" ]
@@ -489,7 +529,17 @@ after_estimate() {
   fi
 }
 
-if [ "$STAGE" = setup ]; then
+# Only setup spends FUNDER's NEAR: the other stages neither report nor check it.
+if [ "$STAGE" != setup ]; then
+  PAYER=
+  unset -f after_estimate
+fi
+if [ "$STAGE" = check ]; then
+  [ "$MODE" = dry-run ] || die "check signs nothing; run it without --send"
+  echo
+  echo "== Checks (reads only; nothing is signed or sent)"
+  setup_checks
+elif [ "$STAGE" = setup ]; then
   setup_preflight
   steps() { setup_steps; }
   run_steps "$INTENTS_VAULT"
