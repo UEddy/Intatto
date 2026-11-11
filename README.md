@@ -350,7 +350,9 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   passkey sign-in, and NEAR Intents (mainnet only). [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh)
   deploys only the reproducible build of commit `6cfa90e` (code hash
   `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`, sha256
-  `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`); so far it has only been dry-run.
+  `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`), built in CI by the
+  [Reproducible build](.github/workflows/reproducible-build.yml) workflow in
+  [run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828); so far it has only been dry-run.
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and mainnet use reproducible builds.
 - The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev) (testnet).
