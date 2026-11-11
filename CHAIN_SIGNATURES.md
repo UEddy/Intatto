@@ -6,8 +6,92 @@ vault checks them against the owner's policy, then builds the NEP-413 `token_dif
 it signed, and settles it by asking `intents.near` whether the nonce was used. Master does not
 depend on any of this.
 
-Invariants 14 to 18 and the trust assumptions (MPC 11-of-16, intents.near governance) are in
-[THREAT_MODEL.md](THREAT_MODEL.md#chain-signatures-intents-path-branch-chain-signatures-not-deployed).
+Invariants 14 to 18 and the trust assumptions (MPC 11-of-16, intents.near governance, the vault
+account's full-access key) are in
+[THREAT_MODEL.md](THREAT_MODEL.md#chain-signatures-intents-path-branch-chain-signatures-live-on-mainnet).
+
+## Live on mainnet, 2026-11-11
+
+One real agent intent swap settled on mainnet: **0.3 wNEAR for 1.130742 USDt**. That is 3.769
+USDt per wNEAR, against the owner's floor of 3.3, which is a floor, not a target (see
+THREAT_MODEL.md).
+
+| | |
+|---|---|
+| Vault | `intents.intatto.near`, a new account. The canary's `vault.intatto.near` was not touched and still runs `3z1W5Sfh…`. |
+| Its code | commit `fc23fbc3abee3d503ecaeb5ced56d315374cdc20`, code hash `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC`, built by the Reproducible build workflow (run 43063218549) and checked by `scripts/mainnet-intents.sh` before deploy |
+| Bound to | `intents.near` (defuse 0.4.5) and `v1.signer` (3.18.0), via `setup_intents`, for good |
+| Its key on intents.near | `ed25519:5kYTxFESA4ciqDeFz5j5YqsY2sSC9WN2YN5hBNRpCgWi`, the only key, equal to `v1.signer` `derived_public_key(intatto/intents.near/v1, intents.intatto.near, 1)` |
+| Owner | `intents-owner.intatto.near`. Its policy moves no NEAR and allows selling at most 0.3 wNEAR per swap and per 24 h. Its intent policy allows wNEAR → USDt only, at ≥ 3.3 USDt per wNEAR. |
+| Agent | `intents-agent.intatto.near`, with a function-call key for `agent_intent_swap` and `settle_intent_swap` on the vault only (1 NEAR gas allowance) |
+| Funder, treasury | `intatto.near`; `eddyhamezz.near` |
+
+What happened, all at 17:46 UTC:
+- **:06** The agent took the Message Bus's quote (`4N12BfiR…`), then called `agent_intent_swap`
+  with exactly that pair and those amounts. In the same transaction, the vault:
+  - checked the policy and reserved the 0.3 wNEAR;
+  - built the NEP-413 payload, asked `v1.signer` to sign it, and checked the answer against its
+    registered key;
+  - logged the signed payload.
+- **:15** The relay submitted it with the solver's intent (`intentfolio-vault.near`).
+- **:18** The settle call found the nonce used and credited the owner.
+
+The signed message, byte for byte:
+
+```json
+{"signer_id":"intents.intatto.near","deadline":"2026-11-11T17:51:07Z","intents":[{"intent":"token_diff","diff":{"nep141:wrap.near":"-300000000000000000000000","nep141:usdt.tether-token.near":"1130742"}}]}
+```
+
+Its nonce (`Vij2xgAlKBKzAK7Wg2hE8BgAAAAAAAAAAHfXH7YqrrM=`) is a V1 versioned nonce:
+intents.near's salt `252812b3`, a nonce deadline 30 days after the intent's deadline, and swap
+id 0. The NEP-413 hash of that payload, recomputed independently, is
+`5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi`: the intent hash intents.near executed and the
+relay reported.
+
+intents.near's `token_diff` event for `intents.intatto.near` is exactly the signed diff: wNEAR
+`-300000000000000000000000`, USDt `+1130742`. The protocol fee (1 pip, 0.0000003 wNEAR) came out
+of the solver's side.
+
+Gas: `agent_intent_swap` burnt 21.83 TGas (0.002049 NEAR), `v1.signer`'s receipts included;
+`settle_intent_swap` burnt 8.59 TGas (0.000792 NEAR).
+
+`scripts/mainnet-intents.sh check` after the swap passes 18 of 18 checks. intents.near holds
+1.130742 USDt and 0 wNEAR for the vault, all of it credited to the owner, and nothing is
+unsettled.
+
+### Transactions
+
+Setup (`scripts/mainnet-intents.sh --send`, every step PASS):
+
+| # | Step | Transaction |
+|---|---|---|
+| 1 | create intents.intatto.near with 4.19254 NEAR | [`4hmHDx2t…`](https://explorer.near.org/transactions/4hmHDx2tRSUunBX7UJpt9muhrkr6UNAchdHTnho1FxhE) |
+| 2 | deploy HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC (commit fc23fbc) to intents.intatto.near with new({"exchange_id":"v2.ref-finance.near","treasury_id":"eddyhamezz.near"}) | [`6vcbjSzE…`](https://explorer.near.org/transactions/6vcbjSzEWVpamvF42zxSga4P66pgpEf1Zpe4CMVGRoxd) |
+| 3 | create intents-owner.intatto.near with 0.7 NEAR | [`FCCx7oEv…`](https://explorer.near.org/transactions/FCCx7oEve7iAFewh7k7ehy2wdS9bKNaTLT8DYS5CBJsK) |
+| 4 | create intents-agent.intatto.near with 0.35 NEAR | [`8NB17xx6…`](https://explorer.near.org/transactions/8NB17xx6tpsH32Ss4bdvMQpC9MijQa1bKEpozcU3JB5L) |
+| 5 | bind intents.intatto.near to intents.near and v1.signer (once, for good) | [`8q32sfmL…`](https://explorer.near.org/transactions/8q32sfmLfrpDuHkcJzNdFccHsU4Fwdzb78hCwNyP7stM) |
+| 6 | register the vault's key: v1.signer derived_public_key(intatto/intents.near/v1, intents.intatto.near, 1) on intents.near, then check it is the only key | [`7DTFZe3w…`](https://explorer.near.org/transactions/7DTFZe3w6y8DCEH5iCm4FCBKnKiPB4VSdaXHN5MHc6rp) |
+| 7 | register intents.intatto.near on wrap.near | [`6x24zkvU…`](https://explorer.near.org/transactions/6x24zkvUvoNzG5gC8DdHhQWLFv6HZiT8GdJ6jzMNSFU7) |
+| 8 | register intents.intatto.near on usdt.tether-token.near | [`FYYHdCJh…`](https://explorer.near.org/transactions/FYYHdCJhfi1kJYmyYZHx4LFGspLRrEMgiv3DCw9Yz3kU) |
+| 9 | intents-owner.intatto.near deposits 0.1 NEAR (its records' storage and the signer's deposits) | [`3DBv3D2D…`](https://explorer.near.org/transactions/3DBv3D2DAsiPZdRe9T6jcTKxX63HCc8pwHYnchD6joi9) |
+| 10 | set_agent(intents-agent.intatto.near): no NEAR out; sell at most 0.3 wNEAR per swap and per 24h | [`5n5BeBUW…`](https://explorer.near.org/transactions/5n5BeBUWaWugsPueYTgUfLazX4em1sxEUaC7KK38mWye) |
+| 11 | register intents-owner.intatto.near on wrap.near | [`5niT2C7B…`](https://explorer.near.org/transactions/5niT2C7BzNPhXHp7jAiU3dN56XYHZUoW4ccpfJXXvDF9) |
+| 12 | register intents-owner.intatto.near on usdt.tether-token.near | [`EMTdkPQg…`](https://explorer.near.org/transactions/EMTdkPQgf81XR2qhuRhTH9UmBh6c6qYWg1neiiPZqfHi) |
+| 13 | wrap 0.3 NEAR | [`Djx47Wxe…`](https://explorer.near.org/transactions/Djx47WxeNsGxLdZS867BaYd1PsTqHb7BvvhQtuiVrd6D) |
+| 14 | deposit 0.3 wNEAR into intents.intatto.near | [`9J2Ngcts…`](https://explorer.near.org/transactions/9J2NgctsL2oZxotVGqqrCrSJUW1CSdtXE3LFvQewjGux) |
+| 15 | move 0.3 wNEAR into the vault's account on intents.near (ft_transfer_call as the vault) | [`8h9pYfRe…`](https://explorer.near.org/transactions/8h9pYfReowgUk84gPPxF4oMfUbomypAEa9A3MNoazmDD) |
+| 16 | set_intent_policy: wNEAR -> USDt only, at no less than 3.3 USDt per wNEAR | [`97GtBwrJ…`](https://explorer.near.org/transactions/97GtBwrJVuLVN8kUedSQEFZEjZtDDQeHujjDofmA45pm) |
+| 17 | add a function-call key to intents-agent.intatto.near: agent_intent_swap,settle_intent_swap on intents.intatto.near, 1 NEAR allowance | [`97zDDovC…`](https://explorer.near.org/transactions/97zDDovC8wyBnvobdjxaY9LKQVhp2Hhxon2yEPqbwFP1) |
+
+Swap (`scripts/mainnet-intents.sh swap --send`, which ran `agent/intent-swap.mjs`):
+
+| Step | Signer | Transaction |
+|---|---|---|
+| `agent_intent_swap`: checks, reserve, MPC signature, signed payload logged | `intents-agent.intatto.near` | [`GbHfV9nq…`](https://explorer.near.org/transactions/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT) |
+| `execute_intents` with the solver's intent: intent `5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi` executed | the relay (`intents.near` relayer key) | [`EJY7oiU1…`](https://explorer.near.org/transactions/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
+| `settle_intent_swap`: nonce used, owner credited 1.130742 USDt (`intent_swap_settled`) | `intents-agent.intatto.near` | [`73aJTu55…`](https://explorer.near.org/transactions/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
+
+All 20 were checked over RPC on 2026-11-11: every one succeeded, with no failed receipt.
 
 ## Calls
 
@@ -115,8 +199,9 @@ prints the exact figure for that moment.
 
 The Message Bus key (`~/.config/intatto/intents.env`, `NEAR_INTENTS_JWT`, mode 600) is a
 Partner Portal **Distribution Channel** key. The docs document Message Bus access for KYC'd
-market-maker keys only. On 2026-11-11 the relay answered `quote`, `publish_intent` and
-`get_status` identically with this key, a malformed key and no key, so it did not enforce keys,
-and whether it accepts this key type is unverified. A real `publish_intent` has not been sent. If
+market-maker keys only. The live swap's `publish_intent`, sent with this key, returned OK and the
+relay settled it. But earlier probes found the relay answering `quote`, `publish_intent` and
+`get_status` identically with this key, a malformed key and no key. So whether the key was
+required, or recognized, is still unverified. If
 the relay starts enforcing keys and refuses this type, the fallback is a market-maker key from
 the Partner Portal.

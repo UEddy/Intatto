@@ -191,11 +191,18 @@ exchange beyond rejected calls.
   holds it can deploy any code to the vault account, including code that sends every owner's
   funds anywhere, or delete the account. See the limitations below.
 
-## Chain Signatures intents path (branch `chain-signatures`, not deployed)
+## Chain Signatures intents path (branch `chain-signatures`, live on mainnet)
 
-This section covers code that exists only on the `chain-signatures` branch. Nothing here is
-deployed, and master does not depend on it. It adds a second way for the agent to swap: through
-NEAR Intents, with the vault's intents account signed for by the MPC network.
+This section covers code that exists only on the `chain-signatures` branch; master does not depend
+on it. It adds a second way for the agent to swap: through NEAR Intents, with the vault's intents
+account signed for by the MPC network.
+
+Since 2026-11-11 it runs on mainnet as **`intents.intatto.near`**:
+- built from commit `fc23fbc`, code hash `HRkrMN8o…`, by the Reproducible build workflow;
+- a separate account from the canary's `vault.intatto.near`, which still runs `3z1W5Sfh…`;
+- one real agent intent swap has settled there: 0.3 wNEAR for 1.130742 USDt.
+
+Accounts, results and every transaction are in [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md).
 
 **What it adds.** The vault gets one account of its own on the Verifier, intents.near, under
 the vault's account id. All owners' intents balances sit in that one account, like their exchange
@@ -205,8 +212,10 @@ deposits on Rhea. Per-owner amounts are the vault's bookkeeping (`get_intents_ba
 - Intents are authenticated by signature. intents.near executes a NEP-413 payload for the vault's
   account only if it is signed by a key registered for that account. That key is the vault's
   Ed25519 key derived by v1.signer (domain 1) from the vault's account id and the fixed path
-  `intatto/intents.near/v1`. Only a `sign` request whose predecessor is the vault contract can
-  produce a signature under it.
+  `intatto/intents.near/v1`. Only a `sign` request whose predecessor is the vault's account can
+  produce a signature under it. That means a call made by the vault contract, or, while the
+  account keeps a full-access key, a transaction signed with that key (see the trust assumptions
+  below).
 
 ### Invariants (intents path)
 
@@ -333,10 +342,29 @@ All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 
       `token_diff` and collected from the counterparty, so the vault's own deltas stay exact.
   - `force_add_public_keys` exists in the source but only in the `far` build, not in
     intents.near's.
-- **The vault account's full-access key.** This is unchanged, but it reaches further now.
-  Whoever can deploy code to the vault account can make the vault ask v1.signer for any
-  signature under its derived key. That means any intent for the vault's intents account, as
-  well as everything listed above.
+- **`intents.intatto.near` still holds its own full-access key:**
+  `ed25519:B6J5YQj4MdZz2NYu91ybZnJyrhdKAgJGptZxUcQ4WrcA`, the account's only key (read on mainnet
+  2026-11-11, block 224,098,526). Whoever holds it acts as the vault account itself, outside every
+  check this contract makes, and needs no new code to do so:
+  - **It can sign intents outside the policy.** It can call `v1.signer`'s `sign` directly, as
+    `intents.intatto.near` with path `intatto/intents.near/v1`, and get any NEP-413 payload
+    signed under the vault's registered key. That is any intent for the vault's intents account:
+    a `transfer` or `ft_withdraw` of every owner's balance there, any `token_diff` at any price,
+    `add_public_key`. No pair allowlist, cap, floor, 24-hour window or 300 s deadline applies.
+    The vault's own checks (invariants 17 and 18) bind only intents the contract asks for.
+  - **It can move the vault's intents balances directly.** It can call intents.near as the vault
+    through predecessor auth: `ft_withdraw` to any receiver, `add_public_key`,
+    `disable_auth_by_predecessor_id`.
+  - **It can replace or delete the vault,** as on every deployment: deploy other code to the
+    vault account, or delete it.
+
+  The operator holds this key offline. It signed only the setup steps (deploy, `setup_intents`,
+  `register_intents_key`, the vault's two token registrations).
+
+  Removing it ("locking" the account) is the post-hackathon step. It makes the code permanent,
+  with the trade-offs under Known limitations: no upgrades, so no fixes and no recovery of stuck
+  amounts. Until then, every guarantee of the intents vault holds only as far as the operator's
+  custody of that key.
 
 ### Known limitations (intents path)
 
@@ -349,9 +377,19 @@ All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 
   nobody settles within 30 days after the deadline, settlement cannot tell executed from not
   executed. The reserved `amount_in` then stays reserved for good: it is never credited to
   anyone, but the owner cannot use it without a code upgrade.
-- **The price floor is the owner's, not the market's.** The vault checks `amount_out` against
-  the owner's floor only; nothing on chain compares it with a market price. A careless agent
-  can sell at the floor. The caps bound how much it can sell that way.
+- **The price floor is the owner's, not the market's: a floor, not a target.**
+  - The vault checks `amount_out` against the owner's floor only; nothing on chain compares it
+    with a market price. A careless or compromised agent can sell at the floor, and the caps
+    bound how much it can sell that way.
+  - On mainnet, `intents-owner.intatto.near`'s floor is **3.3 USDt per wNEAR**. The live swap got
+    3.769 because the agent took the best Message Bus quote, not because of the floor. The vault
+    would have accepted any `amount_out` down to 3.3 per wNEAR, about 12% below that day's
+    market.
+  - With the caps (0.3 wNEAR per swap and per 24 hours), a careless or compromised agent could
+    lose at most about 0.14 USDt a day at that market.
+  - The floor does not follow the market. If the price falls below 3.3, intent swaps are
+    refused. If it rises, the gap between market and floor, and so the possible loss per swap,
+    grows. The owner has to move the floor (`set_intent_policy`) for it to track anything.
 - **No protocol fee on intent swaps.** The 10 bps fee (invariant 12) applies to Rhea swaps only.
 - **Swaps can be signed but not filled.** Solver quotes come and go. On 2026-11-11 an early
   probe got no wNEAR to USDT quote at 0.01, 0.1 or 1 wNEAR, and a later one did (0.3 wNEAR for
@@ -364,10 +402,11 @@ All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 
   their amounts go back to those owners' intents balances.
 - **The Message Bus key's role is unverified.** The agent publishes signed intents through the
   Message Bus (`solver-relay-v2.chaindefuser.com`). Its documentation says it needs a Partner
-  Portal JWT, and documents access only for KYC'd market-maker keys. On 2026-11-11 the relay
-  answered `quote`, `publish_intent` and `get_status` identically with our Distribution Channel
-  key, a malformed key, and no key. So it did not enforce authentication, and whether our key
-  type is accepted is untested. Nothing on chain depends on it: the relay can only submit what
+  Portal JWT, and documents access only for KYC'd market-maker keys. The live swap's
+  `publish_intent`, sent with our Distribution Channel key, returned OK and the relay settled it.
+  But earlier probes found the relay answering `quote`, `publish_intent` and `get_status`
+  identically with that key, a malformed key and no key. So whether the key was required, or
+  recognized, is still unverified. Nothing on chain depends on it: the relay can only submit what
   the vault signed.
 
 ## Frontend

@@ -347,7 +347,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
 ## Status and known gaps
 
 - The contract has not been audited.
-- On branch `chain-signatures` only: agent swaps through NEAR Intents, signed by the MPC network; see [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md). Not deployed.
+- On branch `chain-signatures` only: agent swaps through NEAR Intents, signed by the MPC network. Live on mainnet as `intents.intatto.near` (a separate account from the canary's vault); one swap settled on 2026-11-11, 0.3 wNEAR for 1.130742 USDt. See [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md).
 - Not on mainnet yet. Planned before submission: the mainnet deployment (with the swap fee),
   passkey sign-in, and NEAR Intents (mainnet only). [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh)
   deploys only the reproducible build of commit `6cfa90e` (code hash
