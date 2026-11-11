@@ -51,6 +51,20 @@ Commands are near-cli-rs 0.30.1, as in the README.
 1. **Build and check.** Run `cargo near build reproducible-wasm` at the commit you deploy, then
    `INTATTO_TEST_WASM=target/near/intatto.wasm cargo test`. The code is ~400 KB, so the account
    needs about 4 NEAR staked for it, plus gas.
+
+   Commit `fc23fbc3abee3d503ecaeb5ced56d315374cdc20` has already been built in the pinned image
+   and passes `cargo test` (154 tests) as that exact binary:
+
+   | | |
+   |---|---|
+   | code hash | `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC` |
+   | sha256 | `f41283390697530c7a446a9509dd73269e34e12932a1e76e2ac2895ddf191bd7` |
+   | bytes | 394,254 |
+
+   The build ran the container command cargo-near 0.22.0 prints for `reproducible-wasm`
+   (`sourcescan/cargo-near:0.21.1-rust-1.96.0` by digest, with the NEP-330 variables naming that
+   commit), plus `--network host`, because Docker on this WSL host cannot resolve crates.io
+   otherwise. Its source metadata links to GitHub, so push the commit before anyone verifies it.
 2. **Deploy to a fresh account** with `new(exchange_id: "v2.ref-finance.near", treasury_id: "<treasury>")`.
 3. **Bind the Verifier and signer, as the vault account:**
    `near contract call-function as-transaction <vault> setup_intents json-args '{"intents_id":"intents.near","signer_id":"v1.signer"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <vault> network-config mainnet sign-with-keychain send`
