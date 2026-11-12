@@ -14,6 +14,9 @@
 //   NEAR_AI_API_KEY  for --llm; NEAR_AI_MODEL overrides the model
 // Secret values never reach stdout or the run log: every line goes through redact() (secrets.mjs).
 //   DEMO_VAULT, DEMO_OWNER, DEMO_AGENT, DEMO_MERCHANT, DEMO_ATTACKER, NEAR_RPC override the defaults
+//   DEMO_EXPLORER    transaction link prefix (mainnet: https://explorer.near.org/transactions/)
+//   DEMO_RUN_LOG     append this run's log to that file instead of a new one in agent/runs/
+//                    (scripts/mainnet-injection-demo.sh reads it back to check every transaction)
 //
 // Every step goes to stdout and to agent/runs/<timestamp>-<mode>.jsonl.
 import { mkdirSync, appendFileSync } from "node:fs";
@@ -36,7 +39,7 @@ if (!MODE) {
 
 const CONFIG = {
   rpc: env.NEAR_RPC ?? "https://test.rpc.fastnear.com",
-  explorer: "https://explorer.testnet.near.org/transactions/",
+  explorer: env.DEMO_EXPLORER ?? "https://explorer.testnet.near.org/transactions/",
   vault: env.DEMO_VAULT ?? "vault-v2.intatto-dev.testnet",
   owner: env.DEMO_OWNER ?? "demo-owner.intatto-dev.testnet",
   agent: env.DEMO_AGENT ?? "demo-agent.intatto-dev.testnet",
@@ -55,7 +58,7 @@ const YOCTO_PER_NEAR = 10n ** 24n;
 
 const runs = join(here, "runs");
 mkdirSync(runs, { recursive: true });
-const logFile = join(runs, `${new Date().toISOString().replace(/[:.]/g, "-")}-${MODE}${DRY_RUN ? "-dry" : ""}.jsonl`);
+const logFile = env.DEMO_RUN_LOG && !DRY_RUN ? env.DEMO_RUN_LOG : join(runs, `${new Date().toISOString().replace(/[:.]/g, "-")}-${MODE}${DRY_RUN ? "-dry" : ""}.jsonl`);
 let step = 0;
 function log(kind, data) {
   step += 1;
