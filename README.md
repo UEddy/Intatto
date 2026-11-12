@@ -537,7 +537,8 @@ per call.
 
 ## Tracks
 
-- **Unstoppable DeFi (`defi`).** A vault with a trading agent: swaps go through Rhea (Ref V1)
+- **Unstoppable DeFi (`defi`), primary.** A vault and a trading agent that settles through NEAR
+  Intents, with no custodian of the agent's key: swaps go through Rhea (Ref V1)
   under on-chain pool, pair, cap and slippage rules, the slippage checked against the exchange's
   own quote, with a 10 bps protocol fee fixed in the code (live on mainnet). Agent swaps also go
   through NEAR Intents, signed by the MPC network for the vault's own account and checked against
