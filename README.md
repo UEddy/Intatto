@@ -283,6 +283,8 @@ the model honest facts, or that it acted on the answer rather than ignoring it, 
 itself. The prompt and the reply stay with the agent, in its run log, and only their hashes are
 public. The vault's policy, not the model, is what limits the trade.
 
+Example, 2026-11-12: a live mainnet quote (3.529 USDt per wNEAR, floor 3.3), the model's decision 'trade', and its receipt: [verify on NEAR AI Cloud](https://cloud.near.ai/verify?model=deepseek-ai%2FDeepSeek-V4.1-Flash-1017#receipt=eyJjb21wbGV0aW9uSWQiOiJjaGF0Y21wbC0xNmJhODIwYy1hMDllLTQ2MmEtOWYxYi04MDdjNzI4MmU4OTAiLCJtb2RlbCI6ImRlZXBzZWVrLWFpL0RlZXBTZWVrLVY0LjEtRmxhc2gtMTAxNyIsInNpZ25hdHVyZUtpbmQiOiJwcm92aWRlcl90ZWUiLCJzaWduaW5nQWxnbyI6ImVjZHNhIiwic2lnbmluZ0FkZHJlc3MiOiIweGZlMDA3MTg5NTUwMGE5NzU1YzE4MDQ0OTQ4YWI0ZjRlMWE3ZjMzN2UiLCJzaWduZWRUZXh0IjoiZGVlcHNlZWstYWkvRGVlcFNlZWstVjQuMS1GbGFzaC0xMDE3OjJhZWNkZGZkZTQ1NzBkZmVjMDBmMjczNzA1OWZiYWU2YmJhMmUyZmI0NTc0NzYxNTJkNDE4ZDg0NzAwMjliYTA6NzllZmZkYmRiNGUyMDdlNjJkODczYjI0NDE3Y2NlNzE0MzE4ODdiOTA4YmMxYzk2YmY3ZTg3MWIwYTYxN2QxNiIsInNpZ25hdHVyZSI6IjB4MjQ2ZWQzOTM4NGZiYzI2MmVkZTQ5NTNkMjgwNzFjZjA4MjQzYzE5ODYxOGZjNWRjZTFjMDg2ZTI5MGNjZjI2ZDZkZTY5ZWE3MmU1ZjAwNzJmNmMxOGI2MTQ2ZGFjYzgwNTAxMjEyNTc5NmM1YTc0M2I0OTFkN2EzZWRlNmM4MjIxYiJ9). This one is a dry run: no trade was sent, so it isn't tied to a transaction.
+
 ## What the contract guarantees, and where it is checked
 
 The full list of invariants and trust assumptions is in [THREAT_MODEL.md](THREAT_MODEL.md).
