@@ -214,6 +214,7 @@ steps() {
   check_run compromised "$RUN_LOGS/mainnet-compromised.jsonl" >/dev/null
   local done_compromised=$RUN_PAID
   check_run llm "$RUN_LOGS/mainnet-llm.jsonl" >/dev/null
+  RUN_PAID_LLM=$RUN_PAID
   DEMO_DONE=no
   [ "$done_compromised" = paid ] && [ "$RUN_PAID" = paid ] && DEMO_DONE=yes
 
@@ -229,18 +230,22 @@ steps() {
     SPEND_KEY=$(fc_key_signer "$AGENT" "$VAULT_ID" agent_spend)
   fi
 
-  # 3. Enough NEAR in the vault: both invoices, plus at most 1,000 bytes of storage (the allowlist
-  #    entry and two spend records), charged to the vault balance.
-  local need have
+  # 3. Enough NEAR in the vault for the invoices still to be paid (one per run not yet verified),
+  #    plus at most 1,000 bytes of storage (the allowlist entry and the spend records), charged to
+  #    the vault balance. Once both runs are done, nothing.
+  local need have remaining=0
+  [ "$done_compromised" = paid ] || remaining=$((remaining + 1))
+  [ "$RUN_PAID_LLM" = paid ] || remaining=$((remaining + 1))
   vault_of_owner
-  need=$(helper add "$DAILY" "$(helper mul 1000 "$BYTE_COST")")
+  need=0
+  [ "$remaining" = 0 ] || need=$(helper add "$(helper mul "$remaining" "$INVOICE")" "$(helper mul 1000 "$BYTE_COST")")
   have=$(helper json "$WORK/vault.json" 'v["balance"]')
   if helper ge "$have" "$need"; then
     STEP_NO=$((STEP_NO + 1))
-    local note="no deposit needed: the vault holds $(helper near "$have") NEAR; both invoices and their storage need at most $(helper near "$need")"
+    local note="no deposit needed: the vault holds $(helper near "$have") NEAR; the $remaining invoice(s) still to pay and their storage need at most $(helper near "$need")"
     if [ "$PHASE" = estimate ]; then printf '  %2d. %s\n' "$STEP_NO" "$note"; else echo "── $STEP_NO. $note"; fi
   else
-    call_step success "$OWNER" keychain "$VAULT_ID" deposit '{}' "$(helper near "$(helper sub "$need" "$have")")" 30 "deposit for the two invoices"
+    call_step success "$OWNER" keychain "$VAULT_ID" deposit '{}' "$(helper near "$(helper sub "$need" "$have")")" 30 "deposit for the $remaining invoice(s) still to pay"
   fi
 
   # 4. The two runs.
@@ -272,6 +277,7 @@ steps() {
   fi
 }
 DEMO_DONE=no
+RUN_PAID_LLM=unpaid
 hash_of() { printf '%s' "${1#* }"; }
 SPEND_KEY="file:$KEYCHAIN/$AGENT/<function-call key, created above>.json"
 
