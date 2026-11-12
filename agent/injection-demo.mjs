@@ -80,6 +80,8 @@ function log(kind, data) {
  * a given nonce once.
  */
 async function rpc(method, params) {
+  // Every error names the RPC host, so a blocked or unreachable host is obvious (NEAR_RPC overrides it).
+  const where = `${method} on ${new URL(CONFIG.rpc).host}`;
   let lastError;
   for (let attempt = 0; attempt < 5; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
@@ -91,15 +93,15 @@ async function rpc(method, params) {
         body: JSON.stringify({ jsonrpc: "2.0", id: "demo", method, params }),
       });
     } catch (err) {
-      lastError = new Error(`${method}: ${err.cause?.code ?? err.message}`);
+      lastError = new Error(`${where}: ${err.cause?.code ?? err.message} (set NEAR_RPC to use another RPC)`);
       continue;
     }
     if (response.status === 429 || response.status >= 500) {
-      lastError = new Error(`${method}: HTTP ${response.status}`);
+      lastError = new Error(`${where}: HTTP ${response.status}`);
       continue;
     }
     const body = await response.json();
-    if (body.error) throw new Error(`${method}: ${JSON.stringify(body.error)}`);
+    if (body.error) throw new Error(`${where}: ${JSON.stringify(body.error)}`);
     return body.result;
   }
   throw lastError;

@@ -118,6 +118,39 @@ pub fn amounts(vault: &Vault) -> Vec<NearToken> {
         .collect()
 }
 
+/// The open-file limit `neard` sets for itself at start; it exits if the hard limit is lower.
+pub const NEARD_OPEN_FILES: u64 = 65535;
+
+/// Panics with a readable message, before starting `neard`, when the process's hard open-file limit
+/// is below what `neard` needs. Without this every sandbox test fails with neard's own
+/// "couldn't set the file descriptor limit". Linux only: elsewhere, and when `/proc/self/limits`
+/// cannot be read, it lets `neard` decide.
+pub fn check_open_file_limit() {
+    let Ok(limits) = std::fs::read_to_string("/proc/self/limits") else {
+        return;
+    };
+    // "Max open files            1024                 65535                files"
+    let Some(hard) = limits
+        .lines()
+        .find(|line| line.starts_with("Max open files"))
+        .and_then(|line| line.split_whitespace().nth(4))
+    else {
+        return;
+    };
+    // "unlimited" does not parse, and is high enough.
+    if let Ok(hard) = hard.parse::<u64>()
+        && hard < NEARD_OPEN_FILES
+    {
+        panic!(
+            "the sandbox tests start neard, which needs an open-file limit of {NEARD_OPEN_FILES}, \
+             but this process's hard limit is {hard}. Run `ulimit -n {NEARD_OPEN_FILES}` before \
+             `cargo test`; if that is refused, raise the hard limit as root, or start the \
+             container with `--ulimit nofile={NEARD_OPEN_FILES}:{NEARD_OPEN_FILES}`. The unit \
+             tests (`cargo test --lib`) do not need it."
+        );
+    }
+}
+
 /// A fresh sandbox with the vault deployed and four funded accounts.
 pub struct TestEnv {
     pub sandbox: near_sandbox::Sandbox,
@@ -141,6 +174,7 @@ impl TestEnv {
 
     /// `new()`, with `wasm` as the vault contract instead of this build.
     pub async fn with_code(wasm: Vec<u8>) -> TestResult<Self> {
+        check_open_file_limit();
         let slot = SANDBOX_SLOTS.acquire().await?;
         let sandbox = near_sandbox::Sandbox::start_sandbox().await?;
         let network = NetworkConfig::from_rpc_url("sandbox", sandbox.rpc_addr.parse()?);

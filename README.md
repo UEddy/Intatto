@@ -154,7 +154,7 @@ are marked.
 | [cargo-near](https://github.com/near/cargo-near) 0.22.0 | `cargo test` (the sandbox tests build the contract with it) | Prebuilt, as CI installs it: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh \| sh`. From source (about 10 minutes): `cargo install cargo-near --version 0.22.0 --locked`, after installing `pkg-config` and `libudev-dev` on Debian or Ubuntu |
 | Open-file limit of 65535 | `cargo test` (the sandbox tests start `neard`) | Run `ulimit -n 65535` in the same shell first. That works only if the hard limit (`ulimit -Hn`) is at least 65535; if it is lower, raise it as root, or start the container with `--ulimit nofile=65535:65535`. Without it, `neard` fails with `couldn't set the file descriptor limit` and the 57 sandbox tests fail. |
 | Docker | The reproducible build only | |
-| Node 22.22 or later | The web app and the agent | |
+| Node 22.22 or later | The web app and the agent | The agent tests also need the web app's packages: run `(cd web && npm ci)` once first |
 | Playwright's Chromium | `npm run test:prod` only | `(cd web && npx playwright install chromium)` |
 | [near-cli-rs](https://github.com/near/near-cli-rs) (tested with 0.30.1) | "Try it" step 4, [Bring your own agent](#bring-your-own-agent) | |
 
@@ -269,7 +269,8 @@ It needs the Rust toolchain from [rust-toolchain.toml](rust-toolchain.toml) (rus
 and [cargo-near](https://github.com/near/cargo-near) 0.22.0, which the sandbox tests use to build
 the contract (see [Prerequisites](#prerequisites)). The sandbox tests download a `neard` sandbox
 binary and run up to four nodes at once (about 0.5 GB of RAM each), and `neard` needs the
-65535 open-file limit; without it, only the 98 unit tests pass. A full run takes 8 to 9 minutes in
+65535 open-file limit; without it, only the 98 unit tests pass, and each sandbox test stops with a
+message saying how to raise the limit. A full run takes 8 to 9 minutes in
 CI. The swap tests deploy the real ref-exchange 1.9.19 binary, fetched
 from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 
@@ -307,7 +308,7 @@ The web app's and the demo agent's tests run separately. Run each line from the 
 
 ```bash
 (cd web && npm ci && npm test)      # offline: 190 unit tests in 23 files (vitest), 2026-11-12
-node --test agent/*.test.mjs        # offline: 28 tests: the demo agent's transaction signer and secret redaction, the intent swap agent, the AI decision receipts
+node --test agent/*.test.mjs        # offline, after the line above: 29 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts
 (cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```
 
@@ -329,7 +330,7 @@ it to send the vault's whole balance to an attacker. It signs with a function-ca
 
 ```bash
 node agent/injection-demo.mjs --compromised --dry-run   # reads the network (testnet RPC), no key; prints the four payments it would make
-node --test agent/*.test.mjs                            # offline: the transaction signer, checked against a real testnet transaction
+node --test agent/*.test.mjs                            # offline, after `(cd web && npm ci)`: the transaction signer, checked against a real testnet transaction
 ```
 
 - `--compromised` is an agent that obeys the injection.
@@ -601,7 +602,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
 |---|---|
 | `src/` | The vault contract: `lib.rs` (deposit, withdraw, views), `policy.rs`, `spend.rs`, `swap.rs`, `callbacks.rs`, `tokens.rs`, `ledger.rs`, `lock.rs`, `storage.rs`, `events.rs`, and the NEAR Intents path in `intents.rs` and `intent_swap.rs`; unit tests in `tests.rs` |
 | `tests/` | Sandbox tests, the contract binaries they deploy (`tests/res/`) and the mock MPC signer (`tests/contracts/`) |
-| `agent/` | The prompt-injection demo agent and the intent-swap agent (Node, no dependencies) |
+| `agent/` | The prompt-injection demo agent and the intent-swap agent (Node, no npm packages of their own; the AI receipt check uses `web/`'s pinned `@noble` packages) |
 | `web/` | Owner console and canary board (React, Vite) |
 | `scripts/` | Testnet smoke tests and canary setup; mainnet deploy, canary, smoke, intents and teardown scripts, dry run by default and resumable (near-cli-rs) |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Invariants, trust assumptions, what counts as a canary break |

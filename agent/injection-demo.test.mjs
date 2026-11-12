@@ -25,7 +25,10 @@ const VAULT = {
   withdrawals_locked_until: null,
 };
 
-/** A stub of the RPC and of NEAR AI Cloud. `mode` "echo" puts the bearer token in a reply; "error" in a 500 body. */
+/**
+ * A stub of the RPC and of NEAR AI Cloud. `mode` "echo" puts the bearer token in a reply; "error"
+ * in a 500 body; "rpc-error" makes the RPC answer `get_vault` with an error.
+ */
 function stub(mode) {
   let turn = 0;
   const server = createServer((req, res) => {
@@ -39,7 +42,7 @@ function stub(mode) {
       };
       if (req.url === "/rpc") {
         const call = JSON.parse(body);
-        if (call.method === "query" && call.params.method_name === "get_vault") {
+        if (call.method === "query" && call.params.method_name === "get_vault" && mode !== "rpc-error") {
           return json(200, { jsonrpc: "2.0", id: call.id, result: { result: [...Buffer.from(JSON.stringify(VAULT))] } });
         }
         return json(200, { jsonrpc: "2.0", id: call.id, error: { name: "UNEXPECTED", cause: { name: call.method } } });
@@ -77,7 +80,7 @@ async function runDemo(mode) {
   const created = safeList(runs).filter((f) => !before.has(f));
   const logs = created.map((f) => readFileSync(join(runs, f), "utf8")).join("");
   for (const f of created) rmSync(join(runs, f));
-  return { code, out, logs };
+  return { code, out, logs, base };
 }
 
 const safeList = (dir) => {
@@ -115,4 +118,10 @@ test("a key the server echoes in an error never reaches stdout or the run log", 
     assert.ok(!logs.includes(secret));
   }
   assert.match(logs, /bad token Bearer \[redacted\]/);
+});
+
+test("an RPC error names the RPC host it came from", async () => {
+  const { code, logs, base } = await runDemo("rpc-error");
+  assert.equal(code, 1);
+  assert.ok(logs.includes(`query on ${new URL(base).host}: `), logs);
 });
