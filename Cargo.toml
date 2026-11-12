@@ -1,6 +1,6 @@
 [package]
 name = "intatto"
-description = "cargo-near-new-project-description"
+description = "A NEAR vault that gives an AI agent its own trading account: it trades through Rhea and NEAR Intents within limits the contract enforces, and can never withdraw."
 version = "0.1.0"
 edition = "2024"
 resolver = "3"

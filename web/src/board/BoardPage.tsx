@@ -145,7 +145,8 @@ export function BoardPage() {
             <em>{state.seal === "broken" ? "The seal is broken." : "The money is still here."}</em>
           </h1>
           <p className="hero-what">
-            Intatto is a NEAR vault your AI agent trades from, within limits the contract enforces. To prove it, we published this vault's agent key.
+            Intatto is a NEAR vault that gives an AI agent its own trading account: the agent trades through Rhea and NEAR Intents within limits the contract enforces, and can never withdraw.{" "}
+            {config.networkId === "mainnet" ? "To prove it, we published the agent's key with a real NEAR bounty on it." : "To prove it, we published the agent's key with a bounty on it, here in testnet NEAR."}
           </p>
           <p className="lede">
             Anyone can sign with that key. The vault contract's policy lets it move nothing, and this page shows, live from the chain, whether that is still true.

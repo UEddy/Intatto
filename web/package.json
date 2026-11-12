@@ -2,6 +2,7 @@
   "name": "intatto-web",
   "private": true,
   "version": "0.1.0",
+  "description": "Intatto's web app: the live bounty board and owner console. A NEAR vault that gives an AI agent its own trading account: it trades through Rhea and NEAR Intents within limits the contract enforces, and can never withdraw.",
   "type": "module",
   "engines": {
     "node": ">=22.22.0"

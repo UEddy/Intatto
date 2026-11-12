@@ -12,7 +12,11 @@ test("link preview tags are in the served HTML, with absolute URLs and a 1200x63
   const tag = (attr: "property" | "name", key: string) => new RegExp(`<meta ${attr}="${key.replace(/[:.]/g, "\\$&")}" content="([^"]+)"`).exec(html)?.[1] ?? null;
 
   expect(tag("property", "og:title")).toBe("Intatto: the agent can trade. It can't withdraw.");
-  expect(tag("property", "og:description")).toMatch(/^A NEAR vault your AI agent trades from, within limits the contract enforces\./);
+  const description = tag("property", "og:description");
+  expect(description).toBe("A NEAR vault where your AI agent trades within limits the contract enforces and can never withdraw. Its key is public: take the money if you can.");
+  expect(description!.length, "under 160 characters").toBeLessThan(160);
+  expect(tag("name", "description")).toBe(description);
+  expect(tag("name", "twitter:description")).toBe(description);
   expect(tag("property", "og:url")).toBe(SITE);
   expect(tag("property", "og:image")).toBe(IMAGE);
   expect(tag("property", "og:image:width")).toBe("1200");

@@ -1,10 +1,11 @@
 # Intatto canaries
 
-Each canary is a vault whose agent key is public. Anyone may sign with it and try to take the
-money. The vault contract's policy says that key can move nothing; the canary tests whether that
-holds.
+Intatto is a NEAR vault that gives an AI agent its own trading account: the agent trades within
+limits the contract enforces, and can never withdraw. Each canary is such a vault with its agent's
+key published. Anyone may sign with it and try to take the money. The vault contract's policy
+says that key can move nothing; the canary tests whether that holds.
 
-Live status: the break-price board at <https://intatto.pages.dev/?network=mainnet> (for the
+Live status: the live bounty board at <https://intatto.pages.dev/?network=mainnet> (for the
 testnet canary, use `?network=testnet` instead). Full rules and context:
 [THREAT_MODEL.md](THREAT_MODEL.md), section "What counts as a canary break".
 

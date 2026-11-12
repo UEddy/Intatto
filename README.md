@@ -4,10 +4,12 @@
 
 Author: [UEddy](https://github.com/UEddy)
 
+**Intatto is a NEAR vault that gives an AI agent its own trading account: the agent trades through Rhea and NEAR Intents within limits the contract enforces, and can never withdraw.**
+
 **The agent's key is public. Take the money if you can.**
 
-The canary is an AI agent's vault on NEAR mainnet holding 0.99761 NEAR, and the agent's signing
-key is published in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
+To prove it, we published the agent's key with a real NEAR bounty on it: the canary is an AI
+agent's vault on NEAR mainnet holding 0.99761 NEAR, and its key is in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
 contract, and the contract refuses every one. Nothing has left the canary since it was set up on
 2026-11-11 (balance still 997610000000000000000000 yoctoNEAR at block 224,114,110, and nobody has
