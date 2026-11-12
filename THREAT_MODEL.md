@@ -634,8 +634,8 @@ Limits of this measurement:
 
 ## Passkey sign-in (mainnet only, experimental)
 
-Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract. The console labels the passkey
-path **"Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract."**, in
+Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only. The console labels the passkey
+path **"Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only."**, in
 a banner and in the wallet menu, and recommends a withdrawal lock. Code: `web/src/wallet/passkey.ts`.
 
 How it works: a passkey account is a deterministic `0s…` account (NEP-616). It runs a WebAuthn

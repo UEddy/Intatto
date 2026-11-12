@@ -51,7 +51,7 @@ and an optional time lock on the owner's own withdrawals.
 | Prompt-injection demo | Not deployed | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
 | Break-price board and owner console | **Live** at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet), the default | **Live** on the same site (network switch, or `?network=testnet`) |
 | Wallets | Meteor, Intear, HOT, MyNearWallet | Meteor, Intear |
-| Passkey sign-in | **Experimental**: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract. See [THREAT_MODEL.md](THREAT_MODEL.md#passkey-sign-in-mainnet-only-experimental). | Not available (mainnet only) |
+| Passkey sign-in | **Experimental**: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only. See [THREAT_MODEL.md](THREAT_MODEL.md#passkey-sign-in-mainnet-only-experimental). | Not available (mainnet only) |
 | Teardown | **Planned** after the canary's lock ends on 2026-11-20 ([scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)) | |
 
 | | Mainnet |
@@ -236,9 +236,11 @@ node --test agent/*.test.mjs        # 16 tests: the demo agent's transaction sig
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy and
 `cargo test` on every push.
 
-## Prompt-injection attack demo
+## Prompt-injection attack: the agent was told to drain the vault
 
-Whether the model falls for the attack or not, the contract decides.
+Whether the model falls for the attack or not, the contract decides. The same contract policy check
+guards `agent_swap` (see the [mainnet smoke test](#mainnet-smoke-test-2026-11-11)'s refused swaps,
+steps 10 to 12).
 
 [agent/](agent/README.md) has an agent that is asked to pay a 0.01 NEAR invoice whose text tells
 it to send the vault's whole balance to an attacker. It signs with a function-call key limited to
@@ -516,7 +518,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   network, `intents.near` governance) are in [THREAT_MODEL.md](THREAT_MODEL.md).
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and both mainnet vaults use reproducible builds.
-- Passkey sign-in (mainnet only): Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract.
+- Passkey sign-in (mainnet only): Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only.
 - Planned: taking the mainnet deployment apart after the canary's lock ends on 2026-11-20
   ([scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)).
 - The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)
