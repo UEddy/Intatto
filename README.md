@@ -144,18 +144,19 @@ transactions, the signed payload and the checks: [CHAIN_SIGNATURES.md](CHAIN_SIG
 ## Prerequisites
 
 Each step below says which of these it needs. Nothing here needs a key or a NEAR account except
-"Try it" step 4, which is marked.
+"Try it" step 4 and the key-creation command in [Bring your own agent](#bring-your-own-agent), which
+are marked.
 
 | Tool | Needed for | Notes |
 |---|---|---|
 | `curl`, `python3` | "Try it" steps 1 to 3 | Read-only calls to the mainnet RPC |
 | Rust, from [rust-toolchain.toml](rust-toolchain.toml) | `cargo test` | rustup installs the pinned toolchain |
-| [cargo-near](https://github.com/near/cargo-near) 0.22.0 | `cargo test` (the sandbox tests build the contract with it) | `cargo install cargo-near --version 0.22.0 --locked`; on Debian or Ubuntu install `pkg-config` and `libudev-dev` first |
-| Open-file limit of 65535 | `cargo test` (the sandbox tests start `neard`) | Run `ulimit -n 65535` in the same shell first; without it, `neard` fails to start and the sandbox tests fail |
+| [cargo-near](https://github.com/near/cargo-near) 0.22.0 | `cargo test` (the sandbox tests build the contract with it) | Prebuilt, as CI installs it: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh \| sh`. From source (about 10 minutes): `cargo install cargo-near --version 0.22.0 --locked`, after installing `pkg-config` and `libudev-dev` on Debian or Ubuntu |
+| Open-file limit of 65535 | `cargo test` (the sandbox tests start `neard`) | Run `ulimit -n 65535` in the same shell first. That works only if the hard limit (`ulimit -Hn`) is at least 65535; if it is lower, raise it as root, or start the container with `--ulimit nofile=65535:65535`. Without it, `neard` fails with `couldn't set the file descriptor limit` and the 57 sandbox tests fail. |
 | Docker | The reproducible build only | |
 | Node 22.22 or later | The web app and the agent | |
 | Playwright's Chromium | `npm run test:prod` only | `(cd web && npx playwright install chromium)` |
-| [near-cli-rs](https://github.com/near/near-cli-rs) (tested with 0.30.1) | "Try it" step 4 | |
+| [near-cli-rs](https://github.com/near/near-cli-rs) (tested with 0.30.1) | "Try it" step 4, [Bring your own agent](#bring-your-own-agent) | |
 
 Every command block below is labelled: **offline**, **reads the network** (no key), or **signs a
 mainnet transaction**.
@@ -186,7 +187,9 @@ curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d 
 You should see `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`. That is the base58 form of the
 wasm's sha256, hex `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`.
 
-**2b. Rebuild it yourself.** Offline once the build image is pulled; needs Docker and cargo-near.
+**2b. Rebuild it yourself.** Reads the network (no key): git fetches the tag from GitHub, and
+Docker pulls the pinned build image and `hello-world:latest` (cargo-near's Docker check) from
+Docker Hub. Needs Docker and cargo-near.
 
 ```bash
 git fetch --tags && git checkout canary-build          # commit 6cfa90e
@@ -280,13 +283,24 @@ from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 | NEAR Intents path: mock MPC signer, vendored intents.near 0.4.5, upgrade from the canary's 3z1W5 build | [tests/chain_signatures.rs](tests/chain_signatures.rs) | 21 |
 | **Total** (`cargo test -- --list`, 2026-11-12) | | **155** |
 
-The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. To run
-them against the mainnet binary (1.9.21, `v2.ref-finance.near`), and against the reproducible build
-instead of a fresh local build:
+The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. This runs
+them against the mainnet binary (1.9.21, `v2.ref-finance.near`) instead. Offline apart from
+downloads; no key.
 
 ```bash
+ulimit -n 65535
 INTATTO_TEST_EXCHANGE=1.9.21 cargo test
+```
+
+To run the canary commit's own tests against its reproducible build instead of a fresh local
+build, first make `target/near/intatto.wasm` with step 2b. Run them at that commit: the build has
+no NEAR Intents code, so master's `tests/chain_signatures.rs` cannot run on it. Offline; no key.
+
+```bash
+git checkout canary-build
+ulimit -n 65535
 INTATTO_TEST_WASM=target/near/intatto.wasm INTATTO_TEST_WASM_SHA256=3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J cargo test
+git checkout master
 ```
 
 The web app's and the demo agent's tests run separately. Run each line from the repository root:
@@ -442,7 +456,7 @@ vault, within the owner's policy. The owner registers the agent's account with
 | `settle_intent_swap(intent_id)` | Intents build only: credits the owner once intents.near has used the intent's nonce. Anyone may call it. |
 
 Create the key on the agent's account (near-cli-rs 0.30.1), scoped to the vault and the methods it
-needs, with a gas allowance:
+needs, with a gas allowance. **Signs a mainnet transaction**, with the agent account's own key:
 
 ```bash
 near account add-key <agent-account> grant-function-call-access --allowance '1 NEAR' \
