@@ -1094,3 +1094,21 @@
     gap: 24px;
   }
 }
+
+/* the trade's NEAR AI decision: a plain external link, like the transaction beside it */
+.ai-verify {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ai-refused {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--wax);
+  font-size: 13px;
+}

@@ -74,6 +74,10 @@ for (const v of VIEWS) {
     await expect(swap.locator(".swap-step .badge", { hasText: "Verified" })).toHaveCount(3);
     for (const hash of [SIGN_TX, EXECUTE_TX, SETTLE_TX]) await expect(swap.locator(`a.txlink[href$="${hash}"]`)).toHaveCount(1);
     await expect(swap.locator(".swap-step").nth(1)).toContainText("Intent 5aGuMW…wmUi executed");
+    // That swap was made before the agent asked NEAR AI: no receipt in its arguments, so no link
+    // (and no broken one, and no refusal).
+    await expect(swap.getByRole("link", { name: /Verify AI decision/ })).toHaveCount(0);
+    await expect(swap.locator(".ai-refused")).toHaveCount(0);
     await expect(swap.locator(".floor-note")).toContainText("3.769 USDt per wNEAR against the owner's floor of 3.3 USDt per wNEAR");
     await expect(swap.locator(".floor-note")).toContainText("not a target");
 

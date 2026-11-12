@@ -155,10 +155,12 @@ describe("checkSwap", () => {
     });
     expect(asked).toEqual([cfg.swap.signTxHash, cfg.swap.executeTxHash, cfg.swap.settleTxHash]);
     expect(r).toMatchObject({ sign: { ok: true }, intentHash: INTENT_HASH, execute: { ok: true }, settle: { ok: true } });
+    // The swap of 2026-11-11 was made before the agent asked NEAR AI: no receipt, so no link.
+    expect(r.aiDecision).toEqual({ kind: "none" });
   });
 
   it("stops at a signing step that does not check out", async () => {
     const r = await checkSwap(cfg, async () => null);
-    expect(r).toEqual({ sign: { ok: false, problem: "tx_not_found" }, intentHash: null, execute: null, settle: null });
+    expect(r).toEqual({ sign: { ok: false, problem: "tx_not_found" }, aiDecision: { kind: "none" }, intentHash: null, execute: null, settle: null });
   });
 });

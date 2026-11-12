@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { userInfo } from "node:os";
-import { Chain, intentSwapResult, keyAllows, vaultEvents } from "./intent-swap.mjs";
+import { Chain, intentSwapResult, keyAllows, rate, units, vaultEvents } from "./intent-swap.mjs";
 import { jwtClaims, loadIntentsJwt } from "./intents-env.mjs";
 import { MessageBus, meetsFloor, selectQuotes } from "./message-bus.mjs";
 
@@ -211,4 +211,13 @@ test("the agent key comes from INTENT_AGENT_KEY or a near CLI key file, never pr
     good.cleanup();
     bad.cleanup();
   }
+});
+
+test("the decision's facts are stated exactly: amounts unscaled, rates rounded down", () => {
+  assert.equal(units("300000000000000000000000", 24), "0.3");
+  assert.equal(units("1130742", 6), "1.130742");
+  assert.equal(units("0", 6), "0");
+  // The mainnet swap of 2026-11-11 and the owner's floor.
+  assert.equal(rate("300000000000000000000000", "1130742", 24, 6), "3.769");
+  assert.equal(rate("1000000000000000000000000", "3300000", 24, 6), "3.3");
 });

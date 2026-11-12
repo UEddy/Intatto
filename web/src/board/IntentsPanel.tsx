@@ -314,6 +314,7 @@ function SwapBody({ cfg, v, derived }: { cfg: IntentsConfig; v: SwapValue; deriv
           result={check.sign}
           hash={s.signTxHash}
           method="agent_intent_swap"
+          extra={<AiDecisionLink d={check.aiDecision} />}
           who={<AccountLink id={cfg.agentId} />}
           what={
             <>
@@ -350,7 +351,28 @@ function SwapBody({ cfg, v, derived }: { cfg: IntentsConfig; v: SwapValue; deriv
   );
 }
 
-function Step({ result, hash, method, who, what }: { result: SwapCheck["sign"] | NonNullable<SwapCheck["execute"]> | undefined; hash: string; method: string; who: ReactNode; what: ReactNode }) {
+/**
+ * The trade's NEAR AI decision: a link to the Verification Center when the trade's arguments hold a
+ * receipt that signs the hashes recorded with it; nothing when there is none; a refusal, and no
+ * link, when it does not match.
+ */
+export function AiDecisionLink({ d }: { d: SwapCheck["aiDecision"] }) {
+  if (d.kind === "none") return null;
+  if (d.kind === "refused") {
+    return (
+      <span className="ai-refused">
+        <Badge tone="alert">AI receipt refused</Badge> {d.reason}
+      </span>
+    );
+  }
+  return (
+    <a className="ai-verify" href={d.url} target="_blank" rel="noopener noreferrer" title={`${d.model}, signed by ${d.signingAddress}`}>
+      Verify AI decision <Icon name="external" size={12} />
+    </a>
+  );
+}
+
+function Step({ result, hash, method, who, what, extra }: { result: SwapCheck["sign"] | NonNullable<SwapCheck["execute"]> | undefined; hash: string; method: string; who: ReactNode; what: ReactNode; extra?: ReactNode }) {
   return (
     <li className="swap-step">
       <p className="swap-step-call">
@@ -371,6 +393,7 @@ function Step({ result, hash, method, who, what }: { result: SwapCheck["sign"] |
           </>
         )}
         <TxLink hash={hash} />
+        {extra}
       </p>
     </li>
   );
