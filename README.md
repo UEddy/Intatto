@@ -335,6 +335,41 @@ prompt-injection demo agent's on testnet ([agent/README.md](agent/README.md)), w
 only `agent_spend` on vault-v2. Every other `ed25519:` string in the repository is a public key
 or a transaction signature from recorded mainnet and testnet data in `web/src/test/fixtures/`.
 
+## Bring your own agent
+
+Intatto isn't tied to our agent: any agent that can sign a NEAR transaction can trade through a
+vault, within the owner's policy. The owner registers the agent's account with
+`set_agent(agent_id, policy)`; its function-call key may then call only these vault methods:
+
+| Method | What it does |
+|---|---|
+| `agent_spend(owner_id, receiver_id, amount)` | Pays NEAR from the owner's vault to an allowlisted receiver. |
+| `agent_swap(owner_id, pool_id, token_in, token_out, amount_in, min_amount_out)` | Swaps a token through an allowed Rhea (Ref V1) pool, checked against the exchange's own quote. |
+| `agent_intent_swap(owner_id, token_in, token_out, amount_in, amount_out)` | Intents build only (`intents.intatto.near`): has the MPC network sign a NEAR Intents `token_diff` for exactly those amounts. |
+| `settle_intent_swap(intent_id)` | Intents build only: credits the owner once intents.near has used the intent's nonce. Anyone may call it. |
+
+Create the key on the agent's account (near-cli-rs 0.30.1), scoped to the vault and the methods it
+needs, with a gas allowance:
+
+```bash
+near account add-key <agent-account> grant-function-call-access --allowance '1 NEAR' \
+  --contract-account-id <vault> --function-names agent_spend,agent_swap \
+  autogenerate-new-keypair save-to-legacy-keychain network-config mainnet sign-with-legacy-keychain send
+```
+
+A function-call key cannot attach a deposit, so it cannot call any owner method or withdraw. The
+allowance only pays gas: an `agent_swap` sent with 300 TGas, as the smoke test sends it, needs
+about 0.3 NEAR of allowance when it is signed (NEAR's minimum gas purchase price), and unused gas
+is refunded to the account.
+
+The contract refuses any agent call that breaks the owner's policy: `per_tx_cap` and `daily_cap`
+(NEAR per payment and in any 24 hours), `allowlist`, `max_spends_per_24h`, each token's
+`per_tx_cap` and `daily_cap` in `tokens`, the `pools` and their `token_ids`, `max_slippage_bps`
+below the exchange's quote, and on the intents build the `pairs` and their price floors (`min_out`
+per `per_in`). It also refuses every agent call while the vault is frozen, and any call from an
+account other than the registered agent. The reference implementation is [agent/](agent/README.md):
+a NEAR transaction signer with no dependencies, the prompt-injection demo, and the intent-swap agent.
+
 ## Unit economics
 
 Measured on testnet, where the gas price is 100,000,000 yoctoNEAR per gas unit, the same as on
