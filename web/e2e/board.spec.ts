@@ -29,6 +29,14 @@ for (const net of NETWORKS) test(`break-price board renders live ${net.id} data`
   // check must say so (live chain, not a mock).
   await expect(page.locator(".integrity-title")).toContainText("Matches the published build");
   await expect(page.locator(".hfig").nth(1)).toContainText(net.runNote, { timeout: 45_000 });
+  if (net.id === "mainnet") {
+    // The NEAR Intents panel reads only once it is near the viewport: bring it there, let it verify.
+    const intents = page.locator("section.intents");
+    await intents.scrollIntoViewIfNeeded();
+    await expect(intents.locator(".icheck-title .badge")).toHaveText(["Matches", "One key", "Settled"], { timeout: 60_000 });
+    await expect(intents.locator(".intents-caveat")).toContainText("full-access upgrade key");
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
   await page.evaluate(() => document.fonts.ready);
   // Let the seal's press-in animation finish.
   await page.waitForTimeout(1500);

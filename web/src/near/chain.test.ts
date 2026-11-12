@@ -66,6 +66,24 @@ describe("Chain.account / accessKey", () => {
     const k = await c.accessKey("canary-agent.intatto-dev.testnet", "ed25519:EHqQ");
     expect(k?.value.permission).toEqual({ FunctionCall: { allowance: "1000000000000000000000000", method_names: ["agent_spend", "agent_swap"], receiver_id: "vault-v1.intatto-dev.testnet" } });
   });
+  it("lists every key on an account (intents.intatto.near on mainnet, 2026-11-11)", async () => {
+    const { chain: c, f } = chain([
+      {
+        status: 200,
+        body: rpcResult({
+          block_hash: "AyXPge5vCmB7rtTftadqJzmBeZDJsmy8QSM5mfXNx8pZ",
+          block_height: 224115648,
+          keys: [{ access_key: { nonce: 224096260000005, permission: "FullAccess" }, public_key: "ed25519:B6J5YQj4MdZz2NYu91ybZnJyrhdKAgJGptZxUcQ4WrcA" }],
+        }),
+      },
+    ]);
+    const l = await c.accessKeyList("intents.intatto.near");
+    expect(l?.value).toEqual([{ publicKey: "ed25519:B6J5YQj4MdZz2NYu91ybZnJyrhdKAgJGptZxUcQ4WrcA", permission: "FullAccess" }]);
+    expect(l?.source).toMatchObject({ rpcMethod: "query/view_access_key_list", target: "intents.intatto.near", blockHeight: 224115648 });
+    expect((f.calls[0]!.body as { params: Record<string, string> }).params).toMatchObject({ request_type: "view_access_key_list", finality: "final" });
+    const gone = chain([{ status: 200, body: rpcError("HANDLER_ERROR", "UNKNOWN_ACCOUNT") }]);
+    await expect(gone.chain.accessKeyList("nobody.near")).resolves.toBeNull();
+  });
 });
 
 describe("Chain.tx / block", () => {

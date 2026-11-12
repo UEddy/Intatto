@@ -129,8 +129,22 @@ export class RpcClient {
     this.onRetry = options.onRetry;
   }
 
-  /** One JSON-RPC call: the result, or a definitive error answer. Throws RpcError otherwise. */
-  async call(method: string, params: unknown): Promise<RpcResponse> {
+  private readonly inFlight = new Map<string, Promise<RpcResponse>>();
+
+  /**
+   * One JSON-RPC call: the result, or a definitive error answer. Throws RpcError otherwise.
+   * Identical calls made while one is in flight share it: one request, one answer for all.
+   */
+  call(method: string, params: unknown): Promise<RpcResponse> {
+    const key = JSON.stringify([method, params]);
+    const pending = this.inFlight.get(key);
+    if (pending) return pending;
+    const p = this.callOnce(method, params).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, p);
+    return p;
+  }
+
+  private async callOnce(method: string, params: unknown): Promise<RpcResponse> {
     const id = `intatto-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
     let settled: RpcResponse | null = null;
     let failure: Retry = new Retry("no attempt made", "", false);

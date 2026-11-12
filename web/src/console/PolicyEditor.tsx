@@ -144,7 +144,7 @@ export function PolicyEditor({ vaultId, vault, tokens, lock }: { vaultId: string
             <ul className="changes">
               {agentChanged && (
                 <li>
-                  <span>Agent</span> <s>{vault.agent_id ?? "none"}</s> → <strong className="mono">{form.agentId || "—"}</strong>
+                  <span>Agent</span> <s>{vault.agent_id ?? "none"}</s> → <strong className="mono">{form.agentId || "No agent set"}</strong>
                 </li>
               )}
               {changes.map((c) => (
@@ -164,7 +164,7 @@ export function PolicyEditor({ vaultId, vault, tokens, lock }: { vaultId: string
             </div>
             <div>
               <p className="field-label">After (set_agent.policy)</p>
-              <pre className="mono">{result.ok ? JSON.stringify(result.policy, null, 2) : "—"}</pre>
+              <pre className="mono">{result.ok ? JSON.stringify(result.policy, null, 2) : "Invalid policy"}</pre>
             </div>
           </div>
         </details>

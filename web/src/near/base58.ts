@@ -24,3 +24,19 @@ export function base58Decode(text: string): Uint8Array {
 export function base58ToHex(text: string): string {
   return Array.from(base58Decode(text), (b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/** bytes -> base58, as NEAR prints hashes (the inverse of base58Decode). */
+export function base58Encode(bytes: Uint8Array): string {
+  let n = 0n;
+  for (const b of bytes) n = n * 256n + BigInt(b);
+  let out = "";
+  while (n > 0n) {
+    out = ALPHABET[Number(n % 58n)]! + out;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b !== 0) break;
+    out = "1" + out;
+  }
+  return out;
+}

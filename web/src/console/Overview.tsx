@@ -61,7 +61,7 @@ export function Overview({ vault, tokens, nowNs }: { vault: Sourced<VaultView | 
           <dt>Withdrawals</dt>
           <dd>
             {!v ? (
-              v === null ? "—" : <Skeleton />
+              v === null ? "None" : <Skeleton />
             ) : locked ? (
               <>
                 <Badge tone="warn">Locked</Badge> until {formatDateTime(lockUntil!)}, in {formatDurationWords(lockUntil! - nowNs!)}
@@ -83,8 +83,12 @@ export function Overview({ vault, tokens, nowNs }: { vault: Sourced<VaultView | 
                 {usage.total > 0n ? `, ${formatNear(usage.total)} NEAR paid` : ""}
                 {v.recent_spends.length > usage.count ? <span className="muted"> · {v.recent_spends.length - usage.count} older entries no longer count</span> : null}
               </>
+            ) : v === undefined ? (
+              <Skeleton />
+            ) : v === null ? (
+              "None"
             ) : (
-              "—"
+              "Not read"
             )}
           </dd>
         </div>

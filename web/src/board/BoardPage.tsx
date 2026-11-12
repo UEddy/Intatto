@@ -13,6 +13,7 @@ import { AttemptLog, canarySubject, demoSubject } from "./AttemptLog";
 import { Faq } from "./Faq";
 import { HeroStack, SealFace } from "./HeroStack";
 import { IntegrityCheck } from "./IntegrityCheck";
+import { IntentsPanel } from "./IntentsPanel";
 import { RulesPanel } from "./RulesPanel";
 import { TryItSnippet } from "./TryItSnippet";
 import { BOARD_POLL_MS, useBoard } from "./useBoard";
@@ -228,6 +229,10 @@ export function BoardPage() {
         </aside>
       )}
 
+      <Section id="why-title" lead="Why it matters." rest="Most trading bots hold your key.">
+        <WhyItMatters />
+      </Section>
+
       <Section id="figures-title" lead="The bounty, read from the chain." rest="Every figure shows the call that produced it.">
         <div className="headline-figures">
           <article className="hfig">
@@ -307,7 +312,7 @@ export function BoardPage() {
           </article>
           <article className="mfig">
             <h3 className="mfig-label">Attempts</h3>
-            <p className="mfig-value">{attempts ? formatInt(attempts.length) + (b.attempts.data?.more ? "+" : "") : b.attempts.isError ? "Unavailable" : <Skeleton size="s" />}</p>
+            <p className="mfig-value">{attempts ? formatInt(attempts.length) + (b.attempts.data?.more ? "+" : "") : b.attempts.isError ? "Not read" : <Skeleton size="s" />}</p>
             <p className="mfig-note">
               {attempts === undefined
                 ? "Signed with the published key."
@@ -368,9 +373,14 @@ export function BoardPage() {
         </div>
       </Section>
 
-      <Section id="why-title" lead="Why it matters." rest="Most trading bots hold your key.">
-        <WhyItMatters />
-      </Section>
+      {/* The second vault's NEAR Intents trades: mainnet only (config.intents), with its own heading. */}
+      {config.intents && (
+        <Reveal as="div" className="board-section">
+          <div className="frame frame--intents">
+            <IntentsPanel />
+          </div>
+        </Reveal>
+      )}
 
       <Section id="faq-title" lead="Questions." rest="Before you try.">
         <Faq

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { base58ToHex } from "./base58";
+import { base58Decode, base58Encode, base58ToHex } from "./base58";
 
 describe("base58ToHex", () => {
   it("matches near CLI's hex for vault-v1's code (checked 2026-11-08)", () => {
@@ -8,5 +8,14 @@ describe("base58ToHex", () => {
   it("keeps leading zero bytes and rejects other alphabets", () => {
     expect(base58ToHex("11111111111111111111111111111111")).toBe("00".repeat(32));
     expect(() => base58ToHex("0OIl")).toThrow();
+  });
+});
+
+describe("base58Encode", () => {
+  it("is base58Decode's inverse, leading zeros included", () => {
+    for (const text of ["5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi", "HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC", "11111111111111111111111111111111", "1112"]) {
+      expect(base58Encode(base58Decode(text))).toBe(text);
+    }
+    expect(base58Encode(new Uint8Array())).toBe("");
   });
 });

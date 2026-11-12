@@ -89,4 +89,14 @@ describe("RpcClient", () => {
     const b = client([{ status: 403, body: "forbidden" }]);
     await expect(b.c.call("block", {})).rejects.toMatchObject({ fatal: true, reason: "HTTP 403" });
   });
+
+  it("shares one request between identical calls in flight, and asks again once it is answered", async () => {
+    const { c, f } = client([{ status: 200, body: rpcResult(1) }]);
+    const [a, b] = await Promise.all([c.call("query", { x: 1 }), c.call("query", { x: 1 })]);
+    expect(a).toEqual({ ok: true, result: 1 });
+    expect(b).toBe(a);
+    expect(f.calls).toHaveLength(1);
+    await Promise.all([c.call("query", { x: 2 }), c.call("query", { x: 1 })]);
+    expect(f.calls).toHaveLength(3);
+  });
 });
