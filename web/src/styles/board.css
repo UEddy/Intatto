@@ -1042,7 +1042,7 @@
 .intents-caveat--checking > .icon {
   color: var(--ink-3);
 }
-/* "Couldn't verify right now — Retry": neutral, never the pass or fail colours. */
+/* "Couldn't verify right now." and a Retry button: neutral, never the pass or fail colours. */
 .intents-retry {
   display: flex;
   flex-wrap: wrap;

@@ -230,7 +230,7 @@ function Check<T>({
 function RetryLine({ reason, onRetry, busy, children }: { reason: string; onRetry: () => void; busy: boolean; children?: ReactNode }) {
   return (
     <p className="intents-retry" title={reason}>
-      <span>{children ?? "Couldn't verify right now —"}</span>
+      <span>{children ?? "Couldn't verify right now."}</span>
       <button type="button" className="btn btn--quiet btn--small intents-retry-btn" onClick={onRetry} disabled={busy} aria-label="Retry">
         {busy ? "Retrying…" : "Retry"}
       </button>

@@ -147,7 +147,9 @@ for (const mode of ["network error", "429"] as const) {
     await expect(retry).toHaveCount(4, { timeout: 75_000 });
     await expect(retry.first()).toBeVisible();
     await expect(panel.locator(".icheck-title .badge")).toHaveText(["Unverified", "Unverified", "Unverified"]);
-    await expect(panel.locator(".icheck").first().locator(".intents-retry")).toHaveText(/^Couldn't verify right now —\s*Retry$/);
+    const retryLine = panel.locator(".icheck").first().locator(".intents-retry");
+    await expect(retryLine.locator("span")).toHaveText("Couldn't verify right now.");
+    await expect(retryLine.getByRole("button")).toHaveText("Retry");
     await expect(panel.locator(".intents-caveat")).toContainText("could not be read");
     // No pass tick, no "Verified", no red fail, no skeleton left spinning.
     await expect(panel.locator(".badge--ok")).toHaveCount(0);
