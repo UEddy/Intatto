@@ -40,7 +40,7 @@ export function useNearViewport(ref: RefObject<Element | null>, active: boolean)
 }
 
 export function useIntents(ref: RefObject<Element | null>) {
-  const { chain, archive, config } = useServices();
+  const { chain, archive, txFallback, config } = useServices();
   const cfg = config.intents;
   const near = useNearViewport(ref, cfg !== null);
   const enabled = cfg !== null && near;
@@ -51,7 +51,7 @@ export function useIntents(ref: RefObject<Element | null>) {
     memo = new Memo();
     memos.set(config, memo);
   }
-  const reads: Reads = { chain, archive, memo };
+  const reads: Reads = { chain, archive, txFallback, memo };
   // The check functions catch every error themselves; React Query never needs to retry.
   const common = { enabled, retry: false } as const;
 

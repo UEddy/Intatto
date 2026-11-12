@@ -284,6 +284,11 @@ export interface TxOutcome {
   readonly receipts: readonly ReceiptOutcome[];
 }
 
+/** Anything that answers a transaction by hash: the RPC (Chain), or NearBlocks for the swap checks. */
+export interface TxReader {
+  tx(hash: string, senderId: string): Promise<TxOutcome | null>;
+}
+
 export function parseTxOutcome(raw: unknown): TxOutcome {
   const t = parseWith(txResponse, raw, "tx response");
   return {

@@ -1,0 +1,213 @@
+{
+ "data": {
+  "actions": [
+   {
+    "action": "FUNCTION_CALL",
+    "args": {
+     "gas": 100000000000000,
+     "deposit": "0",
+     "args_json": {
+      "intent_id": "0"
+     },
+     "args_base64": null,
+     "method_name": "settle_intent_swap"
+    },
+    "method": "settle_intent_swap",
+    "rlp_hash": null
+   }
+  ],
+  "block": {
+   "block_hash": "6xAYZDWxTKSBWoUEKtAhk2BCXP47XKDJfxFC9H2jUF9L",
+   "block_height": "224097682",
+   "block_timestamp": "1794419179214581650"
+  },
+  "outcome": {
+   "executor_account_id": "intents.intatto.near",
+   "gas_burnt": "2489685146501",
+   "logs": [],
+   "result": "27WoPAtfv4k2mzp39hBXsqcoAmxGhan4Vh2gNsCVCbVe",
+   "status": true,
+   "status_key": "SUCCESS_RECEIPT_ID",
+   "tokens_burnt": "248968514650100000000"
+  },
+  "predecessor_account_id": "intents-agent.intatto.near",
+  "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+  "receipt_id": "8LRsYwkqhQHFDCxSLXq1wLV6PoUdqsvurCxzry3iJe1e",
+  "receipts": [
+   {
+    "actions": [
+     {
+      "action": "FUNCTION_CALL",
+      "args": {
+       "gas": 33310980105105,
+       "deposit": "0",
+       "args_json": {
+        "nonce": "Vij2xgAlKBKzAK7Wg2hE8BgAAAAAAAAAAHfXH7YqrrM=",
+        "account_id": "intents.intatto.near"
+       },
+       "args_base64": null,
+       "method_name": "is_nonce_used"
+      },
+      "method": "is_nonce_used",
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "6SzSoXgiJtg6EiMvGSmW7EVGt2m1Zmk8ZpimotFJDmZr",
+     "block_height": "224097683",
+     "block_timestamp": "1794419179675390361"
+    },
+    "outcome": {
+     "executor_account_id": "intents.near",
+     "gas_burnt": "2594852970600",
+     "logs": [],
+     "result": "dHJ1ZQ==",
+     "status": true,
+     "status_key": "SUCCESS_VALUE",
+     "tokens_burnt": "259485297060000000000"
+    },
+    "predecessor_account_id": "intents.intatto.near",
+    "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+    "receipt_id": "n9CFbuEUbK3bCGE18GTyx4gez3BCb4UYhfcvHph9bBw",
+    "receipts": [
+     {
+      "actions": [
+       {
+        "action": "TRANSFER",
+        "args": {
+         "deposit": "33939789081115000000000"
+        },
+        "method": null,
+        "rlp_hash": null
+       }
+      ],
+      "block": {
+       "block_hash": "2FnpGD8QRbHtDmTWHEwCA17Bja4JU8cPJjLdsM48Awmt",
+       "block_height": "224097684",
+       "block_timestamp": "1794419180368905152"
+      },
+      "outcome": {
+       "executor_account_id": "intents-agent.intatto.near",
+       "gas_burnt": "223182562500",
+       "logs": [],
+       "result": "",
+       "status": true,
+       "status_key": "SUCCESS_VALUE",
+       "tokens_burnt": "0"
+      },
+      "predecessor_account_id": "system",
+      "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+      "receipt_id": "499NH1oVrLKo1bvmcSNQBJChbns5kJRXcKbb9FYQZshS",
+      "receipts": [],
+      "receiver_account_id": "intents-agent.intatto.near"
+     }
+    ],
+    "receiver_account_id": "intents.near"
+   },
+   {
+    "actions": [
+     {
+      "action": "FUNCTION_CALL",
+      "args": {
+       "gas": 63310980105106,
+       "deposit": "0",
+       "args_json": {
+        "intent_id": "0",
+        "past_deadline": false
+       },
+       "args_base64": null,
+       "method_name": "on_intent_nonce_checked"
+      },
+      "method": "on_intent_nonce_checked",
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "2FnpGD8QRbHtDmTWHEwCA17Bja4JU8cPJjLdsM48Awmt",
+     "block_height": "224097684",
+     "block_timestamp": "1794419180368905152"
+    },
+    "outcome": {
+     "executor_account_id": "intents.intatto.near",
+     "gas_burnt": "2529727581075",
+     "logs": [
+      "EVENT_JSON:{\"standard\":\"intatto\",\"version\":\"1.0.0\",\"event\":\"intent_swap_settled\",\"data\":{\"intent_id\":\"0\",\"owner_id\":\"intents-owner.intatto.near\",\"token_in\":\"wrap.near\",\"amount_in\":\"300000000000000000000000\",\"token_out\":\"usdt.tether-token.near\",\"amount_out\":\"1130742\"}}"
+     ],
+     "result": "ImV4ZWN1dGVkIg==",
+     "status": true,
+     "status_key": "SUCCESS_VALUE",
+     "tokens_burnt": "252972758107500000000"
+    },
+    "predecessor_account_id": "intents.intatto.near",
+    "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+    "receipt_id": "27WoPAtfv4k2mzp39hBXsqcoAmxGhan4Vh2gNsCVCbVe",
+    "receipts": [
+     {
+      "actions": [
+       {
+        "action": "TRANSFER",
+        "args": {
+         "deposit": "63946205474906500000000"
+        },
+        "method": null,
+        "rlp_hash": null
+       }
+      ],
+      "block": {
+       "block_hash": "Cg59hDxfbZCYMPmjrEwZN44RV6ouLDahiqz4SYzYKdbz",
+       "block_height": "224097685",
+       "block_timestamp": "1794419180975534885"
+      },
+      "outcome": {
+       "executor_account_id": "intents-agent.intatto.near",
+       "gas_burnt": "223182562500",
+       "logs": [],
+       "result": "",
+       "status": true,
+       "status_key": "SUCCESS_VALUE",
+       "tokens_burnt": "0"
+      },
+      "predecessor_account_id": "system",
+      "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+      "receipt_id": "b2GjHuw3RRkrnv4BTHphqB36awNUsaVPfHizNdgCnCA",
+      "receipts": [],
+      "receiver_account_id": "intents-agent.intatto.near"
+     }
+    ],
+    "receiver_account_id": "intents.intatto.near"
+   },
+   {
+    "actions": [
+     {
+      "action": "TRANSFER",
+      "args": {
+       "deposit": "2240716631850900000000"
+      },
+      "method": null,
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "6SzSoXgiJtg6EiMvGSmW7EVGt2m1Zmk8ZpimotFJDmZr",
+     "block_height": "224097683",
+     "block_timestamp": "1794419179675390361"
+    },
+    "outcome": {
+     "executor_account_id": "intents-agent.intatto.near",
+     "gas_burnt": "223182562500",
+     "logs": [],
+     "result": "",
+     "status": true,
+     "status_key": "SUCCESS_VALUE",
+     "tokens_burnt": "0"
+    },
+    "predecessor_account_id": "system",
+    "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+    "receipt_id": "BU33LJqdMiafAREaytcWG5VcEpEeTcgBmacJJ2c1B1Wv",
+    "receipts": [],
+    "receiver_account_id": "intents-agent.intatto.near"
+   }
+  ],
+  "receiver_account_id": "intents.intatto.near"
+ }
+}

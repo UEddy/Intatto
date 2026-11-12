@@ -16,7 +16,7 @@ import { aiDecisionOf, type AiDecision } from "./aiDecision";
 import { base58Encode } from "../near/base58";
 import type { FtMetadata } from "../contract/views";
 import { ftMetadata } from "../contract/views";
-import type { AccessKeyPermission, Chain, ReceiptOutcome, Source, TxOutcome } from "../near/chain";
+import type { AccessKeyPermission, Chain, ReceiptOutcome, Source, TxOutcome, TxReader } from "../near/chain";
 
 /* ---------- build ---------- */
 
@@ -367,6 +367,11 @@ export interface Reads {
   readonly chain: Chain;
   /** Archival node: the swap's transactions only. */
   readonly archive: Chain;
+  /**
+   * A second, independent source for the swap's transactions (NearBlocks), asked only when the
+   * archival node gives no answer after its retries. Its data goes through the same checks.
+   */
+  readonly txFallback: TxReader & { readonly name: string };
   readonly memo: Memo;
 }
 
@@ -412,6 +417,34 @@ export interface SwapValue {
   readonly policy: IntentPolicy;
   readonly policySource: Source;
   readonly swap: SwapCheck;
+  /** The transactions read from the fallback rather than the archival node, by hash. */
+  readonly fromFallback: readonly string[];
+}
+
+/**
+ * One of the swap's transactions: from the archival node, or, if it gives no answer (an error
+ * after its retries, or not knowing a final transaction), from the fallback. Either way it is
+ * only the data; the checks decide.
+ */
+async function swapTx(r: Reads, hash: string, sender: string): Promise<{ tx: TxOutcome; fallback: boolean }> {
+  let primary: string;
+  try {
+    const tx = await r.archive.tx(hash, sender);
+    if (tx) return { tx, fallback: false };
+    primary = `the archival node does not know ${hash}`;
+  } catch (e) {
+    primary = e instanceof Error ? e.message : String(e);
+  }
+  let tx: TxOutcome | null;
+  try {
+    tx = await r.txFallback.tx(hash, sender);
+  } catch (e) {
+    // The fallback's errors name it already ("nearblocks: rate limited (HTTP 429)").
+    throw new Unverifiable(`${primary}; then ${e instanceof Error ? e.message : String(e)}`);
+  }
+  // A final transaction neither source knows: no answer, not a contradiction.
+  if (!tx) throw new Unverifiable(`${primary}; ${r.txFallback.name} does not know ${hash} either`);
+  return { tx, fallback: true };
 }
 
 export function checkSwapAll(r: Reads, cfg: IntentsConfig): Promise<Verdict<SwapValue>> {
@@ -423,16 +456,14 @@ export function checkSwapAll(r: Reads, cfg: IntentsConfig): Promise<Verdict<Swap
       // Live: the owner can move the floor.
       r.chain.view(cfg.vaultId, "get_intent_policy", { owner_id: cfg.ownerId }, IntentPolicySchema),
     ]);
-    const swap = await checkSwap(cfg, (hash, sender) =>
-      r.memo.get(`tx:${hash}`, async () => {
-        const tx = await r.archive.tx(hash, sender);
-        // A final transaction the archival node does not know: no answer, not a contradiction.
-        if (!tx) throw new Unverifiable(`the archival node does not know ${hash}`);
-        return tx;
-      }),
-    );
+    const fromFallback: string[] = [];
+    const swap = await checkSwap(cfg, async (hash, sender) => {
+      const got = await r.memo.get(`tx:${hash}`, () => swapTx(r, hash, sender));
+      if (got.fallback) fromFallback.push(hash);
+      return got.tx;
+    });
     const pass = swap.sign.ok && swap.execute?.ok === true && swap.settle?.ok === true;
-    return { value: { tokenIn: tokenIn.value, tokenOut: tokenOut.value, policy: policy.value, policySource: policy.source, swap }, pass };
+    return { value: { tokenIn: tokenIn.value, tokenOut: tokenOut.value, policy: policy.value, policySource: policy.source, swap, fromFallback }, pass };
   });
 }
 

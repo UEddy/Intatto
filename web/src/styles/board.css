@@ -1009,6 +1009,15 @@
   min-height: 32px;
   align-items: center;
 }
+.swap-step-via {
+  color: var(--ink-3);
+}
+.swap-fallback {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
 
 /* the one caveat: amber, as warnings are on this board */
 .intents-caveat {

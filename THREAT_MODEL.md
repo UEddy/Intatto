@@ -499,9 +499,9 @@ before the policy exists.
 |---|---|
 | `'self'` | The passkey executor this site serves (`/wallets/passkey-executor-798e9e5.js`) |
 | `test.rpc.fastnear.com`, `rpc.mainnet.fastnear.com` | Live view calls and transaction status |
-| `archival-rpc.testnet.fastnear.com`, `archival-rpc.mainnet.fastnear.com` | Old transactions only (canary setup and run start) |
+| `archival-rpc.testnet.fastnear.com`, `archival-rpc.mainnet.fastnear.com` | Old transactions only (canary setup and run start, the NEAR Intents swap) |
 | `tx.test.fastnear.com`, `tx.main.fastnear.com` | Transaction lists (FastNEAR, primary) |
-| `api-testnet.nearblocks.io`, `api.nearblocks.io` | Transaction lists (NearBlocks, fallback) |
+| `api-testnet.nearblocks.io`, `api.nearblocks.io` | Transaction lists (NearBlocks, fallback); the NEAR Intents swap's three transactions when the archival node does not answer, checked the same way |
 | `raw.githubusercontent.com` | Executor code of Meteor, HOT and MyNearWallet |
 | `wallet.intear.tech` | Executor code of Intear |
 | `mc.meteorwallet.app` (https and wss) | Meteor Connect bridge: `/api/action`, `/api/bridge/…` and its WebSocket, used for the web-wallet handoff and mobile QR pairing |

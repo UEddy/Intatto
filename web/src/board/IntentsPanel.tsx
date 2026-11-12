@@ -254,6 +254,8 @@ function SwapBody({ cfg, v, derived }: { cfg: IntentsConfig; v: SwapValue; deriv
   const rateText = (r: bigint) => formatUnits(r, RATE_PLACES);
   const pair = `${outMeta.symbol} per ${inMeta.symbol}`;
   const signedKeyOk = check.sign.ok && derived !== undefined ? check.sign.signed.publicKey === derived : null;
+  const { txFallback } = useServices();
+  const via = (hash: string) => (v.fromFallback.includes(hash) ? txFallback.name : undefined);
 
   return (
     <>
@@ -313,6 +315,7 @@ function SwapBody({ cfg, v, derived }: { cfg: IntentsConfig; v: SwapValue; deriv
         <Step
           result={check.sign}
           hash={s.signTxHash}
+          via={via(s.signTxHash)}
           method="agent_intent_swap"
           extra={<AiDecisionLink d={check.aiDecision} />}
           who={<AccountLink id={cfg.agentId} />}
@@ -326,6 +329,7 @@ function SwapBody({ cfg, v, derived }: { cfg: IntentsConfig; v: SwapValue; deriv
         <Step
           result={check.execute ?? undefined}
           hash={s.executeTxHash}
+          via={via(s.executeTxHash)}
           method="execute_intents"
           who={<span className="mono">{cfg.verifierId}</span>}
           what={
@@ -342,11 +346,21 @@ function SwapBody({ cfg, v, derived }: { cfg: IntentsConfig; v: SwapValue; deriv
         <Step
           result={check.settle ?? undefined}
           hash={s.settleTxHash}
+          via={via(s.settleTxHash)}
           method="settle_intent_swap"
           who={<AccountLink id={cfg.agentId} />}
           what={<>The nonce was used, so the vault credited the owner exactly {`${formatUnits(amountOut, outMeta.decimals)} ${outMeta.symbol}`}.</>}
         />
       </ol>
+      {v.fromFallback.length > 0 && (
+        <p className="swap-fallback">
+          The archival node did not answer, so {v.fromFallback.length === 3 ? "these transactions were" : v.fromFallback.length === 1 ? "one transaction was" : "two transactions were"} read
+          from {txFallback.name} and checked the same way.{" "}
+          <a href={txFallback.attribution.url} target="_blank" rel="noopener noreferrer" className="attribution">
+            {txFallback.attribution.text}
+          </a>
+        </p>
+      )}
     </>
   );
 }
@@ -372,7 +386,24 @@ export function AiDecisionLink({ d }: { d: SwapCheck["aiDecision"] }) {
   );
 }
 
-function Step({ result, hash, method, who, what, extra }: { result: SwapCheck["sign"] | NonNullable<SwapCheck["execute"]> | undefined; hash: string; method: string; who: ReactNode; what: ReactNode; extra?: ReactNode }) {
+function Step({
+  result,
+  hash,
+  via,
+  method,
+  who,
+  what,
+  extra,
+}: {
+  result: SwapCheck["sign"] | NonNullable<SwapCheck["execute"]> | undefined;
+  hash: string;
+  /** The fallback this transaction was read from, if not the archival node. */
+  via?: string | undefined;
+  method: string;
+  who: ReactNode;
+  what: ReactNode;
+  extra?: ReactNode;
+}) {
   return (
     <li className="swap-step">
       <p className="swap-step-call">
@@ -392,6 +423,7 @@ function Step({ result, hash, method, who, what, extra }: { result: SwapCheck["s
             <Badge tone="alert">Failed</Badge> <span>{TX_PROBLEM[result.problem]}</span>
           </>
         )}
+        {via && <span className="swap-step-via">read from {via}</span>}
         <TxLink hash={hash} />
         {extra}
       </p>

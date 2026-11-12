@@ -10,6 +10,10 @@ import { RpcClient } from "../near/rpc";
 import signTx from "../test/fixtures/rpc-tx-mainnet-intent-swap.json";
 import executeTx from "../test/fixtures/rpc-tx-mainnet-intent-exec.json";
 import settleTx from "../test/fixtures/rpc-tx-mainnet-intent-settle.json";
+import nbSignTx from "../test/fixtures/nearblocks-v3-tree-mainnet-intent-swap.json";
+import nbExecuteTx from "../test/fixtures/nearblocks-v3-tree-mainnet-intent-exec.json";
+import nbSettleTx from "../test/fixtures/nearblocks-v3-tree-mainnet-intent-settle.json";
+import { NearBlocksTxs } from "../indexer/nearblocks";
 import { fakeFetch, type Step } from "../test/fakeFetch";
 import { Memo, checkBuild, checkCaveat, checkKey, checkSwapAll, type Reads, type Verdict } from "./check";
 
@@ -48,10 +52,28 @@ function answer(a: Answers) {
   };
 }
 
-function reads(step: Step, memo = new Memo()) {
+/** NearBlocks' trees for the same three transactions, fetched 2026-11-12; `edit` changes them. */
+const NB_TXS = (): Record<string, unknown> => structuredClone({
+  [cfg.swap.signTxHash]: nbSignTx,
+  [cfg.swap.executeTxHash]: nbExecuteTx,
+  [cfg.swap.settleTxHash]: nbSettleTx,
+});
+function nearblocks(txs: Record<string, unknown> = NB_TXS()): Step {
+  return { status: 200, body: ({ url }) => JSON.stringify(txs[/\/v3\/txns\/([^/]+)\/receipts$/.exec(url)?.[1] ?? ""] ?? { data: null }) };
+}
+const NB_UNKNOWN: Step = { status: 200, body: JSON.stringify({ data: null }) };
+
+/**
+ * `step` answers the live RPC and the archival node alike unless `archive` is given; `fallback`
+ * answers NearBlocks (by default it knows none of the transactions).
+ */
+function reads(step: Step, memo = new Memo(), o: { archive?: Step; fallback?: Step } = {}) {
   const f = fakeFetch([step]);
-  const rpc = () => new RpcClient("https://rpc.example/", { attempts: 3, sleep: async () => {}, fetch: f.fetch });
-  return { r: { chain: new Chain(rpc()), archive: new Chain(rpc()), memo } satisfies Reads, f };
+  const a = o.archive ? fakeFetch([o.archive]) : f;
+  const nb = fakeFetch([o.fallback ?? NB_UNKNOWN]);
+  const rpc = (ff: typeof f) => new RpcClient("https://rpc.example/", { attempts: 3, sleep: async () => {}, fetch: ff.fetch });
+  const txFallback = new NearBlocksTxs("https://api.nearblocks.example", { fetch: nb.fetch });
+  return { r: { chain: new Chain(rpc(f)), archive: new Chain(rpc(a)), txFallback, memo } satisfies Reads, f, a, nb };
 }
 
 const networkError: Step = { throws: new TypeError("Failed to fetch") };
@@ -105,7 +127,7 @@ describe("a contradiction is a red fail, distinct from unverified", () => {
     const v = await checkSwapAll(r, { ...cfg, swap: { ...cfg.swap, amountOut: "1130743" } });
     expect(v).toMatchObject({ verdict: "fail", value: { swap: { sign: { ok: false, problem: "wrong_amounts" } } } });
   });
-  it("swap: a final transaction the node does not know is unverified, not a fail", async () => {
+  it("swap: a final transaction neither the archival node nor the fallback knows is unverified, not a fail", async () => {
     const base = answer(MAINNET_ANSWERS());
     const r = reads({
       status: 200,
@@ -115,6 +137,62 @@ describe("a contradiction is a red fail, distinct from unverified", () => {
       },
     }).r;
     expect((await checkSwapAll(r, cfg)).verdict).toBe("unverified");
+  });
+});
+
+describe("the swap's transactions: NearBlocks when the archival node does not answer", () => {
+  const live = { status: 200, body: answer(MAINNET_ANSWERS()) } as const;
+  const hashes = [cfg.swap.signTxHash, cfg.swap.executeTxHash, cfg.swap.settleTxHash];
+
+  it("the archival node fails after its retries, NearBlocks answers: verified, on NearBlocks' data", async () => {
+    const { r, a, nb } = reads(live, new Memo(), { archive: networkError, fallback: nearblocks() });
+    const v = await checkSwapAll(r, cfg);
+    expect(v).toMatchObject({ verdict: "pass", value: { fromFallback: hashes, swap: { sign: { ok: true }, execute: { ok: true }, settle: { ok: true } } } });
+    // Three attempts per transaction on the archival node first, then one GET each.
+    expect(a.calls.length).toBe(9);
+    expect(nb.calls.map((c) => [c.method, c.url])).toEqual(hashes.map((h) => ["GET", `https://api.nearblocks.example/v3/txns/${h}/receipts`]));
+  });
+
+  it("the archival node answers: NearBlocks is never asked", async () => {
+    const { r, nb } = reads(live, new Memo(), { fallback: nearblocks() });
+    expect(await checkSwapAll(r, cfg)).toMatchObject({ verdict: "pass", value: { fromFallback: [] } });
+    expect(nb.calls).toEqual([]);
+  });
+
+  it("both fail: unverified, never a pass and never a fail", async () => {
+    const down = reads(live, new Memo(), { archive: rateLimited, fallback: { status: 429, body: "" } });
+    const v = await checkSwapAll(down.r, cfg);
+    expect(v.verdict).toBe("unverified");
+    if (v.verdict === "unverified") expect(v.reason).toBe("tx failed after 3 attempt(s): rate limited (HTTP 429); then nearblocks: rate limited (HTTP 429)");
+    const unknown = await checkSwapAll(reads(live, new Memo(), { archive: networkError, fallback: NB_UNKNOWN }).r, cfg);
+    expect(unknown).toMatchObject({ verdict: "unverified", reason: expect.stringMatching(/NearBlocks does not know/) });
+    const garbled = await checkSwapAll(reads(live, new Memo(), { archive: networkError, fallback: { status: 200, body: "{}" } }).r, cfg);
+    expect(garbled.verdict).toBe("unverified");
+  });
+
+  it("tampered NearBlocks data is a red fail, as from the archival node", async () => {
+    const settleLog = (t: Record<string, unknown>) => {
+      const root = (t[cfg.swap.settleTxHash] as typeof nbSettleTx).data;
+      const all = [root, ...root.receipts.flatMap(function flat(x: { receipts: unknown[] }): unknown[] { return [x, ...(x.receipts as { receipts: unknown[] }[]).flatMap(flat)]; })] as { outcome: { logs: string[]; executor_account_id: string } }[];
+      return all.find((x) => x.outcome.logs.some((l) => l.includes("intent_swap_settled")))!;
+    };
+    // The settle event credits the owner one unit more.
+    const more = NB_TXS();
+    const rec = settleLog(more);
+    rec.outcome.logs = rec.outcome.logs.map((l) => l.replace('"amount_out":"1130742"', '"amount_out":"1130743"'));
+    expect(rec.outcome.logs.join()).toContain('"amount_out":"1130743"');
+    const v1 = await checkSwapAll(reads(live, new Memo(), { archive: networkError, fallback: nearblocks(more) }).r, cfg);
+    expect(v1).toMatchObject({ verdict: "fail", value: { swap: { sign: { ok: true }, settle: { ok: false, problem: "wrong_amounts" } } } });
+    // The same event, logged by another account.
+    const other = NB_TXS();
+    settleLog(other).outcome.executor_account_id = "intents.intatto.near.evil.near";
+    const v2 = await checkSwapAll(reads(live, new Memo(), { archive: networkError, fallback: nearblocks(other) }).r, cfg);
+    expect(v2).toMatchObject({ verdict: "fail", value: { swap: { settle: { ok: false, problem: "no_event" } } } });
+    // A receipt NearBlocks reports as failed.
+    const failed = NB_TXS();
+    (failed[cfg.swap.executeTxHash] as typeof nbExecuteTx).data.outcome.status = false;
+    const v3 = await checkSwapAll(reads(live, new Memo(), { archive: networkError, fallback: nearblocks(failed) }).r, cfg);
+    expect(v3).toMatchObject({ verdict: "fail", value: { swap: { execute: { ok: false, problem: "tx_failed" } } } });
   });
 });
 

@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { NetworkConfig } from "../config/networks";
 import { IdbTxCache } from "../indexer/cache";
 import { FastNearSource } from "../indexer/fastnear";
-import { NearBlocksSource } from "../indexer/nearblocks";
+import { NearBlocksSource, NearBlocksTxs } from "../indexer/nearblocks";
 import { ResilientIndexer } from "../indexer/resilient";
 import { Chain } from "../near/chain";
 import { RpcClient } from "../near/rpc";
@@ -12,6 +12,8 @@ export interface Services {
   readonly chain: Chain;
   /** Archival node, for old transactions only. */
   readonly archive: Chain;
+  /** The NEAR Intents swap's transactions when the archival node does not answer. */
+  readonly txFallback: NearBlocksTxs;
   readonly indexer: ResilientIndexer;
 }
 
@@ -22,6 +24,7 @@ export function makeServices(config: NetworkConfig): Services {
     config,
     chain: new Chain(new RpcClient(config.rpcUrl)),
     archive: new Chain(new RpcClient(config.archivalRpcUrl)),
+    txFallback: new NearBlocksTxs(config.indexers.nearblocks),
     indexer: new ResilientIndexer(
       [new FastNearSource(config.indexers.fastnear), new NearBlocksSource(config.indexers.nearblocks)],
       new IdbTxCache(),

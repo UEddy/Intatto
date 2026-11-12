@@ -1,0 +1,98 @@
+{
+ "data": {
+  "actions": [
+   {
+    "action": "FUNCTION_CALL",
+    "args": {
+     "gas": 300000000000000,
+     "deposit": "0",
+     "args_json": {
+      "signed": [
+       {
+        "payload": {
+         "nonce": "Vij2xgAlKBKzwLs+j+006RhIbi6tRf/DbTwFx1GJYV4=",
+         "message": "{\\\\\\\"signer_id\\\\\\\":\\\\\\\"intentfolio-vault.near\\\\\\\",\\\\\\\"deadline\\\\\\\":\\\\\\\"2026-11-11T17:48:41.399Z\\\\\\\",\\\\\\\"intents\\\\\\\":[{\\\\\\\"intent\\\\\\\":\\\\\\\"token_diff\\\\\\\",\\\\\\\"diff\\\\\\\":{\\\\\\\"nep141:wrap.near\\\\\\\":\\\\\\\"299999700000000000000000\\\\\\\",\\\\\\\"nep141:usdt.tether-token.near\\\\\\\":\\\\\\\"-1130744\\\\\\\"}},{\\\\\\\"intent\\\\\\\":\\\\\\\"transfer\\\\\\\",\\\\\\\"receiver_id\\\\\\\":\\\\\\\"intentfolio-ops.near\\\\\\\",\\\\\\\"tokens\\\\\\\":{\\\\\\\"nep141:wrap.near\\\\\\\":\\\\\\\"150025941644562334218\\\\\\\"}}]}",
+         "recipient": "intents.near"
+        },
+        "standard": "nep413",
+        "signature": "ed25519:G48FzBa2HviQxvmxqAQgQikbWDziTt7DMhqy4dKw4Aw6qDfrMcSXY6BRkcou9ghUyne1GXmnpZzkTCH7eNQGJsp",
+        "public_key": "ed25519:5aAv3aFNqohBXfN61U4XtYE2kwFnbbN5BJZaT2bHLZTt"
+       },
+       {
+        "payload": {
+         "nonce": "Vij2xgAlKBKzAK7Wg2hE8BgAAAAAAAAAAHfXH7YqrrM=",
+         "message": "{\\\\\\\"signer_id\\\\\\\":\\\\\\\"intents.intatto.near\\\\\\\",\\\\\\\"deadline\\\\\\\":\\\\\\\"2026-11-11T17:51:07Z\\\\\\\",\\\\\\\"intents\\\\\\\":[{\\\\\\\"intent\\\\\\\":\\\\\\\"token_diff\\\\\\\",\\\\\\\"diff\\\\\\\":{\\\\\\\"nep141:wrap.near\\\\\\\":\\\\\\\"-300000000000000000000000\\\\\\\",\\\\\\\"nep141:usdt.tether-token.near\\\\\\\":\\\\\\\"1130742\\\\\\\"}}]}",
+         "recipient": "intents.near"
+        },
+        "standard": "nep413",
+        "signature": "ed25519:cHHkgWGtHfEWCgJWXzLxQvkYzPP1KyEZnanBiwBRWme56k4f8jKdEtE2qAF9xVk5p9gJQvzKnB8dzZ9EEpcAUC1",
+        "public_key": "ed25519:5kYTxFESA4ciqDeFz5j5YqsY2sSC9WN2YN5hBNRpCgWi"
+       }
+      ]
+     },
+     "args_base64": null,
+     "method_name": "execute_intents"
+    },
+    "method": "execute_intents",
+    "rlp_hash": null
+   }
+  ],
+  "block": {
+   "block_hash": "DqZ8o6ctfHPxVmSZCEAvMaX9Wxsar1Mw5rZaHxHmVWe7",
+   "block_height": "224097676",
+   "block_timestamp": "1794419175516796750"
+  },
+  "outcome": {
+   "executor_account_id": "intents.near",
+   "gas_burnt": "9256865420789",
+   "logs": [
+    "EVENT_JSON:{\"standard\":\"dip4\",\"version\":\"0.4.3\",\"event\":\"token_diff\",\"data\":[{\"intent_hash\":\"4N12BfiRaLwTXQ7SLy357ZR75kKdL3e9KHeakvi7ZNCb\",\"account_id\":\"intentfolio-vault.near\",\"diff\":{\"nep141:usdt.tether-token.near\":\"-1130744\",\"nep141:wrap.near\":\"299999700000000000000000\"},\"fees_collected\":{\"nep141:usdt.tether-token.near\":\"2\"}}]}",
+    "EVENT_JSON:{\"standard\":\"dip4\",\"version\":\"0.4.3\",\"event\":\"transfer\",\"data\":[{\"intent_hash\":\"4N12BfiRaLwTXQ7SLy357ZR75kKdL3e9KHeakvi7ZNCb\",\"account_id\":\"intentfolio-vault.near\",\"receiver_id\":\"intentfolio-ops.near\",\"tokens\":{\"nep141:wrap.near\":\"150025941644562334218\"}}]}",
+    "EVENT_JSON:{\"standard\":\"dip4\",\"version\":\"0.4.3\",\"event\":\"token_diff\",\"data\":[{\"intent_hash\":\"5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi\",\"account_id\":\"intents.intatto.near\",\"diff\":{\"nep141:usdt.tether-token.near\":\"1130742\",\"nep141:wrap.near\":\"-300000000000000000000000\"},\"fees_collected\":{\"nep141:wrap.near\":\"300000000000000000\"}}]}",
+    "EVENT_JSON:{\"standard\":\"dip4\",\"version\":\"0.4.3\",\"event\":\"intents_executed\",\"data\":[{\"intent_hash\":\"4N12BfiRaLwTXQ7SLy357ZR75kKdL3e9KHeakvi7ZNCb\",\"account_id\":\"intentfolio-vault.near\",\"nonce\":\"Vij2xgAlKBKzwLs+j+006RhIbi6tRf/DbTwFx1GJYV4=\"},{\"intent_hash\":\"5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi\",\"account_id\":\"intents.intatto.near\",\"nonce\":\"Vij2xgAlKBKzAK7Wg2hE8BgAAAAAAAAAAHfXH7YqrrM=\"}]}",
+    "EVENT_JSON:{\"standard\":\"nep245\",\"version\":\"1.0.0\",\"event\":\"mt_transfer\",\"data\":[{\"old_owner_id\":\"intents.intatto.near\",\"new_owner_id\":\"7066024d3f20f94de601c003163367873cca78507eeca4df66d9be645f197f05\",\"token_ids\":[\"nep141:wrap.near\"],\"amounts\":[\"300000000000000000\"]},{\"old_owner_id\":\"intents.intatto.near\",\"new_owner_id\":\"intentfolio-ops.near\",\"token_ids\":[\"nep141:wrap.near\"],\"amounts\":[\"150025941644562334218\"]},{\"old_owner_id\":\"intents.intatto.near\",\"new_owner_id\":\"intentfolio-vault.near\",\"token_ids\":[\"nep141:wrap.near\"],\"amounts\":[\"299849674058355437665782\"]},{\"old_owner_id\":\"intentfolio-vault.near\",\"new_owner_id\":\"intents.intatto.near\",\"token_ids\":[\"nep141:usdt.tether-token.near\"],\"amounts\":[\"1130742\"]},{\"old_owner_id\":\"intentfolio-vault.near\",\"new_owner_id\":\"7066024d3f20f94de601c003163367873cca78507eeca4df66d9be645f197f05\",\"token_ids\":[\"nep141:usdt.tether-token.near\"],\"amounts\":[\"2\"]}]}"
+   ],
+   "result": "",
+   "status": true,
+   "status_key": "SUCCESS_VALUE",
+   "tokens_burnt": "925686542078900000000"
+  },
+  "predecessor_account_id": "intents.near",
+  "public_key": "ed25519:oxEocH88sCavwDRXqoMtryK2Qm9Af72jxMsvsQGHQJx",
+  "receipt_id": "A5g7ETbAaX6q6Lkg8h9GHfmhUHobG62NW2LanJPNmHNS",
+  "receipts": [
+   {
+    "actions": [
+     {
+      "action": "TRANSFER",
+      "args": {
+       "deposit": "299965123156741100000000"
+      },
+      "method": null,
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "J2QS4W9nwBNcdpunfuDQoVNx3J3r7qdaq4xXWWcQ1e3Y",
+     "block_height": "224097677",
+     "block_timestamp": "1794419176127759727"
+    },
+    "outcome": {
+     "executor_account_id": "intents.near",
+     "gas_burnt": "223182562500",
+     "logs": [],
+     "result": "",
+     "status": true,
+     "status_key": "SUCCESS_VALUE",
+     "tokens_burnt": "0"
+    },
+    "predecessor_account_id": "system",
+    "public_key": "ed25519:oxEocH88sCavwDRXqoMtryK2Qm9Af72jxMsvsQGHQJx",
+    "receipt_id": "3ZLUMqNu645G6ASkFZGmQ6q6poefpc3uFutAkmaE3kjw",
+    "receipts": [],
+    "receiver_account_id": "intents.near"
+   }
+  ],
+  "receiver_account_id": "intents.near"
+ }
+}

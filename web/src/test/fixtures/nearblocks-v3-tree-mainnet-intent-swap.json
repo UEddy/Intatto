@@ -1,0 +1,476 @@
+{
+ "data": {
+  "actions": [
+   {
+    "action": "FUNCTION_CALL",
+    "args": {
+     "gas": 150000000000000,
+     "deposit": "0",
+     "args_json": {
+      "owner_id": "intents-owner.intatto.near",
+      "token_in": "wrap.near",
+      "amount_in": "300000000000000000000000",
+      "token_out": "usdt.tether-token.near",
+      "amount_out": "1130742"
+     },
+     "args_base64": null,
+     "method_name": "agent_intent_swap"
+    },
+    "method": "agent_intent_swap",
+    "rlp_hash": null
+   }
+  ],
+  "block": {
+   "block_hash": "13ywozh3auTAzhwfhhnj3TUs8uYRvNrBcLsQEpn4K5bP",
+   "block_height": "224097661",
+   "block_timestamp": "1794419166830679519"
+  },
+  "outcome": {
+   "executor_account_id": "intents.intatto.near",
+   "gas_burnt": "2776312428095",
+   "logs": [],
+   "result": "E3L7f6eFK2ZN2STCKmxPeEX8ssUZeBQmA4r2anBV5Xpe",
+   "status": true,
+   "status_key": "SUCCESS_RECEIPT_ID",
+   "tokens_burnt": "277631242809500000000"
+  },
+  "predecessor_account_id": "intents-agent.intatto.near",
+  "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+  "receipt_id": "AwxxsUyRBxZQEZPzxUs16sRbtUh98vmFq6Cv9Zjzieqg",
+  "receipts": [
+   {
+    "actions": [
+     {
+      "action": "FUNCTION_CALL",
+      "args": {
+       "gas": 25667745839965,
+       "deposit": "0",
+       "args_json": null,
+       "args_base64": "",
+       "method_name": "current_salt"
+      },
+      "method": "current_salt",
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "AuSbTQupDXB7h5n9dSUxXCDHPGKsbHktq4TS6n8nutJn",
+     "block_height": "224097662",
+     "block_timestamp": "1794419167465282941"
+    },
+    "outcome": {
+     "executor_account_id": "intents.near",
+     "gas_burnt": "2391452285394",
+     "logs": [],
+     "result": "IjI1MjgxMmIzIg==",
+     "status": true,
+     "status_key": "SUCCESS_VALUE",
+     "tokens_burnt": "239145228539400000000"
+    },
+    "predecessor_account_id": "intents.intatto.near",
+    "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+    "receipt_id": "EWLy3fXPZX9wUDvk8RdCaX79zgqrXpy8PSdYyNBdV8DM",
+    "receipts": [
+     {
+      "actions": [
+       {
+        "action": "TRANSFER",
+        "args": {
+         "deposit": "26316686942633600000000"
+        },
+        "method": null,
+        "rlp_hash": null
+       }
+      ],
+      "block": {
+       "block_hash": "92mJxBKtjyuYWyi9HFfJcWWd7xf9vXcqWpEuZ7bi7F17",
+       "block_height": "224097663",
+       "block_timestamp": "1794419167927880762"
+      },
+      "outcome": {
+       "executor_account_id": "intents-agent.intatto.near",
+       "gas_burnt": "223182562500",
+       "logs": [],
+       "result": "",
+       "status": true,
+       "status_key": "SUCCESS_VALUE",
+       "tokens_burnt": "0"
+      },
+      "predecessor_account_id": "system",
+      "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+      "receipt_id": "A17tiG6TVreg6zeNgB4XArT6rVtFn5eZCFS4pnv3erqR",
+      "receipts": [],
+      "receiver_account_id": "intents-agent.intatto.near"
+     }
+    ],
+    "receiver_account_id": "intents.near"
+   },
+   {
+    "actions": [
+     {
+      "action": "FUNCTION_CALL",
+      "args": {
+       "gas": 120667745839966,
+       "deposit": "0",
+       "args_json": {
+        "ticket": {
+         "owner_id": "intents-owner.intatto.near",
+         "token_in": "wrap.near",
+         "amount_in": "300000000000000000000000",
+         "token_out": "usdt.tether-token.near",
+         "amount_out": "1130742"
+        },
+        "caller_id": "intents-agent.intatto.near"
+       },
+       "args_base64": null,
+       "method_name": "on_intent_salt"
+      },
+      "method": "on_intent_salt",
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "92mJxBKtjyuYWyi9HFfJcWWd7xf9vXcqWpEuZ7bi7F17",
+     "block_height": "224097663",
+     "block_timestamp": "1794419167927880762"
+    },
+    "outcome": {
+     "executor_account_id": "intents.intatto.near",
+     "gas_burnt": "4138608842275",
+     "logs": [
+      "EVENT_JSON:{\"standard\":\"intatto\",\"version\":\"1.0.0\",\"event\":\"intent_swap_initiated\",\"data\":{\"swap\":{\"intent_id\":\"0\",\"owner_id\":\"intents-owner.intatto.near\",\"agent_id\":\"intents-agent.intatto.near\",\"token_in\":\"wrap.near\",\"token_out\":\"usdt.tether-token.near\",\"amount_in\":\"300000000000000000000000\",\"amount_out\":\"1130742\",\"deadline\":\"1794419467000000000\",\"nonce_deadline\":\"1797011467000000000\",\"salt\":\"252812b3\",\"nonce\":\"Vij2xgAlKBKzAK7Wg2hE8BgAAAAAAAAAAHfXH7YqrrM=\",\"message\":\"{\\\"signer_id\\\":\\\"intents.intatto.near\\\",\\\"deadline\\\":\\\"2026-11-11T17:51:07Z\\\",\\\"intents\\\":[{\\\"intent\\\":\\\"token_diff\\\",\\\"diff\\\":{\\\"nep141:wrap.near\\\":\\\"-300000000000000000000000\\\",\\\"nep141:usdt.tether-token.near\\\":\\\"1130742\\\"}}]}\",\"payload_hash\":\"43f4e545325fc47f6ca92193f8f65500b6a8d9c74522e702a8cc3b01995c3d97\",\"signature\":\"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\",\"status\":\"signing\"}}}"
+     ],
+     "result": "6BVKPU8MpSE3gKsM6jKPKj48YH4jmFU1ypk1dF41UQn",
+     "status": true,
+     "status_key": "SUCCESS_RECEIPT_ID",
+     "tokens_burnt": "413860884227500000000"
+    },
+    "predecessor_account_id": "intents.intatto.near",
+    "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+    "receipt_id": "E3L7f6eFK2ZN2STCKmxPeEX8ssUZeBQmA4r2anBV5Xpe",
+    "receipts": [
+     {
+      "actions": [
+       {
+        "action": "FUNCTION_CALL",
+        "args": {
+         "gas": 72820585703459,
+         "deposit": "1",
+         "args_json": {
+          "request": {
+           "path": "intatto/intents.near/v1",
+           "domain_id": 1,
+           "payload_v2": {
+            "Eddsa": "43f4e545325fc47f6ca92193f8f65500b6a8d9c74522e702a8cc3b01995c3d97"
+           }
+          }
+         },
+         "args_base64": null,
+         "method_name": "sign"
+        },
+        "method": "sign",
+        "rlp_hash": null
+       }
+      ],
+      "block": {
+       "block_hash": "CdCErKM4goR9orHDBdkiSktK1L1aEgc3ZuFgje8BcVEw",
+       "block_height": "224097664",
+       "block_timestamp": "1794419168509989371"
+      },
+      "outcome": {
+       "executor_account_id": "v1.signer",
+       "gas_burnt": "4400837501784",
+       "logs": [
+        "sign: predecessor=AccountId(\"intents.intatto.near\"), request=SignRequestArgs { path: \"intatto/intents.near/v1\", payload: Eddsa(BoundedVec { inner: [67, 244, 229, 69, 50, 95, 196, 127, 108, 169, 33, 147, 248, 246, 85, 0, 182, 168, 217, 199, 69, 34, 231, 2, 168, 204, 59, 1, 153, 92, 61, 151], witness: PossiblyEmpty(()) }), domain_id: DomainId(1) }"
+       ],
+       "result": "BUVCt3ZadHfW2PG9s6oPQdWGje4m4GvTH5BueNKCugry",
+       "status": true,
+       "status_key": "SUCCESS_RECEIPT_ID",
+       "tokens_burnt": "440083750178400000000"
+      },
+      "predecessor_account_id": "intents.intatto.near",
+      "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+      "receipt_id": "8Sue8eYf12StSDstecPkro2EXUSyqZWN5UQiesZDSPXY",
+      "receipts": [
+       {
+        "actions": [
+         {
+          "action": "FUNCTION_CALL",
+          "args": {
+           "gas": 7000000000000,
+           "deposit": "0",
+           "args_json": [
+            {
+             "tweak": [
+              240,
+              139,
+              35,
+              14,
+              59,
+              102,
+              113,
+              216,
+              235,
+              97,
+              231,
+              252,
+              253,
+              133,
+              207,
+              131,
+              172,
+              0,
+              15,
+              255,
+              233,
+              83,
+              47,
+              213,
+              42,
+              167,
+              158,
+              180,
+              180,
+              0,
+              181,
+              218
+             ],
+             "payload": {
+              "Eddsa": "43f4e545325fc47f6ca92193f8f65500b6a8d9c74522e702a8cc3b01995c3d97"
+             },
+             "domain_id": 1
+            }
+           ],
+           "args_base64": null,
+           "method_name": "return_signature_and_clean_state_on_success"
+          },
+          "method": "return_signature_and_clean_state_on_success",
+          "rlp_hash": null
+         }
+        ],
+        "block": {
+         "block_hash": "8EYVaYwh9UNUW9niBU82gjKwxA9QHsuW986CuUuvQSX",
+         "block_height": "224097671",
+         "block_timestamp": "1794419172518908227"
+        },
+        "outcome": {
+         "executor_account_id": "v1.signer",
+         "gas_burnt": "3625244696558",
+         "logs": [],
+         "result": "eyJzY2hlbWUiOiJFZDI1NTE5Iiwic2lnbmF0dXJlIjpbMzAsMTA4LDE5NSwxNDQsMTQ4LDk2LDY1LDExNiwxNTAsMTgsMjIsMjE0LDExNiwxNjcsMTk0LDIyNiw0MCwzOSwxMDAsMjQ3LDEzMSwyNDYsNTIsMTgyLDIyMywxODIsNDksNTIsMjEzLDIwMywxNTYsNzAsNCwxNTgsMTksMjE3LDIwOSw4MiwzMywxNjgsMTI2LDczLDkyLDE1MywxMywyMTIsNDMsODgsODAsMjMxLDQwLDEwNywxNTgsMTM1LDI0MiwxOCwxMjEsODcsNCwyMTIsMTkyLDYzLDE2OCwyXX0=",
+         "status": true,
+         "status_key": "SUCCESS_VALUE",
+         "tokens_burnt": "362524469655800000000"
+        },
+        "predecessor_account_id": "v1.signer",
+        "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+        "receipt_id": "BUVCt3ZadHfW2PG9s6oPQdWGje4m4GvTH5BueNKCugry",
+        "receipts": [
+         {
+          "actions": [
+           {
+            "action": "TRANSFER",
+            "args": {
+             "deposit": "7526145440326200000000"
+            },
+            "method": null,
+            "rlp_hash": null
+           }
+          ],
+          "block": {
+           "block_hash": "DrXKSdT4DRpMaEzbX7MbbcjdnmujNur5qYeBrwCx29rt",
+           "block_height": "224097672",
+           "block_timestamp": "1794419173131146126"
+          },
+          "outcome": {
+           "executor_account_id": "intents-agent.intatto.near",
+           "gas_burnt": "223182562500",
+           "logs": [],
+           "result": "",
+           "status": true,
+           "status_key": "SUCCESS_VALUE",
+           "tokens_burnt": "0"
+          },
+          "predecessor_account_id": "system",
+          "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+          "receipt_id": "FioqxuPMzB6NAYqvN6qzxZBuWm9CbUd7LmZJywVSWVto",
+          "receipts": [],
+          "receiver_account_id": "intents-agent.intatto.near"
+         }
+        ],
+        "receiver_account_id": "v1.signer"
+       },
+       {
+        "actions": [
+         {
+          "action": "TRANSFER",
+          "args": {
+           "deposit": "65380235877134600000000"
+          },
+          "method": null,
+          "rlp_hash": null
+         }
+        ],
+        "block": {
+         "block_hash": "iW3dniH5GnKQBif1NdferN7e66NLwiJaa7kSWW3uuA8",
+         "block_height": "224097665",
+         "block_timestamp": "1794419168961992853"
+        },
+        "outcome": {
+         "executor_account_id": "intents-agent.intatto.near",
+         "gas_burnt": "223182562500",
+         "logs": [],
+         "result": "",
+         "status": true,
+         "status_key": "SUCCESS_VALUE",
+         "tokens_burnt": "0"
+        },
+        "predecessor_account_id": "system",
+        "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+        "receipt_id": "E1oGibZ6sM44oJKU5T8WRcXeGfeuqguEcfkws1Li5sK4",
+        "receipts": [],
+        "receiver_account_id": "intents-agent.intatto.near"
+       }
+      ],
+      "receiver_account_id": "v1.signer"
+     },
+     {
+      "actions": [
+       {
+        "action": "FUNCTION_CALL",
+        "args": {
+         "gas": 42820585703460,
+         "deposit": "0",
+         "args_json": {
+          "intent_id": "0"
+         },
+         "args_base64": null,
+         "method_name": "on_intent_signed"
+        },
+        "method": "on_intent_signed",
+        "rlp_hash": null
+       }
+      ],
+      "block": {
+       "block_hash": "DrXKSdT4DRpMaEzbX7MbbcjdnmujNur5qYeBrwCx29rt",
+       "block_height": "224097672",
+       "block_timestamp": "1794419173131146126"
+      },
+      "outcome": {
+       "executor_account_id": "intents.intatto.near",
+       "gas_burnt": "2844425612847",
+       "logs": [
+        "EVENT_JSON:{\"standard\":\"intatto\",\"version\":\"1.0.0\",\"event\":\"intent_swap_signed\",\"data\":{\"intent_id\":\"0\",\"owner_id\":\"intents-owner.intatto.near\",\"deadline\":\"1794419467000000000\",\"signed_data\":{\"standard\":\"nep413\",\"payload\":{\"message\":\"{\\\"signer_id\\\":\\\"intents.intatto.near\\\",\\\"deadline\\\":\\\"2026-11-11T17:51:07Z\\\",\\\"intents\\\":[{\\\"intent\\\":\\\"token_diff\\\",\\\"diff\\\":{\\\"nep141:wrap.near\\\":\\\"-300000000000000000000000\\\",\\\"nep141:usdt.tether-token.near\\\":\\\"1130742\\\"}}]}\",\"nonce\":\"Vij2xgAlKBKzAK7Wg2hE8BgAAAAAAAAAAHfXH7YqrrM=\",\"recipient\":\"intents.near\"},\"public_key\":\"ed25519:5kYTxFESA4ciqDeFz5j5YqsY2sSC9WN2YN5hBNRpCgWi\",\"signature\":\"ed25519:cHHkgWGtHfEWCgJWXzLxQvkYzPP1KyEZnanBiwBRWme56k4f8jKdEtE2qAF9xVk5p9gJQvzKnB8dzZ9EEpcAUC1\"}}}"
+       ],
+       "result": "dHJ1ZQ==",
+       "status": true,
+       "status_key": "SUCCESS_VALUE",
+       "tokens_burnt": "284442561284700000000"
+      },
+      "predecessor_account_id": "intents.intatto.near",
+      "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+      "receipt_id": "6BVKPU8MpSE3gKsM6jKPKj48YH4jmFU1ypk1dF41UQn",
+      "receipts": [
+       {
+        "actions": [
+         {
+          "action": "TRANSFER",
+          "args": {
+           "deposit": "43424276427997300000000"
+          },
+          "method": null,
+          "rlp_hash": null
+         }
+        ],
+        "block": {
+         "block_hash": "FwsnpvKo194Zt6fLkN1DeJoEjzN6u68bbCtJKkxxWTM2",
+         "block_height": "224097673",
+         "block_timestamp": "1794419173781660528"
+        },
+        "outcome": {
+         "executor_account_id": "intents-agent.intatto.near",
+         "gas_burnt": "223182562500",
+         "logs": [],
+         "result": "",
+         "status": true,
+         "status_key": "SUCCESS_VALUE",
+         "tokens_burnt": "0"
+        },
+        "predecessor_account_id": "system",
+        "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+        "receipt_id": "EKEwPHXM1NjvDvibRuVhGX5vH2SCdpvegmknTZDZREDy",
+        "receipts": [],
+        "receiver_account_id": "intents-agent.intatto.near"
+       }
+      ],
+      "receiver_account_id": "intents.intatto.near"
+     },
+     {
+      "actions": [
+       {
+        "action": "TRANSFER",
+        "args": {
+         "deposit": "3724747958047500000000"
+        },
+        "method": null,
+        "rlp_hash": null
+       }
+      ],
+      "block": {
+       "block_hash": "CdCErKM4goR9orHDBdkiSktK1L1aEgc3ZuFgje8BcVEw",
+       "block_height": "224097664",
+       "block_timestamp": "1794419168509989371"
+      },
+      "outcome": {
+       "executor_account_id": "intents-agent.intatto.near",
+       "gas_burnt": "223182562500",
+       "logs": [],
+       "result": "",
+       "status": true,
+       "status_key": "SUCCESS_VALUE",
+       "tokens_burnt": "0"
+      },
+      "predecessor_account_id": "system",
+      "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+      "receipt_id": "GjfA2QvbXSRBVSG9kdYCfCqEd2J8oDnNP6BLGJR85e2U",
+      "receipts": [],
+      "receiver_account_id": "intents-agent.intatto.near"
+     }
+    ],
+    "receiver_account_id": "intents.intatto.near"
+   },
+   {
+    "actions": [
+     {
+      "action": "TRANSFER",
+      "args": {
+       "deposit": "2498681185285500000000"
+      },
+      "method": null,
+      "rlp_hash": null
+     }
+    ],
+    "block": {
+     "block_hash": "AuSbTQupDXB7h5n9dSUxXCDHPGKsbHktq4TS6n8nutJn",
+     "block_height": "224097662",
+     "block_timestamp": "1794419167465282941"
+    },
+    "outcome": {
+     "executor_account_id": "intents-agent.intatto.near",
+     "gas_burnt": "223182562500",
+     "logs": [],
+     "result": "",
+     "status": true,
+     "status_key": "SUCCESS_VALUE",
+     "tokens_burnt": "0"
+    },
+    "predecessor_account_id": "system",
+    "public_key": "ed25519:HwPkiM288GDi9UZ8bXxxHfkWiTDdfQs1vNAXAbGqYuf",
+    "receipt_id": "6apCpep2qLM4tKxYHYwGogVgfoNQ5fZL8XHRkWUHKShT",
+    "receipts": [],
+    "receiver_account_id": "intents-agent.intatto.near"
+   }
+  ],
+  "receiver_account_id": "intents.intatto.near"
+ }
+}

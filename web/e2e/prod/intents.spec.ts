@@ -18,15 +18,53 @@ function watch(page: Page) {
     if (m.type() === "error") problems.push(m.text());
   });
   page.on("pageerror", (e) => problems.push(String(e)));
-  // The panel's own reads: anything about the intents vault or the swap's transactions.
+  // The panel's own reads: anything about the intents vault or the swap's transactions, by RPC
+  // (a JSON body) or from NearBlocks, the fallback for the transactions (a GET of the hash).
+  const isPanelRead = (url: string, body: string) =>
+    /intents\.intatto\.near|GbHfV9nq|EJY7oiU1|73aJTu55|"(ft_metadata|derived_public_key|get_intent_policy|public_keys_of)"/.test(body) || NB_TX.test(url);
   const panelReads: string[] = [];
+  // The same reads, only those the page got a usable answer to: HTTP 200 with the CORS header and
+  // a JSON-RPC result (or NearBlocks' tree). A retry after a failed attempt is expected.
+  const answered: Promise<Read | null>[] = [];
   page.on("request", (r) => {
     origins.add(new URL(r.url()).origin);
     const body = r.postData() ?? "";
-    if (/intents\.intatto\.near|GbHfV9nq|EJY7oiU1|73aJTu55|"(ft_metadata|derived_public_key|get_intent_policy|public_keys_of)"/.test(body)) panelReads.push(body);
+    if (isPanelRead(r.url(), body)) panelReads.push(body || r.url());
   });
-  return { problems, origins, panelReads };
+  page.on("response", (res) => {
+    const req = res.request();
+    const body = req.postData() ?? "";
+    if (!isPanelRead(req.url(), body)) return;
+    answered.push(
+      (async () => {
+        if (res.status() !== 200 || !res.headers()["access-control-allow-origin"]) return null;
+        const json = (await res.json().catch(() => null)) as { result?: unknown; data?: unknown } | null;
+        const nb = NB_TX.exec(req.url());
+        if (nb) return json?.data ? { key: JSON.stringify(["tx", nb[1]]), from: "nearblocks" } : null;
+        if (!json || !("result" in json)) return null;
+        const { method, params } = JSON.parse(body) as { method: string; params: { method_name?: string; tx_hash?: string } };
+        if (method === "tx") return { key: JSON.stringify(["tx", params.tx_hash]), from: "rpc" };
+        return { key: JSON.stringify([method, params]), from: "rpc" };
+      })(),
+    );
+  });
+  /** Successful reads of what cannot change, counted per read; a transaction counts once whichever source answered it. */
+  const immutableReads = async () => {
+    const seen = new Map<string, number>();
+    for (const r of await Promise.all(answered)) {
+      if (!r) continue;
+      const k = JSON.parse(r.key) as [string, { method_name?: string }];
+      if (!(k[0] === "tx" || k[1].method_name === "ft_metadata" || k[1].method_name === "derived_public_key")) continue;
+      seen.set(r.key, (seen.get(r.key) ?? 0) + 1);
+    }
+    return seen;
+  };
+  return { problems, origins, panelReads, immutableReads };
 }
+
+/** NearBlocks' receipt tree for one of the swap's transactions. */
+const NB_TX = new RegExp(`^https://api\\.nearblocks\\.io/v3/txns/(${[SIGN_TX, EXECUTE_TX, SETTLE_TX].join("|")})/receipts$`);
+type Read = { key: string; from: "rpc" | "nearblocks" };
 
 const VIEWS = [
   { name: "1440-light", viewport: { width: 1440, height: 900 }, scheme: "light" },
@@ -39,7 +77,7 @@ for (const v of VIEWS) {
   test(`mainnet: the NEAR Intents panel reads its checks from chain (${v.name})`, async ({ page }, info) => {
     await page.setViewportSize(v.viewport);
     await page.emulateMedia({ colorScheme: v.scheme, reducedMotion: "reduce" });
-    const { problems, origins, panelReads } = watch(page);
+    const { problems, origins, panelReads, immutableReads } = watch(page);
     const res = await page.goto("./#/");
     const csp = res!.headers()["content-security-policy"] ?? "";
 
@@ -86,18 +124,14 @@ for (const v of VIEWS) {
     await expect(caveat).toContainText("the vault account still holds a full-access upgrade key", { timeout: 45_000 });
     await expect(caveat.locator('a[href$="THREAT_MODEL.md#trust-assumptions-intents-path"]')).toBeVisible();
 
-    // Reads that cannot change went out exactly once for the page load: the 3 transactions, the
-    // 2 tokens' metadata, the derived key. (Live state re-polls on its interval, by design.)
-    const seen = new Map<string, number>();
-    for (const b of panelReads) {
-      const { method, params } = JSON.parse(b) as { method: string; params: { method_name?: string } };
-      if (!(method === "tx" || params.method_name === "ft_metadata" || params.method_name === "derived_public_key")) continue;
-      const k = JSON.stringify([method, params]);
-      seen.set(k, (seen.get(k) ?? 0) + 1);
-    }
+    // Reads that cannot change were answered exactly once for the page load: the 3 transactions,
+    // the 2 tokens' metadata, the derived key. Only answered requests count: a retry after a
+    // failure (a 429, an overloaded node's answer without CORS headers) is expected. (Live state
+    // re-polls on its interval, by design.)
+    const seen = await immutableReads();
     const dupes = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
     expect(seen.size, "immutable reads").toBe(6);
-    expect(dupes, "identical requests sent twice").toEqual([]);
+    expect(dupes, "identical reads answered twice").toEqual([]);
 
     // Everything it read came from origins the CSP already allowed.
     for (const origin of ["https://rpc.mainnet.fastnear.com", "https://archival-rpc.mainnet.fastnear.com"]) {
@@ -169,6 +203,39 @@ for (const mode of ["network error", "429"] as const) {
     await expect(panel.getByRole("button", { name: "Retry" })).toHaveCount(3);
   });
 }
+
+// The archival node overloaded, as on 2026-11-12 at 16:20: answers without CORS headers, which
+// the browser cannot read. After its retries the swap's transactions come from NearBlocks, go
+// through the same checks, and are verified, with NearBlocks named and credited.
+test("mainnet: with the archival node answering without CORS headers, the swap is verified from NearBlocks", async ({ page }, info) => {
+  // Three transactions, each through the archival client's full backoff first.
+  test.setTimeout(240_000);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { problems, origins, immutableReads } = watch(page);
+  await page.route(/^https:\/\/archival-rpc\.mainnet\.fastnear\.com\//, (route) => route.fulfill({ status: 503, body: "upstream overloaded" }));
+  const res = await page.goto("./#/");
+  const csp = res!.headers()["content-security-policy"] ?? "";
+  const panel = page.locator("section.intents");
+  await panel.scrollIntoViewIfNeeded();
+  const swap = panel.locator(".icheck").nth(2);
+
+  await expect(swap.locator(".badge").first()).toHaveText("Settled", { timeout: 200_000 });
+  await expect(swap.locator(".swap-step .badge", { hasText: "Verified" })).toHaveCount(3);
+  await expect(swap.locator(".swap-step-via")).toHaveText(["read from NearBlocks", "read from NearBlocks", "read from NearBlocks"]);
+  await expect(swap.locator(".swap-fallback")).toContainText("The archival node did not answer, so these transactions were read from NearBlocks and checked the same way.");
+  await expect(swap.locator('.swap-fallback a.attribution[href="https://nearblocks.io"]')).toHaveText("Powered by Nearblocks.io APIs");
+
+  const seen = await immutableReads();
+  for (const h of [SIGN_TX, EXECUTE_TX, SETTLE_TX]) expect(seen.get(JSON.stringify(["tx", h])), `${h} answered once`).toBe(1);
+  expect(origins.has("https://api.nearblocks.io"), "NearBlocks was read").toBe(true);
+  expect(csp, "header CSP").toContain("https://api.nearblocks.io");
+  await page.evaluate(() => document.fonts.ready);
+  await swap.screenshot({ path: "screenshots/prod-intents-swap-from-nearblocks.png" });
+
+  expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p)), "CSP violations").toEqual([]);
+  // The blocked archival node's own failures are expected here; nothing else.
+  expect(withoutFastnearRateLimit(problems, info).filter((p) => !/^Access to fetch at 'https:\/\/archival-rpc\.mainnet\.fastnear\.com\/' from origin '[^']+' has been blocked by CORS policy/.test(p) && !/^Failed to load resource: (net::ERR_FAILED|the server responded with a status of 503)/.test(p)), "console errors").toEqual([]);
+});
 
 test("testnet: no NEAR Intents panel", async ({ page }) => {
   await page.goto("./?network=testnet#/");
