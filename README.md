@@ -20,6 +20,16 @@ NEAR). The bounty is small because one person funds it. The amount does not chan
 contract applies the same checks to every call, so the policy that refuses these 0.99761 NEAR
 refuses any balance.
 
+## Judge it in 60 seconds
+
+1. **The bounty and the public key.** Open [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet). The panel at the top is read live from the chain: the canary's balance, how long it has held, every attempt with the published key, and whether the running code matches the published build. The private key is in [CANARY.md](CANARY.md#mainnet).
+2. **What a refusal looks like.** The agent's calls refused on mainnet: [over the per-trade cap](https://nearblocks.io/txns/8o7EGQoMWfxUzeST7cTzA63J5MzvxB5ZiWk4NENa8XHU), [a pool not allowed](https://nearblocks.io/txns/G5d3Fu838aDw5SSpRvh694TpHLKLg6Vk4LVZRJzssekc), [slippage too loose](https://nearblocks.io/txns/CEpq15YceDiwqHWtpUszmZH8LegBoyyZzgrdJ8HRaEck), and a prompt-injected agent [trying to drain the vault](https://nearblocks.io/txns/FNkp2gprgvRs49L6wskMo8JcaYwpoqk2T3YVjGa6oqtw).
+3. **A trade that went through, then the owner's withdrawal.** A Rhea [swap within the limits](https://nearblocks.io/txns/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8), the owner [withdrawing the proceeds](https://nearblocks.io/txns/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW), and a NEAR Intents swap [settled](https://nearblocks.io/txns/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) above the owner's price floor.
+4. **The freeze.** The owner [freezes the vault](https://nearblocks.io/txns/6YRqjJXZcNuyeHHSnAeMoURtT6vHfG44VpGJ34uDBCk2) in one call, and the agent's next trade is [refused](https://nearblocks.io/txns/7bm6uGYGGJG3hJnuJQYoFfxBckCp6Qasvs5fVHzSW3Li).
+5. **The code is the published code.** The board's integrity check compares `vault.intatto.near`'s code hash with the [reproducible build](#what-is-deployed) every 10 seconds.
+
+**Two ways the agent trades.** The *Rhea path* swaps directly through Rhea pools, checked against the owner's caps, pool allowlist and a slippage bound set by the exchange's own quote. The *NEAR Intents path* has the vault's intents signed by the NEAR MPC network, only for pairs the owner allows and never below the owner's price floor.
+
 Today most trading bots hold your private key. In September 2024, attackers exploited a flaw in the Telegram trading bot Banana Gun and drained about $3 million from 11 users' bot wallets; because the bot held the keys, every transfer was a valid signed transaction that nothing on chain could refuse. The team refunded the users from its treasury.[^banana-gun] Intatto removes the key from the bot: the agent signs only calls the vault's policy allows, and the money stays in a contract it cannot empty.
 
 That is what Intatto does: a NEAR contract that holds an owner's NEAR and NEP-141 tokens and lets
@@ -69,7 +79,7 @@ and an optional time lock on the owner's own withdrawals.
 | Public canary (published agent key) | **Live** since 2026-11-11: 0.99761 NEAR, locked until 2026-11-20, no attempts yet | **Live** since 2026-11-06: 0.9974 NEAR on `vault-v1` (no fee), locked until 2026-12-06, no attempts yet |
 | Agent swaps through Rhea (Ref V1), within on-chain limits | **Live**: [smoke test](#mainnet-smoke-test-2026-11-11) 18/18 on 2026-11-11 | **Live** on vault-v1 and vault-v2 |
 | Agent swaps through NEAR Intents, signed by the MPC network | **Live**: `intents.intatto.near`, [one swap settled](#first-intent-swap-2026-11-11) on 2026-11-11 | Not available (mainnet only) |
-| Prompt-injection demo | Not deployed | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
+| Prompt-injection demo | **Run** on 2026-11-12 on `demo.intatto.near`'s vault ([results](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)); its key was private and has been deleted | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
 | Break-price board and owner console | **Live** at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet), the default | **Live** on the same site (network switch, or `?network=testnet`) |
 | Wallets | Meteor, Intear, HOT, MyNearWallet | Meteor, Intear |
 | Passkey sign-in | **Experimental**: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only. See [THREAT_MODEL.md](THREAT_MODEL.md#passkey-sign-in-mainnet-only-experimental). | Not available (mainnet only) |
