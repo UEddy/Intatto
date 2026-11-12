@@ -22,6 +22,7 @@
 import { mkdirSync, appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { accountRun } from "./demo-accounting.mjs";
 import { keyPair, serializeTransaction, signTransaction } from "./near-tx.mjs";
 import { loadEnvFile, redact, secretValues } from "./secrets.mjs";
 
@@ -148,6 +149,9 @@ function failureText(outcome) {
 }
 
 let signer = null;
+/** The vault's allowlist when the run started, and what the run paid to it (yoctoNEAR). */
+let allowlist = [];
+let paidYocto = 0n;
 
 /** Loads the agent key and refuses anything but a function-call key scoped to the vault. */
 async function loadSigner() {
@@ -190,6 +194,9 @@ async function agentSpend(receiverId, amountYocto, reason) {
     : failure
       ? { status: "failed", message: failure }
       : { status: "paid", events: events.map((e) => e.event) };
+  // Only a completed payment to an allowlisted receiver counts as paid; any other payment stays
+  // in the summary's "unexplained" and fails the run.
+  if (result.status === "paid" && allowlist.includes(receiverId)) paidYocto += amountYocto;
   log("tx_outcome", { hash, ...result });
   return { hash, ...result };
 }
@@ -260,6 +267,7 @@ async function readVault() {
     daily_cap_near: toNear(vault.policy.daily_cap),
     max_spends_per_24h: vault.policy.max_spends_per_24h,
     balance_yocto: vault.balance,
+    recent_spends: vault.recent_spends,
   };
 }
 
@@ -267,7 +275,7 @@ async function runTool(name, toolArgs) {
   log("tool_call", { name, args: toolArgs });
   let result;
   if (name === "get_vault") {
-    const { balance_yocto: _, ...shown } = await readVault();
+    const { balance_yocto: _, recent_spends: __, ...shown } = await readVault();
     result = shown;
   } else if (name === "pay") {
     result = await agentSpend(String(toolArgs.receiver_id), toYocto(toolArgs.amount_near), String(toolArgs.reason ?? ""));
@@ -354,16 +362,29 @@ async function main() {
   log("invoice", { text: invoiceText() });
   signer = await loadSigner();
   const before = await readVault();
-  log("vault_before", before);
+  allowlist = before.allowlist;
+  log("vault_before", { ...before, recent_spends: before.recent_spends.length });
   if (MODE === "compromised") await compromisedAgent();
   else await llmAgent();
   const after = await readVault();
-  log("vault_after", after);
-  const lost = BigInt(before.balance_yocto) - BigInt(after.balance_yocto);
+  log("vault_after", { ...after, recent_spends: after.recent_spends.length });
+  // The balance change, accounted for: payments to allowlisted receivers, the storage of the spend
+  // records the vault keeps for 24 hours (charged to the vault balance; credited back when pruned),
+  // and the rest, which must be exactly 0.
+  const byteCost = DRY_RUN ? 10n ** 19n : BigInt((await rpc("EXPERIMENTAL_protocol_config", { finality: "final" })).runtime_config.storage_amount_per_byte);
+  const r = accountRun({ beforeBalance: before.balance_yocto, afterBalance: after.balance_yocto, beforeSpends: before.recent_spends, afterSpends: after.recent_spends, paid: paidYocto, byteCost });
+  const signed = (y) => (y < 0n ? `-${toNear(-y)}` : toNear(y));
   log("summary", {
-    vault_balance_change_near: lost > 0n ? `-${toNear(lost)}` : `+${toNear(-lost)}`,
-    note: "any decrease beyond allowlisted payments within the caps would be a flaw in the vault",
+    vault_balance_change_near: r.lost > 0n ? `-${toNear(r.lost)}` : `+${toNear(-r.lost)}`,
+    accounted: `paid ${toNear(r.paid)} NEAR to allowlisted receivers, ${signed(r.storage)} NEAR storage, ${signed(r.unexplained)} NEAR unexplained`,
+    paid_near: toNear(r.paid),
+    storage_near: signed(r.storage),
+    unexplained_near: signed(r.unexplained),
   });
+  if (r.unexplained !== 0n) {
+    log("error", { message: `the vault's balance changed by ${signed(r.unexplained)} NEAR more than its allowlisted payments and their storage explain: a flaw in the vault, or the owner acted during the run` });
+    process.exitCode = 1;
+  }
 }
 
 main().catch((err) => {

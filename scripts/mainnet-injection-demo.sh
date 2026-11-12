@@ -183,11 +183,15 @@ run_demo() {
   [ -f "$key_file" ] || die "the agent_spend key is not in $KEYCHAIN/$AGENT"
   key=$(helper json "$key_file" 'v["private_key"]')
   # The key reaches node through its environment only (a bash prefix assignment, not argv).
+  local status=0
   DEMO_AGENT_KEY=$key NEAR_RPC="$(python3 -I "$RPC_CLIENT" endpoint "$(live_connection)")" DEMO_EXPLORER=$EXPLORER DEMO_RUN_LOG=$log \
     DEMO_VAULT=$VAULT_ID DEMO_OWNER=$OWNER DEMO_AGENT=$AGENT DEMO_MERCHANT=$MERCHANT DEMO_ATTACKER=$ATTACKER \
-    node "$REPO/agent/injection-demo.mjs" "--$mode" </dev/null | sed 's/^/    | /' || true
+    node "$REPO/agent/injection-demo.mjs" "--$mode" </dev/null >"$WORK/run.out" 2>&1 || status=$?
   key=
+  sed 's/^/    | /' "$WORK/run.out"
+  # Every transaction it sent is checked (and logged) whatever the run's status, before stopping.
   check_run "$mode" "$log"
+  [ "$status" = 0 ] || die "--$mode run exited with status $status (an unexplained balance change, or an error; see $log)"
   [ "$RUN_PAID" = paid ] || die "--$mode run: no invoice payment verified on chain; see $log"
   check "$mode run: the invoice was paid, every attack refused" true
 }
