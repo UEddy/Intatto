@@ -1,0 +1,569 @@
+/*
+ * The board's structure and motion: a live ticker, the hero's stack of pop-out cards, then one
+ * section after another, each a two-tone heading over one framed card, revealed as it scrolls in.
+ * Palette and type are the ledger's own (tokens.css); wax stays reserved for the seal and alarms.
+ * Every animation stops with prefers-reduced-motion (base.css, and the explicit overrides below).
+ */
+
+/* ---------- ticker ---------- */
+
+.ticker {
+  margin: -28px calc(50% - 50vw) 32px;
+  background: var(--ink);
+  color: var(--paper);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
+}
+@media (min-width: 1024px) {
+  .ticker {
+    margin-top: -48px;
+    margin-bottom: 48px;
+  }
+}
+.ticker:focus-visible {
+  outline-offset: -3px;
+}
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-drift 52s linear infinite;
+}
+.ticker:hover .ticker-track,
+.ticker:focus-within .ticker-track {
+  animation-play-state: paused;
+}
+.ticker-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 26px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  position: relative;
+}
+.ticker-item::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateY(-50%) rotate(45deg);
+  background: color-mix(in srgb, var(--paper) 45%, transparent);
+}
+.ticker-item strong {
+  font-weight: 600;
+}
+.ticker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--verdigris-soft);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--verdigris-soft) 60%, transparent);
+  animation: ticker-pulse 2.4s ease-out infinite;
+}
+.ticker-dot--broken {
+  background: var(--wax-glow);
+}
+@keyframes ticker-drift {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes ticker-pulse {
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .ticker-track {
+    animation: none;
+    width: auto;
+  }
+  .ticker-list {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .ticker-list[aria-hidden="true"] {
+    display: none;
+  }
+  .ticker-dot {
+    animation: none;
+  }
+}
+
+/* ---------- hero ---------- */
+
+.board-hero {
+  align-items: center;
+}
+/* One column until there is room for the stack beside the text. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .board-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* The fanned cards may not widen the page: the column clips sideways (clip, unlike hidden,
+   leaves the vertical axis visible and makes no scroll container). */
+.board-hero-stack {
+  overflow-x: clip;
+}
+.board-hero-text > * {
+  animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.board-hero-text > :nth-child(2) {
+  animation-delay: 80ms;
+}
+.board-hero-text > :nth-child(3) {
+  animation-delay: 160ms;
+}
+.board-hero-text > :nth-child(n + 4) {
+  animation-delay: 240ms;
+}
+.board-hero-stack {
+  animation: rise 1s cubic-bezier(0.2, 0.7, 0.2, 1) 200ms both;
+  min-width: 0;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+/* ---------- the stack of pop-out cards ---------- */
+
+.stack-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+.stack {
+  position: relative;
+  width: min(100%, 380px);
+  height: 430px;
+}
+.stack-card {
+  position: absolute;
+  inset: 34px 34px 0;
+  display: grid;
+  place-items: center;
+  padding: 26px 24px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 0 rgba(28, 26, 23, 0.04),
+    0 22px 48px -26px rgba(28, 26, 23, 0.45);
+  transform-origin: 50% 80%;
+  transition:
+    transform 0.85s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.6s ease,
+    box-shadow 0.4s ease;
+}
+.stack-card[data-depth="0"] {
+  z-index: 3;
+}
+.stack-card[data-depth="1"] {
+  z-index: 2;
+  transform: translate(-8%, -6%) rotate(-4deg) scale(0.93);
+  opacity: 0.94;
+  cursor: pointer;
+}
+.stack-card[data-depth="2"] {
+  z-index: 1;
+  transform: translate(8%, -11%) rotate(4.5deg) scale(0.86);
+  opacity: 0.86;
+  cursor: pointer;
+}
+.stack-card:not([data-depth="0"]) > * {
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .stack-wrap:hover .stack-card[data-depth="0"] {
+    transform: translateY(-6px);
+    box-shadow:
+      0 1px 0 rgba(28, 26, 23, 0.05),
+      0 34px 64px -28px rgba(28, 26, 23, 0.55);
+  }
+  .stack-wrap:hover .stack-card[data-depth="1"] {
+    transform: translate(-14%, -8%) rotate(-7deg) scale(0.93);
+  }
+  .stack-wrap:hover .stack-card[data-depth="2"] {
+    transform: translate(14%, -14%) rotate(7.5deg) scale(0.86);
+  }
+}
+.stack-face {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+.stack-face--seal .seal--hero {
+  max-width: 100%;
+  height: auto;
+}
+.stack-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.stack-value {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-size: clamp(56px, 7vw, 84px);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.stack-unit {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+}
+.stack-key {
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  background: var(--paper-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.stack-note {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 30ch;
+}
+.stack-note .badge {
+  margin-right: 4px;
+}
+.stack-controls {
+  display: flex;
+  gap: 2px;
+}
+.stack-dot {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.stack-dot::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--ink-3);
+  transition:
+    background-color 0.3s ease,
+    width 0.3s ease;
+}
+.stack-dot[aria-pressed="true"]::before {
+  width: 22px;
+  border-radius: 4px;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+@media (max-width: 767px) {
+  .stack {
+    height: 400px;
+  }
+}
+
+/* ---------- sections: a two-tone heading over one framed card ---------- */
+
+.board-section {
+  margin-top: clamp(72px, 10vw, 128px);
+}
+.section-head {
+  max-width: 24ch;
+  margin: 0 auto clamp(24px, 3.4vw, 44px);
+  text-align: center;
+  font-size: clamp(28px, 3.6vw, 46px);
+  line-height: 1.1;
+}
+.section-head em {
+  color: var(--ink-3);
+}
+.frame {
+  position: relative;
+  padding: clamp(18px, 3.2vw, 44px);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(28, 26, 23, 0.04),
+    0 28px 60px -40px rgba(28, 26, 23, 0.4);
+  transition:
+    transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.45s ease;
+  min-width: 0;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .frame:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 1px 0 rgba(28, 26, 23, 0.05),
+      0 40px 70px -40px rgba(28, 26, 23, 0.5);
+  }
+}
+/* Cards inside a frame lose their own chrome: the frame is the card. */
+.frame .card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.frame-stack {
+  display: grid;
+  gap: 40px;
+}
+.frame-stack > * + * {
+  padding-top: 40px;
+  border-top: 1px solid var(--rule);
+}
+.frame .headline-figures {
+  border-top: 0;
+}
+.frame .hfig {
+  padding-top: 0;
+}
+.frame .minor-figures {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+.frame .statement {
+  margin-top: 32px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+}
+.frame .integrity {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* ---------- tabs ---------- */
+
+.tab-list {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--ink-3);
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.tab:hover {
+  color: var(--ink);
+}
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.tab-panel:not([hidden]) {
+  animation: panel-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tab-panel:focus-visible {
+  outline-offset: 6px;
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ---------- why it matters ---------- */
+
+.why {
+  display: grid;
+  gap: 28px;
+}
+.why-story p:first-child {
+  font-family: var(--font-display);
+  font-size: clamp(19px, 1.8vw, 23px);
+  line-height: 1.5;
+}
+.why-source {
+  margin-top: 12px;
+}
+.why-compare {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-content: center;
+}
+.why-row {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--paper);
+}
+.why-row--bad {
+  border-left-color: var(--ink-3);
+}
+.why-row--good {
+  border-left-color: var(--verdigris);
+}
+.why-tag {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.why-row--good .why-tag {
+  color: var(--verdigris);
+}
+@media (min-width: 900px) {
+  .why {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 48px;
+  }
+}
+
+/* ---------- questions ---------- */
+
+.faq-item {
+  border-bottom: 1px solid var(--rule);
+}
+.faq-item:first-child {
+  border-top: 1px solid var(--rule);
+}
+.faq-q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: var(--tap);
+  padding: 16px 2px;
+  font-size: clamp(16px, 1.5vw, 18px);
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.faq-q::-webkit-details-marker {
+  display: none;
+}
+.faq-chevron {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-right: 1.5px solid var(--ink-3);
+  border-bottom: 1.5px solid var(--ink-3);
+  transform: rotate(45deg) translateY(-3px);
+  transition: transform 0.3s ease;
+}
+.faq-item[open] .faq-chevron {
+  transform: rotate(225deg) translateY(-3px);
+}
+.faq-a p {
+  padding: 0 2px 20px;
+  max-width: 70ch;
+  color: var(--ink-2);
+}
+.faq-more {
+  margin-top: 20px;
+  font-size: 14px;
+}
+@supports (interpolate-size: allow-keywords) {
+  .faq {
+    interpolate-size: allow-keywords;
+  }
+  .faq-item::details-content {
+    height: 0;
+    overflow: clip;
+    transition:
+      height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+      content-visibility 0.4s allow-discrete;
+  }
+  .faq-item[open]::details-content {
+    height: auto;
+  }
+}
+
+/* ---------- closing call ---------- */
+
+.board-cta {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: clamp(80px, 11vw, 140px);
+  padding: clamp(48px, 7vw, 88px) 0;
+  border-top: 3px double var(--ink);
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
+}
+.board-cta .display em {
+  color: var(--ink-3);
+}
+.board-cta .hero-actions {
+  justify-content: center;
+}
+
+/* ---------- scroll reveal (src/ui/Reveal.tsx) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    transition:
+      opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms),
+      transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) var(--reveal-delay, 0ms);
+  }
+  .reveal--pending {
+    opacity: 0;
+    transform: translateY(36px) scale(0.985);
+  }
+}

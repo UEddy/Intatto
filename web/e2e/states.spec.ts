@@ -41,8 +41,8 @@ for (const [name, scenario] of Object.entries(scenarios(NOW_NS))) {
       await expect(page.locator(".stamp--rejected")).toHaveCount(3);
       await expect(page.locator(".stamp").first()).toContainText("Rejected · receiver not allowed");
     }
-    // Attempts exist, so the rules panel has given its space back to the log.
-    await expect(page.locator(".rules")).toHaveCount(0);
+    // The rules live in their own tab, closed until chosen.
+    await expect(page.locator(".rules")).toBeHidden();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
@@ -84,4 +84,50 @@ test("with reduced motion the seal is static", async ({ page }) => {
   // Every seal animation (press, crack, halves parting) has already reached its end state.
   const states = await page.locator(".seal--hero").evaluate((el) => el.getAnimations({ subtree: true }).map((a) => a.playState));
   expect(states.every((s) => s === "finished")).toBe(true);
+});
+
+test("Try to break it opens the Try it tab; the tabs follow the arrow keys", async ({ page }) => {
+  const problems = watchErrors(page);
+  await mockChain(page, scenarios(NOW_NS)["attempts-matches"]!, NOW_NS);
+  await page.goto("./?network=testnet#/");
+  await settle(page);
+  const tabs = page.getByRole("tablist", { name: "Try it, the key, the rules" });
+  await tabs.getByRole("tab", { name: "The rules" }).click();
+  await expect(page.locator(".rules")).toBeVisible();
+
+  // The hero's button brings back the command, in view, without leaving the board's route.
+  await page.locator(".board-hero").getByRole("button", { name: /Try to break it/ }).click();
+  await expect(tabs.getByRole("tab", { name: "Try it" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".try-it")).toBeInViewport();
+  expect(new URL(page.url()).hash).toBe("#/");
+
+  await tabs.getByRole("tab", { name: "Try it" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(tabs.getByRole("tab", { name: "The key" })).toBeFocused();
+  await expect(tabs.getByRole("tab", { name: "The key" })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("End");
+  await expect(tabs.getByRole("tab", { name: "The rules" })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(tabs.getByRole("tab", { name: "Try it" })).toHaveAttribute("aria-selected", "true");
+  expect(problems).toEqual([]);
+});
+
+test("the ticker and the card stack: live values, controls, and still with reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockChain(page, scenarios(NOW_NS)["attempts-matches"]!, NOW_NS);
+  await page.goto("./?network=testnet#/");
+  await settle(page);
+  // Assistive technology reads the ticker once; the copy that makes the loop is hidden.
+  const ticker = page.getByRole("region", { name: "Testnet canary, live" });
+  await expect(ticker.locator('ul:not([aria-hidden="true"]) li').first()).toContainText("Testnet canary live");
+  await expect(ticker.locator(".ticker-track")).toHaveCSS("animation-name", "none");
+
+  const stack = page.getByRole("group", { name: "The canary at a glance" });
+  await expect(stack.locator('[data-depth="0"]')).toHaveClass(/stack-card--seal/);
+  await stack.getByRole("button", { name: "Show the bounty" }).click();
+  await expect(stack.locator('[data-depth="0"]')).toHaveClass(/stack-card--bounty/);
+  await expect(stack.getByRole("button", { name: "Show the bounty" })).toHaveAttribute("aria-pressed", "true");
+  // Reduced motion: it never turns by itself.
+  await page.waitForTimeout(6000);
+  await expect(stack.locator('[data-depth="0"]')).toHaveClass(/stack-card--bounty/);
 });

@@ -7,6 +7,7 @@ import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/board.css";
 import "./styles/seal.css";
+import "./styles/landing.css";
 import "./styles/console.css";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
