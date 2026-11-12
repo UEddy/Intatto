@@ -1,5 +1,5 @@
-# Formatting, lints and the full test suite (unit tests plus sandbox tests against the real
-# exchange binary) on every push to any branch and on every pull request.
+# Formatting, lints, the full contract test suite (unit tests plus sandbox tests against the real
+# exchange binary), and the web and agent unit tests, on every push to any branch and on every pull request.
 #
 # There is deliberately no deploy workflow. The cargo-near template's deploy-staging and
 # deploy-production workflows deployed with `without-init-call`, which leaves this contract
@@ -60,3 +60,18 @@ jobs:
       - name: Install cargo-near
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
       - run: cargo test
+
+  web:
+    name: Web and agent tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: npm ci
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      # The agent's AI receipt check imports web/'s pinned @noble packages, so this runs after npm ci.
+      - run: node --test agent/*.test.mjs
