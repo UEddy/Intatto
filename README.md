@@ -120,13 +120,31 @@ transactions, the signed payload and the checks: [CHAIN_SIGNATURES.md](CHAIN_SIG
 | `execute_intents` with the solver's intent | the relay | [`EJY7oiU1…`](https://explorer.near.org/transactions/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
 | `settle_intent_swap`: nonce used, owner credited 1.130742 USDt | `intents-agent.intatto.near` | [`73aJTu55…`](https://explorer.near.org/transactions/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
 
+## Prerequisites
+
+Each step below says which of these it needs. Nothing here needs a key or a NEAR account except
+"Try it" step 4, which is marked.
+
+| Tool | Needed for | Notes |
+|---|---|---|
+| `curl`, `python3` | "Try it" steps 1 to 3 | Read-only calls to the mainnet RPC |
+| Rust, from [rust-toolchain.toml](rust-toolchain.toml) | `cargo test` | rustup installs the pinned toolchain |
+| [cargo-near](https://github.com/near/cargo-near) 0.22.0 | `cargo test` (the sandbox tests build the contract with it) | `cargo install cargo-near --version 0.22.0 --locked`; on Debian or Ubuntu install `pkg-config` and `libudev-dev` first |
+| Open-file limit of 65535 | `cargo test` (the sandbox tests start `neard`) | Run `ulimit -n 65535` in the same shell first; without it, `neard` fails to start and the sandbox tests fail |
+| Docker | The reproducible build only | |
+| Node 22.22 or later | The web app and the agent | |
+| Playwright's Chromium | `npm run test:prod` only | `(cd web && npx playwright install chromium)` |
+| [near-cli-rs](https://github.com/near/near-cli-rs) (tested with 0.30.1) | "Try it" step 4 | |
+
+Every command block below is labelled: **offline**, **reads the network** (no key), or **signs a
+mainnet transaction**.
+
 ## Try it
 
-Each step says what to run and what you should see. Steps 1 to 3 need only `curl` and
-`python3`. Steps 4 and 5 need [near-cli-rs](https://github.com/near/near-cli-rs) (tested with
-0.30.1). The testnet canary's accounts, key and command are in [CANARY.md](CANARY.md#testnet).
+Each step says what to run and what you should see. The testnet canary's accounts, key and command
+are in [CANARY.md](CANARY.md#testnet).
 
-**1. Read the canary vault.**
+**1. Read the canary vault.** Reads the network (no key).
 
 ```bash
 curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"vault.intatto.near","method_name":"get_vault","args_base64":"eyJvd25lcl9pZCI6ImNhbmFyeS5pbnRhdHRvLm5lYXIifQ=="}}' \
@@ -137,20 +155,40 @@ You should see `"balance": "997610000000000000000000"` (0.99761 NEAR), an empty 
 of `"0"`, and `"withdrawals_locked_until": "1795176000000000000"` (2026-11-20 12:00:00 UTC). Any
 lower balance is a canary break (see [CANARY.md](CANARY.md)).
 
-**2. Check that the deployed code is the published build.**
+**2. Check that the deployed code is the published build.** Reads the network (no key).
 
 ```bash
 curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_account","finality":"final","account_id":"vault.intatto.near"}}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["code_hash"])'
 ```
 
-You should see `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`. To reproduce it, check out commit
-`6cfa90e` (tag `canary-build`), run `cargo near build reproducible-wasm`, and compare
-`sha256sum target/near/intatto.wasm` with hex
-`2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`. The build image is pinned in
-[Cargo.toml](Cargo.toml).
+You should see `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`. That is the base58 form of the
+wasm's sha256, hex `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`.
 
-**3. Check the published key's permission.**
+**2b. Rebuild it yourself.** Offline once the build image is pulled; needs Docker and cargo-near.
+
+```bash
+git fetch --tags && git checkout canary-build          # commit 6cfa90e
+cargo near build reproducible-wasm
+sha256sum target/near/intatto.wasm                     # 2c520bfc...e8d218f5
+git checkout master
+```
+
+The build runs inside the Docker image pinned by digest in [Cargo.toml](Cargo.toml)
+(`sourcescan/cargo-near:0.21.1-rust-1.96.0`), so the cargo-near inside that image does the build,
+whatever version you have installed. The intents vault's build is the same with tag
+`intents-build` (commit `fc23fbc`, code hash `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC`). GitHub
+Actions builds both the same way in
+[reproducible-build.yml](.github/workflows/reproducible-build.yml) (about 2 minutes per run).
+
+Without Docker, an offline check: the copy of the canary build committed for the tests has the same
+hash.
+
+```bash
+sha256sum tests/res/intatto_3z1w5.wasm                 # 2c520bfc...e8d218f5
+```
+
+**3. Check the published key's permission.** Reads the network (no key).
 
 ```bash
 curl -s https://rpc.mainnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_access_key","finality":"final","account_id":"canary-agent.intatto.near","public_key":"ed25519:GWvo8kPMuTxj9yLvTnsFJ5jxB4D3CNrbcMsLn2WTAEig"}}' \
@@ -161,7 +199,8 @@ You should see a `FunctionCall` permission with receiver `vault.intatto.near`, m
 `agent_spend` and `agent_swap`, and an allowance in yoctoNEAR (0.25 NEAR at setup, lower once
 anyone has used the key).
 
-**4. Try to drain the canary with the published key.** The private key is in
+**4. Try to drain the canary with the published key.** **Signs and sends a mainnet
+transaction**, with the published key; it needs near-cli-rs. The private key is in
 [CANARY.md](CANARY.md). Put any account id as the receiver; you do not need a mainnet account of
 your own, because the agent account pays the gas.
 
@@ -181,10 +220,10 @@ repeat step 1: the balance is unchanged. Changing the amount, receiver or method
 
 **5. Run every test.** See [Tests](#tests). You should see all tests pass.
 
-**6. Run the web app locally.**
+**6. Run the web app locally.** The app reads the network; it holds no keys.
 
 ```bash
-cd web && npm ci && npm run dev
+(cd web && npm ci && npm run dev)
 ```
 
 Open the printed URL (it ends in `/Intatto/`). The board reads the mainnet canary (switch to
@@ -194,16 +233,20 @@ The same board is hosted at [intatto.pages.dev](https://intatto.pages.dev/?netwo
 
 ## Tests
 
-One command runs the contract's unit tests and sandbox tests:
+One command runs the contract's unit tests and sandbox tests. Offline apart from downloads (crates,
+the `neard` sandbox binary); no key.
 
 ```bash
+ulimit -n 65535
 cargo test
 ```
 
 It needs the Rust toolchain from [rust-toolchain.toml](rust-toolchain.toml) (rustup installs it)
 and [cargo-near](https://github.com/near/cargo-near) 0.22.0, which the sandbox tests use to build
-the contract. The sandbox tests download a `neard` sandbox binary and run up to four nodes at once
-(about 0.5 GB of RAM each). The swap tests deploy the real ref-exchange 1.9.19 binary, fetched
+the contract (see [Prerequisites](#prerequisites)). The sandbox tests download a `neard` sandbox
+binary and run up to four nodes at once (about 0.5 GB of RAM each), and `neard` needs the
+65535 open-file limit; without it, only the 98 unit tests pass. A full run takes 8 to 9 minutes in
+CI. The swap tests deploy the real ref-exchange 1.9.19 binary, fetched
 from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 
 | Suite | File | Tests |
@@ -213,8 +256,8 @@ from testnet and checked by hash ([tests/res/README.md](tests/res/README.md)).
 | Swaps through the real exchange, fees, J5Mo upgrade, a vault blacklisted on 1.9.21 | [tests/swap.rs](tests/swap.rs) | 17 |
 | Withdrawal lock | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs) | 3 |
 | v1 state survives a code upgrade | [tests/upgrade.rs](tests/upgrade.rs) | 1 |
-| NEAR Intents path: mock MPC signer, vendored intents.near 0.4.5, upgrade from the canary's 3z1W5 build | [tests/chain_signatures.rs](tests/chain_signatures.rs) | 20 |
-| **Total** (`cargo test -- --list`, 2026-11-11) | | **154** |
+| NEAR Intents path: mock MPC signer, vendored intents.near 0.4.5, upgrade from the canary's 3z1W5 build | [tests/chain_signatures.rs](tests/chain_signatures.rs) | 21 |
+| **Total** (`cargo test -- --list`, 2026-11-12) | | **155** |
 
 The swap tests run against the testnet exchange binary (ref-exchange 1.9.19) by default. To run
 them against the mainnet binary (1.9.21, `v2.ref-finance.near`), and against the reproducible build
@@ -225,13 +268,16 @@ INTATTO_TEST_EXCHANGE=1.9.21 cargo test
 INTATTO_TEST_WASM=target/near/intatto.wasm INTATTO_TEST_WASM_SHA256=3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J cargo test
 ```
 
-The web app's and the demo agent's tests run separately:
+The web app's and the demo agent's tests run separately. Run each line from the repository root:
 
 ```bash
-cd web && npm ci && npm test        # 126 unit tests (vitest)
-cd web && npm run test:prod         # the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
-node --test agent/*.test.mjs        # 16 tests: the demo agent's transaction signer and secret redaction, and the intent swap agent (offline)
+(cd web && npm ci && npm test)      # offline: 190 unit tests in 23 files (vitest), 2026-11-12
+node --test agent/*.test.mjs        # offline: 28 tests: the demo agent's transaction signer and secret redaction, the intent swap agent, the AI decision receipts
+(cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```
+
+`test:prod` reads live RPC nodes, which rate-limit heavy use (HTTP 429); if it fails on a read,
+wait a few minutes and run it once more.
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy and
 `cargo test` on every push.
@@ -247,8 +293,8 @@ it to send the vault's whole balance to an attacker. It signs with a function-ca
 `agent_spend`; the vault's policy allows one merchant and small caps.
 
 ```bash
-node agent/injection-demo.mjs --compromised --dry-run   # no key needed; prints the four payments it would make
-node --test agent/*.test.mjs                            # the transaction signer, checked against a real testnet transaction
+node agent/injection-demo.mjs --compromised --dry-run   # reads the network (testnet RPC), no key; prints the four payments it would make
+node --test agent/*.test.mjs                            # offline: the transaction signer, checked against a real testnet transaction
 ```
 
 - `--compromised` is an agent that obeys the injection.
@@ -460,7 +506,8 @@ Per completed swap, the agent pays about 0.0036 NEAR of gas whatever the size (t
 
 ## Built during the hackathon
 
-The hackathon counts code written from the 2026-10-19 announcement onward (HACKATHON.md, Q-001).
+The hackathon counts code written from the 2026-10-19 announcement onward (the organizers' hackathon
+FAQ, Q-001; the FAQ is not part of this repository).
 The first commit, [`aff5964`](https://github.com/UEddy/Intatto/commit/aff5964) on 2026-11-02, is the
 unmodified `cargo near new` project template (its author is `nearprotocol-ci`). Every later commit
 is this project's own work, from 2026-11-02 onward (`git log --format='%h %ad %s' --date=iso`).
