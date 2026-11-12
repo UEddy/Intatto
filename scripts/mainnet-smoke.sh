@@ -28,6 +28,10 @@
 #                       scripts/lib/mainnet.sh); each agent_swap needs ~0.301 NEAR of it at hand,
 #                       and the unused part is refunded.
 #   EXPECTED_CODE_HASH  default: the reproducible build of commit 6cfa90e
+# The whole script is one block, so bash parses all of it before running any of it: editing the
+# file while a run is in progress cannot change what that run executes (bash otherwise reads a
+# script as it goes, and an edit mid-run makes it execute shifted text).
+{
 set -euo pipefail
 shopt -s inherit_errexit
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
@@ -456,3 +460,6 @@ run_steps "$SMOKE_OWNER"
 echo "== $PASSED passed, $FAILED failed"
 echo "Transactions: $TX_LOG"
 [ "$FAILED" = 0 ]
+
+exit
+}

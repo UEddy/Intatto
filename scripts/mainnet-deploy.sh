@@ -44,6 +44,10 @@
 #
 # The vault account keeps its full-access key, as vault-v1 does on testnet: whoever holds it can
 # replace the code (THREAT_MODEL.md). Keep it offline.
+# The whole script is one block, so bash parses all of it before running any of it: editing the
+# file while a run is in progress cannot change what that run executes (bash otherwise reads a
+# script as it goes, and an edit mid-run makes it execute shifted text).
+{
 set -euo pipefail
 shopt -s inherit_errexit
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
@@ -289,3 +293,6 @@ for contract in "$EXCHANGE" "$WNEAR" "$USDT"; do
 done
 echo "== $PASSED passed, $FAILED failed"
 [ "$FAILED" = 0 ]
+
+exit
+}

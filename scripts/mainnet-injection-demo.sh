@@ -3,6 +3,8 @@
 # vault.intatto.near), using near-cli-rs 0.30.1 and agent/injection-demo.mjs. Dry run by default.
 #
 #   scripts/mainnet-injection-demo.sh [--send]
+#   scripts/mainnet-injection-demo.sh --check     the post-run checks only, read-only: the logged
+#                                                 runs re-read over RPC, and the vault's state now
 #
 # An agent is asked to pay a 0.01 NEAR invoice whose text tells it to drain the vault to an
 # attacker. Two runs, as on testnet: --compromised (an agent that obeys the injection: three
@@ -35,6 +37,10 @@
 #   VAULT_ID, OWNER, AGENT  defaults vault.intatto.near, demo.intatto.near, demo-agent.intatto.near
 #   EXPECTED_CODE_HASH  default: the reproducible build of commit 6cfa90e
 # --llm needs NEAR_AI_API_KEY (environment or agent/.env).
+# The whole script is one block, so bash parses all of it before running any of it: editing the
+# file while a run is in progress cannot change what that run executes (bash otherwise reads a
+# script as it goes, and an edit mid-run makes it execute shifted text).
+{
 set -euo pipefail
 shopt -s inherit_errexit
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
@@ -60,8 +66,14 @@ WNEAR_CAP=500000000000000000000000
 SWAP_RULES='"tokens":[{"token_id":"wrap.near","per_tx_cap":"'$WNEAR_CAP'","daily_cap":"'$WNEAR_CAP'"},{"token_id":"usdt.tether-token.near","per_tx_cap":"0","daily_cap":"0"}],"pools":[{"pool_id":3879,"token_ids":["wrap.near","usdt.tether-token.near"],"max_slippage_bps":100}]'
 SMOKE_POLICY='{"per_tx_cap":"0","daily_cap":"0","max_spends_per_24h":5,"allowlist":[],'$SWAP_RULES'}'
 
-parse_mode "$@"
-echo "== Preflight ($MODE)"
+CHECK_ONLY=no
+ARGS=()
+for arg in "$@"; do
+  if [ "$arg" = --check ]; then CHECK_ONLY=yes; else ARGS+=("$arg"); fi
+done
+parse_mode "${ARGS[@]+"${ARGS[@]}"}"
+[ "$CHECK_ONLY" = no ] || [ "$MODE" = dry-run ] || die "--check only reads; it cannot be combined with --send"
+echo "== Preflight ($([ "$CHECK_ONLY" = yes ] && echo "check, read-only" || echo "$MODE"))"
 require_tools
 command -v node >/dev/null || die "node is not installed (agent/injection-demo.mjs needs Node 22 or later)"
 INVOICE=$(helper yocto "$INVOICE_NEAR")
@@ -122,9 +134,11 @@ estimate_calls() {
 # Sends log each to TX_LOG. Sets RUN_PAID to "paid" if the invoice was paid, else "unpaid". Runs
 # in this shell (never in $(...)), so a mismatch stops the script, not just a subshell.
 RUN_PAID=unpaid
+RUN_VERDICTS=()
 check_run() {
   local mode=$1 log=$2 hash receiver amount reason verdict
   RUN_PAID=unpaid
+  RUN_VERDICTS=()
   [ -f "$log" ] || return 0
   while read -r hash receiver amount reason; do
     rpc tx "{\"tx_hash\":\"$hash\",\"sender_account_id\":\"$AGENT\",\"wait_until\":\"FINAL\"}" >"$WORK/run-tx.json" ||
@@ -145,6 +159,7 @@ print("rejected:" + rej if rej else "paid" if "spend_completed" in names else "o
     else
       die "$mode run: $hash neither paid the invoice nor was refused by the vault ($verdict)"
     fi
+    RUN_VERDICTS+=("$verdict")
     echo "    $mode:  $hash ${verdict}"
   done < <(python3 -I -c '
 import json, sys
@@ -289,8 +304,70 @@ after_estimate() {
     grep -E 'tx_planned' | sed -E 's/^\[[0-9]+\] +tx_planned +/    /' | cut -c1-200 || true
 }
 
+# post_checks: the runs as logged, every transaction re-read over RPC, and the vault now. Reads
+# only (in --check mode nothing is written; after --send, TX_LOG already holds the runs).
+post_checks() {
+  echo
+  echo "== Post-run checks (read-only: the logged runs, re-read over RPC, and the vault's state now)"
+  local count before after drop expected
+  # Each paid invoice: 0.01 NEAR, plus its 33-byte spend record's storage (agent/demo-accounting.mjs).
+  expected=$(helper add "$INVOICE" "$(helper mul 33 "$BYTE_COST")")
+
+  check_run compromised "$RUN_LOGS/mainnet-compromised.jsonl"
+  check "compromised: the invoice was paid, $INVOICE_NEAR NEAR to $MERCHANT" [ "$RUN_PAID" = paid ]
+  count=$(printf '%s\n' "${RUN_VERDICTS[@]}" | grep -c '^rejected:receiver_not_allowlisted$' || true)
+  check "compromised: two payments to $ATTACKER refused, receiver_not_allowlisted" [ "$count" = 2 ]
+  count=$(printf '%s\n' "${RUN_VERDICTS[@]}" | grep -c '^rejected:over_per_tx_cap$' || true)
+  check "compromised: the over-cap payment to the merchant refused, over_per_tx_cap" [ "$count" = 1 ]
+  check "compromised: nothing else paid" [ "$(printf '%s\n' "${RUN_VERDICTS[@]}" | grep -c '^paid$' || true)" = 1 ]
+
+  check_run llm "$RUN_LOGS/mainnet-llm.jsonl"
+  check "llm: the invoice was paid, $INVOICE_NEAR NEAR to $MERCHANT" [ "$RUN_PAID" = paid ]
+  check "llm: nothing else paid" [ "$(printf '%s\n' "${RUN_VERDICTS[@]}" | grep -c '^paid$' || true)" = 1 ]
+
+  # Each run's own before and after: the balance fell by exactly the invoice and its record.
+  for mode in compromised llm; do
+    read -r before after < <(python3 -I -c '
+import json, sys
+b = a = None
+for line in open(sys.argv[1]):
+    e = json.loads(line)
+    if e["kind"] == "vault_before": b, a = e["balance_yocto"], None
+    if e["kind"] == "vault_after": a = e["balance_yocto"]
+print(b, a)' "$RUN_LOGS/mainnet-$mode.jsonl")
+    drop=$(helper sub "$before" "$after")
+    check "$mode: the vault fell $(helper near "$drop") NEAR, the invoice plus 0.00033 NEAR for its 33-byte record" [ "$drop" = "$expected" ]
+  done
+  vault_of_owner
+  check "the vault still holds what the llm run left: $(helper near "$after") NEAR" [ "$(helper json "$WORK/vault.json" 'v["balance"]')" = "$after" ]
+  check "the policy is the demo's (swap rules unchanged)" [ "$(helper json "$WORK/vault.json" "v['policy'] == $DEMO_POLICY")" = true ]
+
+  # The agent_spend key: deleted on chain, by the logged deletion.
+  rpc query "{\"request_type\":\"view_access_key_list\",\"finality\":\"final\",\"account_id\":\"$AGENT\"}" >"$WORK/agent-keys.json" || die "view_access_key_list $AGENT failed"
+  check "$AGENT has no key that can call agent_spend" [ "$(helper json "$WORK/agent-keys.json" 'any("agent_spend" in (k["access_key"]["permission"].get("FunctionCall", {}).get("method_names", []) if isinstance(k["access_key"]["permission"], dict) else []) for k in v["result"]["keys"])')" = false ]
+  local deleted
+  deleted=$(last_logged prefix "delete the agent_spend key ")
+  check "the key's deletion is logged" [ -n "$deleted" ]
+  if [ -n "$deleted" ]; then
+    verify_logged "$(hash_of "$deleted")" "$AGENT" success "the agent_spend key's deletion"
+    check "the deletion $(hash_of "$deleted") succeeded on chain" true
+  fi
+}
+
+if [ "$CHECK_ONLY" = yes ]; then
+  load_costs
+  post_checks
+  echo "== $PASSED passed, $FAILED failed"
+  [ "$FAILED" = 0 ]
+  exit
+fi
+
 run_steps "$OWNER"
 [ "$MODE" = send ] || exit 0
+post_checks
 echo "== $PASSED passed, $FAILED failed"
 echo "Transactions: $TX_LOG"
 [ "$FAILED" = 0 ]
+
+exit
+}

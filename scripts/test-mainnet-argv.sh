@@ -350,5 +350,53 @@ else
   fi
 fi
 
+# ---- 5. every script parses, and the mainnet scripts are read whole before they run --------------
+# On 2026-11-12 an edit to scripts/mainnet-injection-demo.sh during a --send run made bash, which
+# reads a script as it goes, execute shifted text after the last step ("syntax error near
+# unexpected token `}'"). Each mainnet script is one { ...; exit; } block, so bash parses all of it
+# first.
+for f in "$REPO"/scripts/*.sh "$REPO"/scripts/lib/*.sh; do
+  if out=$(bash -n "$f" 2>&1); then
+    pass "bash -n ${f#"$REPO"/}"
+  else
+    fail "bash -n ${f#"$REPO"/}: $out"
+  fi
+done
+for f in "$REPO"/scripts/mainnet-*.sh; do
+  if grep -q -z $'\n{\nset -euo pipefail\n' "$f" && [ "$(tail -n 2 "$f" | tr '\n' ' ')" = "exit } " ]; then
+    pass "${f#"$REPO"/} is one block, read whole before it runs"
+  else
+    fail "${f#"$REPO"/} is not wrapped in { set -euo pipefail ... exit }"
+  fi
+done
+# What the block buys: the file is rewritten while each script sleeps. The wrapped one finishes as
+# it was written; the plain one executes whatever text now sits at its old read position.
+mkdir "$T/edit"
+for kind in wrapped plain; do
+  f="$T/edit/$kind.sh"
+  if [ "$kind" = wrapped ]; then
+    printf '%s\n' '#!/usr/bin/env bash' '{' 'sleep 1' 'echo original-end' 'exit' '}' >"$f"
+  else
+    printf '%s\n' '#!/usr/bin/env bash' 'sleep 1' 'echo original-end' >"$f"
+  fi
+  bash "$f" >"$T/edit/$kind.out" 2>&1 &
+  pid=$!
+  # Wait until bash has started, then shift everything after the shebang by 40 bytes.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s /proc/$pid/cmdline ] && break; read -r -t 0.05 _ </dev/zero || true; done
+  read -r -t 0.3 _ </dev/zero || true
+  { printf '#!/usr/bin/env bash\n# %s\n' "$(printf 'x%.0s' $(seq 1 37))"; tail -n +2 "$f"; } >"$f.new" && cat "$f.new" >"$f"
+  wait "$pid" || true
+done
+if [ "$(cat "$T/edit/wrapped.out")" = original-end ]; then
+  pass "a wrapped script edited mid-run finishes as written"
+else
+  fail "a wrapped script edited mid-run did not finish as written: $(cat "$T/edit/wrapped.out")"
+fi
+if [ "$(cat "$T/edit/plain.out")" != original-end ]; then
+  pass "control: an unwrapped script edited mid-run does not ($(head -c 60 "$T/edit/plain.out" | tr '\n' ' '))"
+else
+  echo "note: the unwrapped control happened to finish as written this time (timing)"
+fi
+
 echo "== $PASSED passed, $FAILED failed"
 [ "$FAILED" = 0 ]

@@ -55,6 +55,10 @@
 #   FLOOR_USDT_PER_WNEAR default 3.3 (the market was ~3.77 USDt per wNEAR on 2026-11-11)
 #   FC_ALLOWANCE         default 1 NEAR (the gas the agent key may buy; it holds no NEAR)
 #   DRY_RUN_TOPUP        <account>=<NEAR>: plan as if that top-up had arrived (dry runs only)
+# The whole script is one block, so bash parses all of it before running any of it: editing the
+# file while a run is in progress cannot change what that run executes (bash otherwise reads a
+# script as it goes, and an edit mid-run makes it execute shifted text).
+{
 set -euo pipefail
 shopt -s inherit_errexit
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
@@ -561,3 +565,6 @@ fi
 echo "== $PASSED passed, $FAILED failed"
 [ "$MODE" = dry-run ] || echo "Transactions: $TX_LOG"
 [ "$FAILED" = 0 ]
+
+exit
+}

@@ -34,6 +34,10 @@
 #
 # TEARDOWN_TEST_NETWORK=testnet (with TOKENS and EXCHANGE_ID) runs the dry run against testnet, to
 # test the script on a live vault; it refuses --send.
+# The whole script is one block, so bash parses all of it before running any of it: editing the
+# file while a run is in progress cannot change what that run executes (bash otherwise reads a
+# script as it goes, and an edit mid-run makes it execute shifted text).
+{
 set -euo pipefail
 shopt -s inherit_errexit
 source "$(dirname "${BASH_SOURCE[0]}")/lib/mainnet.sh"
@@ -386,3 +390,6 @@ if [ "$MODE" = dry-run ]; then
     printf '    %s\n' "${BLOCKERS[@]}"
   fi
 fi
+
+exit
+}
