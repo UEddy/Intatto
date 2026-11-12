@@ -804,8 +804,8 @@
   flex: 1 1 16ch;
   min-width: 0;
 }
-.icheck--alert .icheck-claim,
-.icheck--alert .rules-num {
+.icheck--fail .icheck-claim,
+.icheck--fail .rules-num {
   color: var(--wax);
 }
 /* Side by side, the shorter cell keeps its rows at the top instead of stretching them. */
@@ -1023,9 +1023,48 @@
   margin-top: 2px;
   color: var(--amber);
 }
+.intents-caveat-text {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
 .intents-caveat p {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+/* Unread: neutral paper, not the amber of a stated caveat. */
+.intents-caveat--unverified,
+.intents-caveat--checking {
+  background: var(--paper-sunk);
+  border-color: var(--rule);
+}
+.intents-caveat--unverified > .icon,
+.intents-caveat--checking > .icon {
+  color: var(--ink-3);
+}
+/* "Couldn't verify right now — Retry": neutral, never the pass or fail colours. */
+.intents-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.intents-retry-btn {
+  min-height: var(--tap);
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+.intents-retry-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.hash--unread {
+  color: var(--ink-3);
+}
+.badge .icon {
+  margin-right: 4px;
 }
 .intents-caveat-link {
   display: inline-flex;

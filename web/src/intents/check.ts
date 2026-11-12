@@ -13,7 +13,9 @@
 import { z } from "zod";
 import type { IntentsConfig } from "../config/networks";
 import { base58Encode } from "../near/base58";
-import type { ReceiptOutcome, TxOutcome } from "../near/chain";
+import type { FtMetadata } from "../contract/views";
+import { ftMetadata } from "../contract/views";
+import type { AccessKeyPermission, Chain, ReceiptOutcome, Source, TxOutcome } from "../near/chain";
 
 /* ---------- build ---------- */
 
@@ -309,4 +311,141 @@ export async function checkSwap(
   const execute = checkExecuteTx(await tx(cfg.swap.executeTxHash, cfg.verifierId), cfg, intentHash, sign.signed.nonce);
   const settle = checkSettleTx(await tx(cfg.swap.settleTxHash, cfg.agentId), cfg);
   return { sign, intentHash, execute, settle };
+}
+
+/* ---------- the four checks, as the panel runs them ---------- */
+
+/**
+ * What a check concluded. "fail" is the chain answering something other than what is claimed
+ * (another code hash, another key, a transaction that does not match). "unverified" is not getting
+ * an answer at all (network error, rate limit after the client's backoff, a node that does not know
+ * a final transaction, an answer of the wrong shape): the claim is neither confirmed nor refuted.
+ */
+export type Verdict<T> = { readonly verdict: "pass" | "fail"; readonly value: T } | { readonly verdict: "unverified"; readonly reason: string };
+
+/** A read that could not be answered, though the chain itself contradicted nothing. */
+export class Unverifiable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "Unverifiable";
+  }
+}
+
+/** Runs a check; any read that throws makes it unverified, never a pass and never a fail. */
+export async function verify<T>(run: () => Promise<{ value: T; pass: boolean }>): Promise<Verdict<T>> {
+  try {
+    const r = await run();
+    return { verdict: r.pass ? "pass" : "fail", value: r.value };
+  } catch (e) {
+    return { verdict: "unverified", reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Reads that cannot change (final transactions, token metadata, the derived key), kept for the
+ * page load: a retry or a re-poll asks only for what is still missing. Only answers are kept; a
+ * failed read is forgotten so the next attempt asks again.
+ */
+export class Memo {
+  private readonly m = new Map<string, Promise<unknown>>();
+  get<T>(key: string, read: () => Promise<T>): Promise<T> {
+    const hit = this.m.get(key);
+    if (hit) return hit as Promise<T>;
+    const p = read();
+    this.m.set(key, p);
+    p.catch(() => this.m.delete(key));
+    return p;
+  }
+}
+
+export interface Reads {
+  readonly chain: Chain;
+  /** Archival node: the swap's transactions only. */
+  readonly archive: Chain;
+  readonly memo: Memo;
+}
+
+export interface BuildValue {
+  /** null: the account no longer exists. */
+  readonly codeHash: string | null;
+  readonly source: Source | null;
+}
+
+export function checkBuild(r: Reads, cfg: IntentsConfig): Promise<Verdict<BuildValue>> {
+  return verify(async () => {
+    const a = await r.chain.account(cfg.vaultId);
+    const codeHash = a?.value.codeHash ?? null;
+    return { value: { codeHash, source: a?.source ?? null }, pass: buildState(codeHash, cfg.expectedBuild.codeHash) === "matches" };
+  });
+}
+
+export interface KeyValue {
+  readonly keys: readonly string[];
+  readonly derived: string;
+  readonly state: KeyState;
+  readonly keysSource: Source;
+  readonly derivedSource: Source;
+}
+
+export function checkKey(r: Reads, cfg: IntentsConfig): Promise<Verdict<KeyValue>> {
+  return verify(async () => {
+    const [keys, derived] = await Promise.all([
+      r.chain.view(cfg.verifierId, "public_keys_of", { account_id: cfg.vaultId }, z.array(z.string())),
+      // A function of the MPC network's root key, the vault, the path and the domain.
+      r.memo.get(`derived:${cfg.signerId}:${cfg.vaultId}:${cfg.keyPath}:${cfg.keyDomain}`, () =>
+        r.chain.view(cfg.signerId, "derived_public_key", { path: cfg.keyPath, predecessor: cfg.vaultId, domain_id: cfg.keyDomain }, z.string()),
+      ),
+    ]);
+    const state = keyState(keys.value, derived.value);
+    return { value: { keys: keys.value, derived: derived.value, state, keysSource: keys.source, derivedSource: derived.source }, pass: state === "one-derived" };
+  });
+}
+
+export interface SwapValue {
+  readonly tokenIn: FtMetadata;
+  readonly tokenOut: FtMetadata;
+  readonly policy: IntentPolicy;
+  readonly policySource: Source;
+  readonly swap: SwapCheck;
+}
+
+export function checkSwapAll(r: Reads, cfg: IntentsConfig): Promise<Verdict<SwapValue>> {
+  return verify(async () => {
+    const meta = (id: string) => r.memo.get(`ft-metadata:${id}`, () => ftMetadata(r.chain, id));
+    const [tokenIn, tokenOut, policy] = await Promise.all([
+      meta(cfg.swap.tokenIn),
+      meta(cfg.swap.tokenOut),
+      // Live: the owner can move the floor.
+      r.chain.view(cfg.vaultId, "get_intent_policy", { owner_id: cfg.ownerId }, IntentPolicySchema),
+    ]);
+    const swap = await checkSwap(cfg, (hash, sender) =>
+      r.memo.get(`tx:${hash}`, async () => {
+        const tx = await r.archive.tx(hash, sender);
+        // A final transaction the archival node does not know: no answer, not a contradiction.
+        if (!tx) throw new Unverifiable(`the archival node does not know ${hash}`);
+        return tx;
+      }),
+    );
+    const pass = swap.sign.ok && swap.execute?.ok === true && swap.settle?.ok === true;
+    return { value: { tokenIn: tokenIn.value, tokenOut: tokenOut.value, policy: policy.value, policySource: policy.source, swap }, pass };
+  });
+}
+
+export interface CaveatValue {
+  /** null: the account no longer exists. */
+  readonly keys: readonly { readonly publicKey: string; readonly permission: AccessKeyPermission }[] | null;
+  readonly fullAccess: readonly string[];
+  readonly blockHeight: number | null;
+}
+
+/** Not a claim the panel makes but a caveat it states: "pass" means the keys were read. */
+export function checkCaveat(r: Reads, cfg: IntentsConfig): Promise<Verdict<CaveatValue>> {
+  return verify(async () => {
+    const l = await r.chain.accessKeyList(cfg.vaultId);
+    const keys = l?.value ?? null;
+    return {
+      value: { keys, fullAccess: (keys ?? []).filter((k) => k.permission === "FullAccess").map((k) => k.publicKey), blockHeight: l?.source.blockHeight ?? null },
+      pass: true,
+    };
+  });
 }

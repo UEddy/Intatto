@@ -1,80 +1,65 @@
 /**
- * The chain reads behind the "Agent trades through NEAR Intents" panel. Live state (code, keys,
- * policy) polls like the rest of the board; the swap's transactions are final, so they are read
- * once, from the archival node, one after another.
+ * The chain reads behind the "Agent trades through NEAR Intents" panel: four checks, each a query
+ * that never throws (check.ts `verify`), so a read that fails shows as "unverified", not as a
+ * pass and not as an endless load.
+ *
+ * Nothing is read until the panel comes near the viewport. Identical requests are made once:
+ * concurrent ones share one request (RpcClient), and reads that cannot change are kept for the
+ * page load (Memo), so a retry or a re-poll asks only for what is still missing.
  */
 import { useQuery } from "@tanstack/react-query";
-import { z } from "zod";
+import { useEffect, useState, type RefObject } from "react";
 import { useServices } from "../app/services";
-import { ftMetadata } from "../contract/views";
 import { ATTEMPTS_POLL_MS, BOARD_POLL_MS } from "../board/useBoard";
-import { IntentPolicySchema, checkSwap } from "./check";
+import { Memo, checkBuild, checkCaveat, checkKey, checkSwapAll, type Reads } from "./check";
 
-export function useIntents() {
+/** One per network config for the page load (switching network reloads the page). */
+const memos = new WeakMap<object, Memo>();
+
+/** How far below the fold the panel starts reading, so it has answers by the time it is seen. */
+const NEAR_MARGIN = "600px";
+
+/** True once the element has come within NEAR_MARGIN of the viewport; it stays true. */
+export function useNearViewport(ref: RefObject<Element | null>, active: boolean): boolean {
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (!active || near) return;
+    const el = ref.current;
+    // No IntersectionObserver (old browsers, jsdom): read right away rather than never.
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setNear(true);
+    }, { rootMargin: `${NEAR_MARGIN} 0px` });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref, active, near]);
+  return near;
+}
+
+export function useIntents(ref: RefObject<Element | null>) {
   const { chain, archive, config } = useServices();
   const cfg = config.intents;
-  const enabled = cfg !== null;
+  const near = useNearViewport(ref, cfg !== null);
+  const enabled = cfg !== null && near;
   const net = config.networkId;
 
-  const code = useQuery({
-    queryKey: [net, "account", cfg?.vaultId],
-    queryFn: () => chain.account(cfg!.vaultId),
-    enabled,
-    refetchInterval: BOARD_POLL_MS,
-  });
+  let memo = memos.get(config);
+  if (!memo) {
+    memo = new Memo();
+    memos.set(config, memo);
+  }
+  const reads: Reads = { chain, archive, memo };
+  // The check functions catch every error themselves; React Query never needs to retry.
+  const common = { enabled, retry: false } as const;
 
-  // What the Verifier would accept a signature from, for the vault's account there.
-  const keysOnVerifier = useQuery({
-    queryKey: [net, "public-keys-of", cfg?.verifierId, cfg?.vaultId],
-    queryFn: () => chain.view(cfg!.verifierId, "public_keys_of", { account_id: cfg!.vaultId }, z.array(z.string())),
-    enabled,
-    refetchInterval: ATTEMPTS_POLL_MS,
-  });
+  const build = useQuery({ ...common, queryKey: [net, "intents-check", "build", cfg?.vaultId], queryFn: () => checkBuild(reads, cfg!), refetchInterval: BOARD_POLL_MS });
+  const key = useQuery({ ...common, queryKey: [net, "intents-check", "key", cfg?.vaultId], queryFn: () => checkKey(reads, cfg!), refetchInterval: ATTEMPTS_POLL_MS });
+  // The transactions and metadata come from the memo after the first answer; only the floor is re-read.
+  const swap = useQuery({ ...common, queryKey: [net, "intents-check", "swap", cfg?.swap.signTxHash], queryFn: () => checkSwapAll(reads, cfg!), refetchInterval: ATTEMPTS_POLL_MS });
+  const caveat = useQuery({ ...common, queryKey: [net, "intents-check", "caveat", cfg?.vaultId], queryFn: () => checkCaveat(reads, cfg!), refetchInterval: ATTEMPTS_POLL_MS });
 
-  // A function of (signer's root key, predecessor, path, domain): it changes only if the MPC
-  // network's key does.
-  const derived = useQuery({
-    queryKey: [net, "derived-public-key", cfg?.signerId, cfg?.vaultId, cfg?.keyPath, cfg?.keyDomain],
-    queryFn: () => chain.view(cfg!.signerId, "derived_public_key", { path: cfg!.keyPath, predecessor: cfg!.vaultId, domain_id: cfg!.keyDomain }, z.string()),
-    enabled,
-    staleTime: 5 * 60_000,
-  });
-
-  const policy = useQuery({
-    queryKey: [net, "intent-policy", cfg?.vaultId, cfg?.ownerId],
-    queryFn: () => chain.view(cfg!.vaultId, "get_intent_policy", { owner_id: cfg!.ownerId }, IntentPolicySchema),
-    enabled,
-    refetchInterval: ATTEMPTS_POLL_MS,
-  });
-
-  const accountKeys = useQuery({
-    queryKey: [net, "access-key-list", cfg?.vaultId],
-    queryFn: () => chain.accessKeyList(cfg!.vaultId),
-    enabled,
-    refetchInterval: ATTEMPTS_POLL_MS,
-  });
-
-  // Symbols and decimals are always the token's own (NetworkConfig.tokens).
-  const tokenIn = useQuery({
-    queryKey: [net, "ft-metadata", cfg?.swap.tokenIn],
-    queryFn: () => ftMetadata(chain, cfg!.swap.tokenIn),
-    enabled,
-    staleTime: Infinity,
-  });
-  const tokenOut = useQuery({
-    queryKey: [net, "ft-metadata", cfg?.swap.tokenOut],
-    queryFn: () => ftMetadata(chain, cfg!.swap.tokenOut),
-    enabled,
-    staleTime: Infinity,
-  });
-
-  const swap = useQuery({
-    queryKey: [net, "intent-swap", cfg?.swap.signTxHash, cfg?.swap.executeTxHash, cfg?.swap.settleTxHash],
-    queryFn: () => checkSwap(cfg!, (hash, sender) => archive.tx(hash, sender)),
-    enabled,
-    // Final transactions never change.
-    staleTime: Infinity,
-  });
-
-  return { cfg, code, keysOnVerifier, derived, policy, accountKeys, tokenIn, tokenOut, swap };
+  return { cfg, near, build, key, swap, caveat };
 }

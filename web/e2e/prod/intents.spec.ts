@@ -18,8 +18,14 @@ function watch(page: Page) {
     if (m.type() === "error") problems.push(m.text());
   });
   page.on("pageerror", (e) => problems.push(String(e)));
-  page.on("request", (r) => origins.add(new URL(r.url()).origin));
-  return { problems, origins };
+  // The panel's own reads: anything about the intents vault or the swap's transactions.
+  const panelReads: string[] = [];
+  page.on("request", (r) => {
+    origins.add(new URL(r.url()).origin);
+    const body = r.postData() ?? "";
+    if (/intents\.intatto\.near|GbHfV9nq|EJY7oiU1|73aJTu55|"(ft_metadata|derived_public_key|get_intent_policy|public_keys_of)"/.test(body)) panelReads.push(body);
+  });
+  return { problems, origins, panelReads };
 }
 
 const VIEWS = [
@@ -33,12 +39,18 @@ for (const v of VIEWS) {
   test(`mainnet: the NEAR Intents panel reads its checks from chain (${v.name})`, async ({ page }, info) => {
     await page.setViewportSize(v.viewport);
     await page.emulateMedia({ colorScheme: v.scheme, reducedMotion: "reduce" });
-    const { problems, origins } = watch(page);
+    const { problems, origins, panelReads } = watch(page);
     const res = await page.goto("./#/");
     const csp = res!.headers()["content-security-policy"] ?? "";
 
     const panel = page.locator("section.intents");
     await expect(panel.getByRole("heading", { level: 2 })).toContainText("The agent traded.");
+    // Nothing is read until the panel comes near the viewport.
+    await page.waitForTimeout(1500);
+    await expect(panel.locator(".icheck-title .badge").first()).toHaveText("Checking");
+    // The 360 px board is long, the 1440 one too: the panel starts well below the fold.
+    expect(panelReads, "the panel read before it was near the viewport").toEqual([]);
+    await panel.scrollIntoViewIfNeeded();
     const [build, key, swap] = [0, 1, 2].map((i) => panel.locator(".icheck").nth(i));
 
     // 1. Build: the code hash, live, equals the published build of tag intents-build.
@@ -52,7 +64,9 @@ for (const v of VIEWS) {
     await expect(key.locator(".key-list li")).toHaveCount(1);
     await expect(key.locator(".key-list li")).toHaveText(INTENTS_KEY);
     await expect(key.locator(".hash-row").nth(1).locator(".hash").first()).toHaveText(INTENTS_KEY);
-    await expect(key).toContainText("No private key exists for it.");
+    await expect(key).toContainText(
+      "No single party holds its private key: it exists only as shares across v1.signer's MPC nodes, and signing needs a threshold of them.",
+    );
 
     // 3. The swap: three transactions verified from the archival node, and the floor as a floor.
     await expect(swap.locator(".badge").first()).toHaveText("Settled", { timeout: 60_000 });
@@ -67,6 +81,19 @@ for (const v of VIEWS) {
     const caveat = panel.locator(".intents-caveat");
     await expect(caveat).toContainText("the vault account still holds a full-access upgrade key", { timeout: 45_000 });
     await expect(caveat.locator('a[href$="THREAT_MODEL.md#trust-assumptions-intents-path"]')).toBeVisible();
+
+    // Reads that cannot change went out exactly once for the page load: the 3 transactions, the
+    // 2 tokens' metadata, the derived key. (Live state re-polls on its interval, by design.)
+    const seen = new Map<string, number>();
+    for (const b of panelReads) {
+      const { method, params } = JSON.parse(b) as { method: string; params: { method_name?: string } };
+      if (!(method === "tx" || params.method_name === "ft_metadata" || params.method_name === "derived_public_key")) continue;
+      const k = JSON.stringify([method, params]);
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+    }
+    const dupes = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
+    expect(seen.size, "immutable reads").toBe(6);
+    expect(dupes, "identical requests sent twice").toEqual([]);
 
     // Everything it read came from origins the CSP already allowed.
     for (const origin of ["https://rpc.mainnet.fastnear.com", "https://archival-rpc.mainnet.fastnear.com"]) {
@@ -97,6 +124,43 @@ for (const v of VIEWS) {
 
     expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p)), "CSP violations").toEqual([]);
     expect(withoutFastnearRateLimit(problems, info), "console errors").toEqual([]);
+  });
+}
+
+// The RPC hosts unreachable: every check must end "unverified" with a retry, never a pass tick,
+// never a red fail, and never an endless load. Once the hosts answer again, Retry verifies.
+const RPC_HOSTS = /^https:\/\/(archival-)?rpc\.mainnet\.fastnear\.com\//;
+for (const mode of ["network error", "429"] as const) {
+  test(`mainnet: with the RPC hosts blocked (${mode}), the panel shows "couldn't verify" and a retry`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.route(RPC_HOSTS, (route) =>
+      mode === "429"
+        ? route.fulfill({ status: 429, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" }, body: "Too Many Requests" })
+        : route.abort("connectionrefused"),
+    );
+    await page.goto("./#/");
+    const panel = page.locator("section.intents");
+    await panel.scrollIntoViewIfNeeded();
+
+    // The client's backoff (about 20 s for a suspected rate limit), then the neutral state.
+    const retry = panel.getByRole("button", { name: "Retry" });
+    await expect(retry).toHaveCount(4, { timeout: 75_000 });
+    await expect(retry.first()).toBeVisible();
+    await expect(panel.locator(".icheck-title .badge")).toHaveText(["Unverified", "Unverified", "Unverified"]);
+    await expect(panel.locator(".icheck").first().locator(".intents-retry")).toHaveText(/^Couldn't verify right now —\s*Retry$/);
+    await expect(panel.locator(".intents-caveat")).toContainText("could not be read");
+    // No pass tick, no "Verified", no red fail, no skeleton left spinning.
+    await expect(panel.locator(".badge--ok")).toHaveCount(0);
+    await expect(panel.locator(".badge--alert")).toHaveCount(0);
+    await expect(panel.getByText("Verified", { exact: true })).toHaveCount(0);
+    await expect(panel.locator(".skeleton")).toHaveCount(0);
+    await page.screenshot({ path: `screenshots/prod-intents-unverified-${mode.replace(" ", "-")}.png`, fullPage: false });
+
+    // The hosts answer again: Retry turns that check into a real verification.
+    await page.unroute(RPC_HOSTS);
+    await retry.first().click();
+    await expect(panel.locator(".icheck").first().locator(".badge")).toHaveText("Matches", { timeout: 45_000 });
+    await expect(panel.getByRole("button", { name: "Retry" })).toHaveCount(3);
   });
 }
 
