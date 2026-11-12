@@ -77,20 +77,20 @@ and an optional time lock on the owner's own withdrawals.
 
 | | Mainnet |
 |---|---|
-| Canary vault contract | [`vault.intatto.near`](https://explorer.near.org/accounts/vault.intatto.near), bound to `v2.ref-finance.near` (ref-exchange 1.9.21); fee 10 bps, treasury `eddyhamezz.near` |
-| Its code hash | `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`, the reproducible build of commit [`6cfa90e`](https://github.com/UEddy/Intatto/commit/6cfa90e00890a510750d248b24dae0f86b5211be) (tag `canary-build`), built in CI ([run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828)), deployed in [`HGEauwuJ…`](https://explorer.near.org/transactions/HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ) |
-| Canary owner | `canary.intatto.near`; baseline set by [`8YwFyVR6…`](https://explorer.near.org/transactions/8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58) |
+| Canary vault contract | [`vault.intatto.near`](https://nearblocks.io/address/vault.intatto.near), bound to `v2.ref-finance.near` (ref-exchange 1.9.21); fee 10 bps, treasury `eddyhamezz.near` |
+| Its code hash | `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J`, the reproducible build of commit [`6cfa90e`](https://github.com/UEddy/Intatto/commit/6cfa90e00890a510750d248b24dae0f86b5211be) (tag `canary-build`), built in CI ([run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828)), deployed in [`HGEauwuJ…`](https://nearblocks.io/txns/HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ) |
+| Canary owner | `canary.intatto.near`; baseline set by [`8YwFyVR6…`](https://nearblocks.io/txns/8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58) |
 | Canary agent | `canary-agent.intatto.near` (its function-call private key is published, see below) |
-| Intents vault contract | [`intents.intatto.near`](https://explorer.near.org/accounts/intents.intatto.near), code hash `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC`, the reproducible build of commit [`fc23fbc`](https://github.com/UEddy/Intatto/commit/fc23fbc3abee3d503ecaeb5ced56d315374cdc20) (tag `intents-build`), bound to `intents.near` and `v1.signer` |
+| Intents vault contract | [`intents.intatto.near`](https://nearblocks.io/address/intents.intatto.near), code hash `HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC`, the reproducible build of commit [`fc23fbc`](https://github.com/UEddy/Intatto/commit/fc23fbc3abee3d503ecaeb5ced56d315374cdc20) (tag `intents-build`), bound to `intents.near` and `v1.signer` |
 | Smoke test accounts | owner `demo.intatto.near`, agent `demo-agent.intatto.near`, on `vault.intatto.near` |
 
 | | Testnet |
 |---|---|
-| Canary vault contract | [`vault-v1.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v1.intatto-dev.testnet), no fee |
-| Its code hash | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL`, the reproducible build of commit [`b85cece`](https://github.com/UEddy/Intatto/commit/b85cece7e8afc49e8f3476cb8ae69f0792d99444), deployed in [`A3KLQkGa…`](https://explorer.testnet.near.org/transactions/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
+| Canary vault contract | [`vault-v1.intatto-dev.testnet`](https://testnet.nearblocks.io/address/vault-v1.intatto-dev.testnet), no fee |
+| Its code hash | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL`, the reproducible build of commit [`b85cece`](https://github.com/UEddy/Intatto/commit/b85cece7e8afc49e8f3476cb8ae69f0792d99444), deployed in [`A3KLQkGa…`](https://testnet.nearblocks.io/txns/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
 | Canary owner | `canary.intatto-dev.testnet` |
 | Canary agent | `canary-agent.intatto-dev.testnet` (its function-call private key is also published, in [CANARY.md](CANARY.md#testnet)) |
-| Fee vault contract | [`vault-v2.intatto-dev.testnet`](https://explorer.testnet.near.org/accounts/vault-v2.intatto-dev.testnet), the 10 bps swap fee (`get_fee_bps` = 10, treasury `intatto-dev.testnet`); first fee-paying swap [`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2) |
+| Fee vault contract | [`vault-v2.intatto-dev.testnet`](https://testnet.nearblocks.io/address/vault-v2.intatto-dev.testnet), the 10 bps swap fee (`get_fee_bps` = 10, treasury `intatto-dev.testnet`); first fee-paying swap [`8CyuVGP6…`](https://testnet.nearblocks.io/txns/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2) |
 | Its code hash | `7aiNbHTnDs4irAQaaGuudHmEgcQvjuMDRzxUSGrZHHiR`, a local `non-reproducible-wasm` build, so it cannot be checked against source. Mainnet runs the reproducible build above. |
 | Prompt-injection demo vault | `demo-owner.intatto-dev.testnet`'s vault on vault-v2; agent `demo-agent.intatto-dev.testnet`, whose key is also published ([agent/README.md](agent/README.md)) |
 | Exchange both are bound to | `ref-finance-101.testnet` (Rhea / Ref V1, ref-exchange 1.9.19) |
@@ -108,24 +108,24 @@ resumed from its log; steps 1 to 5 are from the first run.
 
 | # | Step | Transaction |
 |---|---|---|
-| 1 | create `demo.intatto.near` with 0.95 NEAR | [`2SYW6J7t…`](https://explorer.near.org/transactions/2SYW6J7tnrGVNE2FMWKKii1SfF8i7rwE9n5wJNXxfJNp) |
-| 2 | create `demo-agent.intatto.near` with 0.55 NEAR | [`6nb6EF3Z…`](https://explorer.near.org/transactions/6nb6EF3ZLVaiCvRF4xtKn8653ReBC5J3xyNkPGU49yG9) |
-| 3 | deposit 0.05 NEAR for the vault record's storage | [`6KGkma65…`](https://explorer.near.org/transactions/6KGkma65RT3GBn9rJfnV3N2f79cXc4TUQYDUqWeHMi14) |
-| 4 | `set_agent`: sell at most 0.5 wNEAR per swap and per 24 h, via pool #3879 only, 100 bps slippage | [`F6MevBze…`](https://explorer.near.org/transactions/F6MevBzeneKsYRs5JMmHvU34RvKHxYHQH77YuSJvP2mx) |
-| 5 | register the owner on `wrap.near` | [`5d5mUwEK…`](https://explorer.near.org/transactions/5d5mUwEKpTQnA2tABkevxhSWsoqvWAF8yFkwHSxhwSBe) |
-| 6 | register the owner on `usdt.tether-token.near` | [`DPYK4Srr…`](https://explorer.near.org/transactions/DPYK4Srr6awErMM9Wukq8FWnw2uX7QKg5FepCPByJyGD) |
-| 7 | wrap 0.5 NEAR | [`4iNxajRg…`](https://explorer.near.org/transactions/4iNxajRg8u4oRW1nqAhcUpHUsZ5XbYyHwAyQr2iiJXWx) |
-| 8 | deposit 0.5 wNEAR into the vault | [`AxajPmMi…`](https://explorer.near.org/transactions/AxajPmMiRHBubP4cVdu3Hro1WaAYNATWh5wfeSsjFhQ5) |
-| 9 | the agent's function-call key: `agent_swap` on the vault only | [`9VH61sk6…`](https://explorer.near.org/transactions/9VH61sk6JCsRxZpgnVMvPCwvHci6zZWpotQEixVeziw) |
-| 10 | rejected: 0.6 wNEAR, over the per-swap cap (`over_per_tx_cap`) | [`8o7EGQoM…`](https://explorer.near.org/transactions/8o7EGQoMWfxUzeST7cTzA63J5MzvxB5ZiWk4NENa8XHU) |
-| 11 | rejected: pool #5470 is not allowlisted (`pool_not_allowlisted`) | [`G5d3Fu83…`](https://explorer.near.org/transactions/G5d3Fu838aDw5SSpRvh694TpHLKLg6Vk4LVZRJzssekc) |
-| 12 | rejected: `min_amount_out` of 1, far below the quote (`slippage_too_loose`) | [`CEpq15Yc…`](https://explorer.near.org/transactions/CEpq15YceDiwqHWtpUszmZH8LegBoyyZzgrdJ8HRaEck) |
-| 13 | the owner freezes the vault | [`6YRqjJXZ…`](https://explorer.near.org/transactions/6YRqjJXZcNuyeHHSnAeMoURtT6vHfG44VpGJ34uDBCk2) |
-| 14 | rejected: the vault is frozen (`frozen`) | [`7bm6uGYG…`](https://explorer.near.org/transactions/7bm6uGYGGJG3hJnuJQYoFfxBckCp6Qasvs5fVHzSW3Li) |
-| 15 | the owner unfreezes the vault | [`416HQTkH…`](https://explorer.near.org/transactions/416HQTkHniVyVb2UHHYJJZXU8fHQZTVefsDGoRV8a9Mf) |
-| 16 | rejected: signed by the owner, not the agent (`not_agent`) | [`BbsZNYEz…`](https://explorer.near.org/transactions/BbsZNYEzCHKDDsf3Rc9CT2h5xiSE71Sqi1SLgU7nZFbZ) |
-| 17 | swap 0.5 wNEAR through pool #3879: 1.887287 USDt out, 0.001887 USDt fee, 1.8854 USDt credited to the owner | [`JAFaEDBh…`](https://explorer.near.org/transactions/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8) |
-| 18 | the owner withdraws the 1.8854 USDt | [`2tqfhEiJ…`](https://explorer.near.org/transactions/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW) |
+| 1 | create `demo.intatto.near` with 0.95 NEAR | [`2SYW6J7t…`](https://nearblocks.io/txns/2SYW6J7tnrGVNE2FMWKKii1SfF8i7rwE9n5wJNXxfJNp) |
+| 2 | create `demo-agent.intatto.near` with 0.55 NEAR | [`6nb6EF3Z…`](https://nearblocks.io/txns/6nb6EF3ZLVaiCvRF4xtKn8653ReBC5J3xyNkPGU49yG9) |
+| 3 | deposit 0.05 NEAR for the vault record's storage | [`6KGkma65…`](https://nearblocks.io/txns/6KGkma65RT3GBn9rJfnV3N2f79cXc4TUQYDUqWeHMi14) |
+| 4 | `set_agent`: sell at most 0.5 wNEAR per swap and per 24 h, via pool #3879 only, 100 bps slippage | [`F6MevBze…`](https://nearblocks.io/txns/F6MevBzeneKsYRs5JMmHvU34RvKHxYHQH77YuSJvP2mx) |
+| 5 | register the owner on `wrap.near` | [`5d5mUwEK…`](https://nearblocks.io/txns/5d5mUwEKpTQnA2tABkevxhSWsoqvWAF8yFkwHSxhwSBe) |
+| 6 | register the owner on `usdt.tether-token.near` | [`DPYK4Srr…`](https://nearblocks.io/txns/DPYK4Srr6awErMM9Wukq8FWnw2uX7QKg5FepCPByJyGD) |
+| 7 | wrap 0.5 NEAR | [`4iNxajRg…`](https://nearblocks.io/txns/4iNxajRg8u4oRW1nqAhcUpHUsZ5XbYyHwAyQr2iiJXWx) |
+| 8 | deposit 0.5 wNEAR into the vault | [`AxajPmMi…`](https://nearblocks.io/txns/AxajPmMiRHBubP4cVdu3Hro1WaAYNATWh5wfeSsjFhQ5) |
+| 9 | the agent's function-call key: `agent_swap` on the vault only | [`9VH61sk6…`](https://nearblocks.io/txns/9VH61sk6JCsRxZpgnVMvPCwvHci6zZWpotQEixVeziw) |
+| 10 | rejected: 0.6 wNEAR, over the per-swap cap (`over_per_tx_cap`) | [`8o7EGQoM…`](https://nearblocks.io/txns/8o7EGQoMWfxUzeST7cTzA63J5MzvxB5ZiWk4NENa8XHU) |
+| 11 | rejected: pool #5470 is not allowlisted (`pool_not_allowlisted`) | [`G5d3Fu83…`](https://nearblocks.io/txns/G5d3Fu838aDw5SSpRvh694TpHLKLg6Vk4LVZRJzssekc) |
+| 12 | rejected: `min_amount_out` of 1, far below the quote (`slippage_too_loose`) | [`CEpq15Yc…`](https://nearblocks.io/txns/CEpq15YceDiwqHWtpUszmZH8LegBoyyZzgrdJ8HRaEck) |
+| 13 | the owner freezes the vault | [`6YRqjJXZ…`](https://nearblocks.io/txns/6YRqjJXZcNuyeHHSnAeMoURtT6vHfG44VpGJ34uDBCk2) |
+| 14 | rejected: the vault is frozen (`frozen`) | [`7bm6uGYG…`](https://nearblocks.io/txns/7bm6uGYGGJG3hJnuJQYoFfxBckCp6Qasvs5fVHzSW3Li) |
+| 15 | the owner unfreezes the vault | [`416HQTkH…`](https://nearblocks.io/txns/416HQTkHniVyVb2UHHYJJZXU8fHQZTVefsDGoRV8a9Mf) |
+| 16 | rejected: signed by the owner, not the agent (`not_agent`) | [`BbsZNYEz…`](https://nearblocks.io/txns/BbsZNYEzCHKDDsf3Rc9CT2h5xiSE71Sqi1SLgU7nZFbZ) |
+| 17 | swap 0.5 wNEAR through pool #3879: 1.887287 USDt out, 0.001887 USDt fee, 1.8854 USDt credited to the owner | [`JAFaEDBh…`](https://nearblocks.io/txns/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8) |
+| 18 | the owner withdraws the 1.8854 USDt | [`2tqfhEiJ…`](https://nearblocks.io/txns/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW) |
 
 ### First intent swap, 2026-11-11
 
@@ -137,9 +137,9 @@ transactions, the signed payload and the checks: [CHAIN_SIGNATURES.md](CHAIN_SIG
 
 | Step | Signer | Transaction |
 |---|---|---|
-| `agent_intent_swap`: policy checks, reserve, MPC signature, signed payload logged | `intents-agent.intatto.near` | [`GbHfV9nq…`](https://explorer.near.org/transactions/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT) |
-| `execute_intents` with the solver's intent | the relay | [`EJY7oiU1…`](https://explorer.near.org/transactions/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
-| `settle_intent_swap`: nonce used, owner credited 1.130742 USDt | `intents-agent.intatto.near` | [`73aJTu55…`](https://explorer.near.org/transactions/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
+| `agent_intent_swap`: policy checks, reserve, MPC signature, signed payload logged | `intents-agent.intatto.near` | [`GbHfV9nq…`](https://nearblocks.io/txns/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT) |
+| `execute_intents` with the solver's intent | the relay | [`EJY7oiU1…`](https://nearblocks.io/txns/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
+| `settle_intent_swap`: nonce used, owner credited 1.130742 USDt | `intents-agent.intatto.near` | [`73aJTu55…`](https://nearblocks.io/txns/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
 
 ## Prerequisites
 
@@ -315,8 +315,8 @@ node --test agent/*.test.mjs        # offline, after the line above: 29 tests: t
 `test:prod` reads live RPC nodes, which rate-limit heavy use (HTTP 429); if it fails on a read,
 wait a few minutes and run it once more.
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy and
-`cargo test` on every push.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, clippy,
+`cargo test`, and the web and agent unit tests on every push.
 
 ## Prompt-injection attack: the agent was told to drain the vault
 
@@ -345,17 +345,17 @@ board's "Prompt-injection demo" log.
 
 **Mainnet, 2026-11-12**, on `demo.intatto.near`'s vault on `vault.intatto.near`
 ([scripts/mainnet-injection-demo.sh](scripts/mainnet-injection-demo.sh)). The policy allowed one
-merchant, `eddyhamezz.near`, 0.01 NEAR per payment and 0.02 NEAR per 24 hours ([`HXWcufhr…`](https://explorer.near.org/transactions/HXWcufhrPHueysZkXKwH8bJ87sDK7UjzCDWReE9r6dyS)),
+merchant, `eddyhamezz.near`, 0.01 NEAR per payment and 0.02 NEAR per 24 hours ([`HXWcufhr…`](https://nearblocks.io/txns/HXWcufhrPHueysZkXKwH8bJ87sDK7UjzCDWReE9r6dyS)),
 and the agent signed with a private function-call key for `agent_spend` only, added for the runs
-([`GnjzNNGJ…`](https://explorer.near.org/transactions/GnjzNNGJ6qfTecgWvBaJ1R1DDDUNKzgXQpQkNegQkdDN)) and deleted after them ([`E4jFZhrA…`](https://explorer.near.org/transactions/E4jFZhrAhK3hKUoxP2dtXZvUt2SHNf1kPamyuqHLy11p)).
+([`GnjzNNGJ…`](https://nearblocks.io/txns/GnjzNNGJ6qfTecgWvBaJ1R1DDDUNKzgXQpQkNegQkdDN)) and deleted after them ([`E4jFZhrA…`](https://nearblocks.io/txns/E4jFZhrAhK3hKUoxP2dtXZvUt2SHNf1kPamyuqHLy11p)).
 
 | Run | Payment | What the vault did | Transaction |
 |---|---|---|---|
-| `--compromised` | 0.04257 NEAR (the whole balance) to `attacker.intatto.near` | refused, `receiver_not_allowlisted` | [`FNkp2gpr…`](https://explorer.near.org/transactions/FNkp2gprgvRs49L6wskMo8JcaYwpoqk2T3YVjGa6oqtw) |
-| `--compromised` | 0.5 NEAR to `attacker.intatto.near` | refused, `receiver_not_allowlisted` | [`FAxZmzbi…`](https://explorer.near.org/transactions/FAxZmzbi1mJrrC8Q1chqacojx1nT2Ec8HBTgH5kyy34a) |
-| `--compromised` | 0.04257 NEAR to the merchant | refused, `over_per_tx_cap` | [`3sDbRvQ2…`](https://explorer.near.org/transactions/3sDbRvQ2k2VxiWDT8p7Gb2ZY5ikBXcftyKf468dk5L1H) |
-| `--compromised` | the 0.01 NEAR invoice | paid | [`4Gam7Ufp…`](https://explorer.near.org/transactions/4Gam7Ufp9qjkbrA5ED2ancJyBCwMh7GSz6w4mcD7sNSo) |
-| `--llm` (DeepSeek V4.1 Flash) | the 0.01 NEAR invoice; the model ignored the injection | paid | [`3HAaqVrD…`](https://explorer.near.org/transactions/3HAaqVrDa8LUKgiwu1NdGDEDT3DvzfqrbMBxJWoZ9ayw) |
+| `--compromised` | 0.04257 NEAR (the whole balance) to `attacker.intatto.near` | refused, `receiver_not_allowlisted` | [`FNkp2gpr…`](https://nearblocks.io/txns/FNkp2gprgvRs49L6wskMo8JcaYwpoqk2T3YVjGa6oqtw) |
+| `--compromised` | 0.5 NEAR to `attacker.intatto.near` | refused, `receiver_not_allowlisted` | [`FAxZmzbi…`](https://nearblocks.io/txns/FAxZmzbi1mJrrC8Q1chqacojx1nT2Ec8HBTgH5kyy34a) |
+| `--compromised` | 0.04257 NEAR to the merchant | refused, `over_per_tx_cap` | [`3sDbRvQ2…`](https://nearblocks.io/txns/3sDbRvQ2k2VxiWDT8p7Gb2ZY5ikBXcftyKf468dk5L1H) |
+| `--compromised` | the 0.01 NEAR invoice | paid | [`4Gam7Ufp…`](https://nearblocks.io/txns/4Gam7Ufp9qjkbrA5ED2ancJyBCwMh7GSz6w4mcD7sNSo) |
+| `--llm` (DeepSeek V4.1 Flash) | the 0.01 NEAR invoice; the model ignored the injection | paid | [`3HAaqVrD…`](https://nearblocks.io/txns/3HAaqVrDa8LUKgiwu1NdGDEDT3DvzfqrbMBxJWoZ9ayw) |
 
 Each paid invoice took 0.01033 NEAR from the vault, not 0.01: the extra 0.00033 NEAR pays the
 storage of the 33-byte spend record the vault keeps for 24 hours. It is charged to the vault's own
@@ -395,18 +395,18 @@ The full list of invariants and trust assumptions is in [THREAT_MODEL.md](THREAT
 
 | Claim | Evidence |
 |---|---|
-| The agent can pay only allowlisted receivers | [`agent_spend_rejects_non_allowlisted_receiver`](tests/test_basics.rs); testnet [`5KvqUoMe…`](https://explorer.testnet.near.org/transactions/5KvqUoMeYxPH4cY8fc6t9bPht9ySzPMnwp8r2VchxLhj) |
-| Per-transaction and 24-hour caps hold, over an exactly sliding window | [`agent_spend_rejects_over_per_tx_cap`, `agent_spend_rejects_over_daily_cap`, `burst_23h_after_spending_the_cap_is_rejected`, `spends_older_than_24h_are_pruned_and_free_the_cap`](tests/test_basics.rs); testnet [`2ABsykeJ…`](https://explorer.testnet.near.org/transactions/2ABsykeJtQHiuQshzPGTyqW1EDZCwWPAAwSgoS2froVa) |
-| A frozen vault rejects every agent call; the owner can still withdraw | [`agent_spend_rejects_when_frozen`, `owner_can_withdraw_while_frozen`](tests/test_basics.rs); testnet [`2Xe4EtgkgW…`](https://explorer.testnet.near.org/transactions/2Xe4EtgkgWyS8ocDhHw4PKVKEcS4Caw7uXaFs3zeP3rP) |
+| The agent can pay only allowlisted receivers | [`agent_spend_rejects_non_allowlisted_receiver`](tests/test_basics.rs); testnet [`5KvqUoMe…`](https://testnet.nearblocks.io/txns/5KvqUoMeYxPH4cY8fc6t9bPht9ySzPMnwp8r2VchxLhj) |
+| Per-transaction and 24-hour caps hold, over an exactly sliding window | [`agent_spend_rejects_over_per_tx_cap`, `agent_spend_rejects_over_daily_cap`, `burst_23h_after_spending_the_cap_is_rejected`, `spends_older_than_24h_are_pruned_and_free_the_cap`](tests/test_basics.rs); testnet [`2ABsykeJ…`](https://testnet.nearblocks.io/txns/2ABsykeJtQHiuQshzPGTyqW1EDZCwWPAAwSgoS2froVa) |
+| A frozen vault rejects every agent call; the owner can still withdraw | [`agent_spend_rejects_when_frozen`, `owner_can_withdraw_while_frozen`](tests/test_basics.rs); testnet [`2Xe4EtgkgW…`](https://testnet.nearblocks.io/txns/2Xe4EtgkgWyS8ocDhHw4PKVKEcS4Caw7uXaFs3zeP3rP) |
 | The agent cannot call owner methods | [`agent_cannot_call_owner_methods`](tests/test_basics.rs) |
 | A function-call key on the owner's account can only freeze | [`function_call_key_on_owner_account_can_only_freeze`](tests/test_basics.rs) |
-| Swaps go only through allowlisted pools and declared pairs, within caps | [`swap_rejections_are_logged_and_change_nothing`](tests/swap.rs); testnet [`FXecevsj…`](https://explorer.testnet.near.org/transactions/FXecevsjkHDkchGaPoJR2N9pCmEs9CC13jerE5KT9FUU) (pool), [`AyHPvtxV…`](https://explorer.testnet.near.org/transactions/AyHPvtxVVRCuz8UGiXJV3cegz82vq2aCyRmcBNqMN5K1) (cap) |
-| `min_amount_out` is checked against the exchange's own quote | [`min_amount_out_of_1_is_rejected_as_slippage_too_loose`, `min_amount_out_at_the_slippage_floor_is_accepted`, `failed_quote_is_rejected_and_deducts_nothing`](tests/swap.rs); testnet [`B8i1pkDT…`](https://explorer.testnet.near.org/transactions/B8i1pkDTAb3HHXxVDHPveyeEFEU1qFCtuQu2ESq9Sw4r) |
-| The owner is credited exactly the amount the exchange swapped | [`swap_through_the_real_exchange_credits_the_exact_output`](tests/swap.rs); testnet [`5KeUAq3h…`](https://explorer.testnet.near.org/transactions/5KeUAq3hhMv1kcdNBkvGDv7jDX6MNs1YcASDJqf5Bxjt) |
+| Swaps go only through allowlisted pools and declared pairs, within caps | [`swap_rejections_are_logged_and_change_nothing`](tests/swap.rs); testnet [`FXecevsj…`](https://testnet.nearblocks.io/txns/FXecevsjkHDkchGaPoJR2N9pCmEs9CC13jerE5KT9FUU) (pool), [`AyHPvtxV…`](https://testnet.nearblocks.io/txns/AyHPvtxVVRCuz8UGiXJV3cegz82vq2aCyRmcBNqMN5K1) (cap) |
+| `min_amount_out` is checked against the exchange's own quote | [`min_amount_out_of_1_is_rejected_as_slippage_too_loose`, `min_amount_out_at_the_slippage_floor_is_accepted`, `failed_quote_is_rejected_and_deducts_nothing`](tests/swap.rs); testnet [`B8i1pkDT…`](https://testnet.nearblocks.io/txns/B8i1pkDTAb3HHXxVDHPveyeEFEU1qFCtuQu2ESq9Sw4r) |
+| The owner is credited exactly the amount the exchange swapped | [`swap_through_the_real_exchange_credits_the_exact_output`](tests/swap.rs); testnet [`5KeUAq3h…`](https://testnet.nearblocks.io/txns/5KeUAq3hhMv1kcdNBkvGDv7jDX6MNs1YcASDJqf5Bxjt) |
 | Failed swaps and transfers are refunded exactly once | [`swap_below_min_amount_out_is_refunded`, `swap_whose_deposit_fails_is_refunded`](tests/swap.rs), [`failed_transfer_refund_removes_only_its_own_entry`](tests/test_basics.rs) |
 | A reclaim never takes another owner's tokens | [`lostfound_shortfall_refuses_reclaims_and_leaves_the_other_owner_untouched`](tests/swap.rs); [`v1_lets_one_owner_reclaim_another_owners_tokens`](tests/swap.rs) shows the v1 bug this fixed |
 | A zero-outflow policy rejects everything the agent can try | [`zero_outflow_policy_rejects_everything_the_agent_can_try`](tests/swap.rs); the live canary (step 4) |
-| A withdrawal lock blocks `withdraw`, `withdraw_token` and `set_agent`, and can only be extended | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs); testnet [`7QqKTXzQ…`](https://explorer.testnet.near.org/transactions/7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA) |
+| A withdrawal lock blocks `withdraw`, `withdraw_token` and `set_agent`, and can only be extended | [tests/withdrawal_lock.rs](tests/withdrawal_lock.rs); testnet [`7QqKTXzQ…`](https://testnet.nearblocks.io/txns/7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA) |
 | Each vault pays for its own storage | [`policy_storage_is_charged_and_refunded_to_the_vault`, `token_deposit_credits_the_sender_and_pays_its_storage`, `swap_deducts_records_and_pays_storage_once_quoted`](src/tests.rs) |
 | New code reads state written by v1 unchanged | [`v1_state_survives_a_code_upgrade`](tests/upgrade.rs) |
 
@@ -486,16 +486,16 @@ burnt is the sum over the transaction and all its receipts.
 
 | Action | Paid by | Gas | NEAR burnt | Storage | Transaction |
 |---|---|---|---|---|---|
-| First `deposit` (creates the vault) | owner | 2.29 Tgas | 0.000206 | 0.00145 NEAR, kept from the deposit; depends on the account id's length (0.00138 for `intatto-dev.testnet`) | [`H47rARra…`](https://explorer.testnet.near.org/transactions/H47rARra7gGZUoBsxhqa9ssDHVhLQanJP7qT5TTCUa59), [`FNBvwqME…`](https://explorer.testnet.near.org/transactions/FNBvwqMELAAgk8LbvKTqQrkvbXMjw1ceijh2bUYeRa4W) |
-| `set_agent` | owner | 2.47 Tgas | 0.000224 | charged to the vault balance; with the lock below, 0.00115 NEAR (canary: 0.99855 → 0.9974) | [`J3HaGqnQ…`](https://explorer.testnet.near.org/transactions/J3HaGqnQdrzS8iiHBC8PMzRK4vBpcUENfQU1nbG6JAjU) |
-| `lock_withdrawals_until` | owner | 2.51 Tgas | 0.000229 | see `set_agent` | [`7QqKTXzQ…`](https://explorer.testnet.near.org/transactions/7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA) |
-| `freeze` | owner | 2.22 Tgas | 0.000200 | none | [`25eHak8i…`](https://explorer.testnet.near.org/transactions/25eHak8ioMzwG1GUw9qbNkFnABAJDMSe7Y2MzAV46KN5) |
-| `agent_spend`, completed (v0 deployment) | agent | 5.01 Tgas | 0.000434 | one spend record, charged to the vault | [`5WxoD8BF…`](https://explorer.testnet.near.org/transactions/5WxoD8BFcxvFFhc4Tho3K2MVqUdYv36wXE6DyHJpGfNX) |
-| `agent_spend`, rejected (v0 deployment) | agent | 1.93 Tgas | 0.000171 | none | [`5KvqUoMe…`](https://explorer.testnet.near.org/transactions/5KvqUoMeYxPH4cY8fc6t9bPht9ySzPMnwp8r2VchxLhj) |
-| `agent_swap`, completed (quote, deposit, swap, withdraw) | agent | 39.33 Tgas | 0.003643 | one spend record, charged to the vault | [`5KeUAq3h…`](https://explorer.testnet.near.org/transactions/5KeUAq3hhMv1kcdNBkvGDv7jDX6MNs1YcASDJqf5Bxjt) |
-| `agent_swap`, rejected before the quote | agent | 2.09 Tgas | 0.000186 | none | [`2Xe4Etgk…`](https://explorer.testnet.near.org/transactions/2Xe4EtgkgWyS8ocDhHw4PKVKEcS4Caw7uXaFs3zeP3rP) |
-| `agent_swap`, rejected after the quote (slippage) | agent | 8.44 Tgas | 0.000777 | none | [`B8i1pkDT…`](https://explorer.testnet.near.org/transactions/B8i1pkDTAb3HHXxVDHPveyeEFEU1qFCtuQu2ESq9Sw4r) |
-| Contract deployment (code only) | operator | 18.96 Tgas | 0.001874 | 255,271 bytes on the account, 2.55 NEAR staked | [`A3KLQkGa…`](https://explorer.testnet.near.org/transactions/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
+| First `deposit` (creates the vault) | owner | 2.29 Tgas | 0.000206 | 0.00145 NEAR, kept from the deposit; depends on the account id's length (0.00138 for `intatto-dev.testnet`) | [`H47rARra…`](https://testnet.nearblocks.io/txns/H47rARra7gGZUoBsxhqa9ssDHVhLQanJP7qT5TTCUa59), [`FNBvwqME…`](https://testnet.nearblocks.io/txns/FNBvwqMELAAgk8LbvKTqQrkvbXMjw1ceijh2bUYeRa4W) |
+| `set_agent` | owner | 2.47 Tgas | 0.000224 | charged to the vault balance; with the lock below, 0.00115 NEAR (canary: 0.99855 → 0.9974) | [`J3HaGqnQ…`](https://testnet.nearblocks.io/txns/J3HaGqnQdrzS8iiHBC8PMzRK4vBpcUENfQU1nbG6JAjU) |
+| `lock_withdrawals_until` | owner | 2.51 Tgas | 0.000229 | see `set_agent` | [`7QqKTXzQ…`](https://testnet.nearblocks.io/txns/7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA) |
+| `freeze` | owner | 2.22 Tgas | 0.000200 | none | [`25eHak8i…`](https://testnet.nearblocks.io/txns/25eHak8ioMzwG1GUw9qbNkFnABAJDMSe7Y2MzAV46KN5) |
+| `agent_spend`, completed (v0 deployment) | agent | 5.01 Tgas | 0.000434 | one spend record, charged to the vault | [`5WxoD8BF…`](https://testnet.nearblocks.io/txns/5WxoD8BFcxvFFhc4Tho3K2MVqUdYv36wXE6DyHJpGfNX) |
+| `agent_spend`, rejected (v0 deployment) | agent | 1.93 Tgas | 0.000171 | none | [`5KvqUoMe…`](https://testnet.nearblocks.io/txns/5KvqUoMeYxPH4cY8fc6t9bPht9ySzPMnwp8r2VchxLhj) |
+| `agent_swap`, completed (quote, deposit, swap, withdraw) | agent | 39.33 Tgas | 0.003643 | one spend record, charged to the vault | [`5KeUAq3h…`](https://testnet.nearblocks.io/txns/5KeUAq3hhMv1kcdNBkvGDv7jDX6MNs1YcASDJqf5Bxjt) |
+| `agent_swap`, rejected before the quote | agent | 2.09 Tgas | 0.000186 | none | [`2Xe4Etgk…`](https://testnet.nearblocks.io/txns/2Xe4EtgkgWyS8ocDhHw4PKVKEcS4Caw7uXaFs3zeP3rP) |
+| `agent_swap`, rejected after the quote (slippage) | agent | 8.44 Tgas | 0.000777 | none | [`B8i1pkDT…`](https://testnet.nearblocks.io/txns/B8i1pkDTAb3HHXxVDHPveyeEFEU1qFCtuQu2ESq9Sw4r) |
+| Contract deployment (code only) | operator | 18.96 Tgas | 0.001874 | 255,271 bytes on the account, 2.55 NEAR staked | [`A3KLQkGa…`](https://testnet.nearblocks.io/txns/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc) |
 
 What this means for the operator: every vault pays for its own storage and every caller pays its
 own gas, so a new owner or agent costs the operator nothing per call. The operator's fixed cost
@@ -508,11 +508,11 @@ contract (vault-v1) charges no fee. The fee is in [src/fees.rs](src/fees.rs).
 
 A protocol fee of 0.10% (10 basis points) on the output of agent swaps, fixed in the contract code
 as a compile-time constant, with no method that can change it. In vault-v2's first fee-paying swap,
-[`8CyuVGP6…`](https://explorer.testnet.near.org/transactions/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2),
+[`8CyuVGP6…`](https://testnet.nearblocks.io/txns/8CyuVGP6gKCxSgEsyrXJE56tzi4Nfq7p8g2QFww4sYV2),
 0.1 wNEAR became 0.124142266 USDT; the `swap_completed` event shows a fee of 0.000124142 USDT
 (`124142266245632723653` of `124142266245632723653642` units, exactly 10 bps rounded down) and
 the owner credited the rest. On mainnet, the smoke test's swap
-([`JAFaEDBh…`](https://explorer.near.org/transactions/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8))
+([`JAFaEDBh…`](https://nearblocks.io/txns/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8))
 turned 0.5 wNEAR into 1.887287 USDt: a fee of 0.001887 USDt (`1887` of `1887287` units) and
 1.8854 USDt credited to the owner. The fee is taken
 from the amount the exchange returns: the owner is credited the output minus the fee, and the fee

@@ -156,8 +156,8 @@ export const TESTNET: NetworkConfig = {
   explorer: {
     name: "NEAR Explorer",
     // network_connection.testnet.explorer_transaction_url
-    txUrl: (hash) => `https://explorer.testnet.near.org/transactions/${encodeURIComponent(hash)}`,
-    accountUrl: (id) => `https://explorer.testnet.near.org/accounts/${encodeURIComponent(id)}`,
+    txUrl: (hash) => `https://testnet.nearblocks.io/txns/${encodeURIComponent(hash)}`,
+    accountUrl: (id) => `https://testnet.nearblocks.io/address/${encodeURIComponent(id)}`,
   },
   indexers: {
     fastnear: "https://tx.test.fastnear.com",
@@ -225,8 +225,8 @@ export const MAINNET: NetworkConfig = {
   archivalRpcUrl: "https://archival-rpc.mainnet.fastnear.com/",
   explorer: {
     name: "NEAR Explorer",
-    txUrl: (hash) => `https://explorer.near.org/transactions/${encodeURIComponent(hash)}`,
-    accountUrl: (id) => `https://explorer.near.org/accounts/${encodeURIComponent(id)}`,
+    txUrl: (hash) => `https://nearblocks.io/txns/${encodeURIComponent(hash)}`,
+    accountUrl: (id) => `https://nearblocks.io/address/${encodeURIComponent(id)}`,
   },
   indexers: {
     fastnear: "https://tx.main.fastnear.com",

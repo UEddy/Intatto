@@ -87,9 +87,9 @@ repository saying how, so the flaw can be fixed.
 |---|---|
 | Baseline balance | `997610000000000000000000` yoctoNEAR (0.99761 NEAR), no tokens |
 | Source | `get_vault` right after the last setup transaction |
-| Last setup transaction | [`8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58`](https://explorer.near.org/transactions/8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58) (`lock_withdrawals_until`, block 224,088,065; its `withdrawals_locked` event is in block 224,088,066) |
-| Earlier setup | [`BwZNfjiHdqngLwgpupS7xEUXKxGkCVMD7Kup7MwNtx4B`](https://explorer.near.org/transactions/BwZNfjiHdqngLwgpupS7xEUXKxGkCVMD7Kup7MwNtx4B) (`deposit` of 1 NEAR), [`CkwXsrt5k4ftXffduLfbYXe8TvTXXuxKEi3HwcvbsoBH`](https://explorer.near.org/transactions/CkwXsrt5k4ftXffduLfbYXe8TvTXXuxKEi3HwcvbsoBH) (`set_agent`) |
-| Agent key added | [`53fLiHqXahkjXEKP7shVQZXC2J6HVfnFHcJNhFYRVhac`](https://explorer.near.org/transactions/53fLiHqXahkjXEKP7shVQZXC2J6HVfnFHcJNhFYRVhac), on `canary-agent.intatto.near` after the lock; it does not touch the vault |
+| Last setup transaction | [`8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58`](https://nearblocks.io/txns/8YwFyVR6MFgqhEDP47tT87oGp6LPD5gbhf947AjMLU58) (`lock_withdrawals_until`, block 224,088,065; its `withdrawals_locked` event is in block 224,088,066) |
+| Earlier setup | [`BwZNfjiHdqngLwgpupS7xEUXKxGkCVMD7Kup7MwNtx4B`](https://nearblocks.io/txns/BwZNfjiHdqngLwgpupS7xEUXKxGkCVMD7Kup7MwNtx4B) (`deposit` of 1 NEAR), [`CkwXsrt5k4ftXffduLfbYXe8TvTXXuxKEi3HwcvbsoBH`](https://nearblocks.io/txns/CkwXsrt5k4ftXffduLfbYXe8TvTXXuxKEi3HwcvbsoBH) (`set_agent`) |
+| Agent key added | [`53fLiHqXahkjXEKP7shVQZXC2J6HVfnFHcJNhFYRVhac`](https://nearblocks.io/txns/53fLiHqXahkjXEKP7shVQZXC2J6HVfnFHcJNhFYRVhac), on `canary-agent.intatto.near` after the lock; it does not touch the vault |
 
 The storage of the vault record, the policy and the lock was charged to the vault, which is why
 the baseline is 0.00239 NEAR below the deposit.
@@ -107,7 +107,7 @@ up on it afterwards, so the run starts with the canary's setup:
 
 | | |
 |---|---|
-| Deployment | [`HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ`](https://explorer.near.org/transactions/HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ) (`DeployContract` and `new`), signed by `vault.intatto.near`, block 224,086,630, 2026-11-11 15:58:25 UTC |
+| Deployment | [`HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ`](https://nearblocks.io/txns/HGEauwuJkiP3E4tvLhZuBZpjRabTGVW6rLyRRK9RFXVJ) (`DeployContract` and `new`), signed by `vault.intatto.near`, block 224,086,630, 2026-11-11 15:58:25 UTC |
 | Code deployed | `3z1W5SfhYy2XoDCpbE1uDNFjnPdEbcX7nPov8jLac97J` (hex `2c520bfc1173c903cede94259a9f0884927a97983aeef5cc55202537e8d218f5`) |
 | Run start | the lock's `withdrawals_locked` event above, block 224,088,066, 2026-11-11 16:12:10 UTC |
 
@@ -218,8 +218,8 @@ monetary value; please open an issue on the repository saying how, so the flaw c
 |---|---|
 | Baseline balance | `997400000000000000000000` yoctoNEAR (0.9974 NEAR), no tokens |
 | Source | `get_vault` right after the last setup transaction |
-| Last setup transaction | [`7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA`](https://explorer.testnet.near.org/transactions/7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA) (`lock_withdrawals_until`, block 276,514,425; its `withdrawals_locked` event is in block 276,514,426) |
-| Earlier setup | [`H47rARra7gGZUoBsxhqa9ssDHVhLQanJP7qT5TTCUa59`](https://explorer.testnet.near.org/transactions/H47rARra7gGZUoBsxhqa9ssDHVhLQanJP7qT5TTCUa59) (`deposit` of 1 NEAR, 0.00145 NEAR kept for storage), [`J3HaGqnQdrzS8iiHBC8PMzRK4vBpcUENfQU1nbG6JAjU`](https://explorer.testnet.near.org/transactions/J3HaGqnQdrzS8iiHBC8PMzRK4vBpcUENfQU1nbG6JAjU) (`set_agent`) |
+| Last setup transaction | [`7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA`](https://testnet.nearblocks.io/txns/7QqKTXzQVAnH8xq9QKoZQcFThJJhYc6EY1Qs3GicezEA) (`lock_withdrawals_until`, block 276,514,425; its `withdrawals_locked` event is in block 276,514,426) |
+| Earlier setup | [`H47rARra7gGZUoBsxhqa9ssDHVhLQanJP7qT5TTCUa59`](https://testnet.nearblocks.io/txns/H47rARra7gGZUoBsxhqa9ssDHVhLQanJP7qT5TTCUa59) (`deposit` of 1 NEAR, 0.00145 NEAR kept for storage), [`J3HaGqnQdrzS8iiHBC8PMzRK4vBpcUENfQU1nbG6JAjU`](https://testnet.nearblocks.io/txns/J3HaGqnQdrzS8iiHBC8PMzRK4vBpcUENfQU1nbG6JAjU) (`set_agent`) |
 
 The lock's storage was charged to the vault, which is why the baseline is below the deposit.
 
@@ -235,7 +235,7 @@ The current run started when vault-v1 was upgraded, code only, to the published 
 
 | | |
 |---|---|
-| Deployment | [`A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc`](https://explorer.testnet.near.org/transactions/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc), signed by `vault-v1.intatto-dev.testnet` |
+| Deployment | [`A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc`](https://testnet.nearblocks.io/txns/A3KLQkGa4GQ5Uwsdzv6cKZJ8MFiMMGCTAy3Mzs13QxTc), signed by `vault-v1.intatto-dev.testnet` |
 | Block | 276,779,119, 2026-11-08 13:01:35 UTC |
 | Code deployed | `J5MoUAHacL2CRDPT4zHGfr9WYotQ5eXNfRXhsjtQCZCL` (hex `fdb4855d004545633f78479a1600abaae429b0562e6d37a962fc2737b0fb4999`) |
 

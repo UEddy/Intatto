@@ -65,31 +65,31 @@ Setup (`scripts/mainnet-intents.sh --send`, every step PASS):
 
 | # | Step | Transaction |
 |---|---|---|
-| 1 | create intents.intatto.near with 4.19254 NEAR | [`4hmHDx2t…`](https://explorer.near.org/transactions/4hmHDx2tRSUunBX7UJpt9muhrkr6UNAchdHTnho1FxhE) |
-| 2 | deploy HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC (commit fc23fbc) to intents.intatto.near with new({"exchange_id":"v2.ref-finance.near","treasury_id":"eddyhamezz.near"}) | [`6vcbjSzE…`](https://explorer.near.org/transactions/6vcbjSzEWVpamvF42zxSga4P66pgpEf1Zpe4CMVGRoxd) |
-| 3 | create intents-owner.intatto.near with 0.7 NEAR | [`FCCx7oEv…`](https://explorer.near.org/transactions/FCCx7oEve7iAFewh7k7ehy2wdS9bKNaTLT8DYS5CBJsK) |
-| 4 | create intents-agent.intatto.near with 0.35 NEAR | [`8NB17xx6…`](https://explorer.near.org/transactions/8NB17xx6tpsH32Ss4bdvMQpC9MijQa1bKEpozcU3JB5L) |
-| 5 | bind intents.intatto.near to intents.near and v1.signer (once, for good) | [`8q32sfmL…`](https://explorer.near.org/transactions/8q32sfmLfrpDuHkcJzNdFccHsU4Fwdzb78hCwNyP7stM) |
-| 6 | register the vault's key: v1.signer derived_public_key(intatto/intents.near/v1, intents.intatto.near, 1) on intents.near, then check it is the only key | [`7DTFZe3w…`](https://explorer.near.org/transactions/7DTFZe3w6y8DCEH5iCm4FCBKnKiPB4VSdaXHN5MHc6rp) |
-| 7 | register intents.intatto.near on wrap.near | [`6x24zkvU…`](https://explorer.near.org/transactions/6x24zkvUvoNzG5gC8DdHhQWLFv6HZiT8GdJ6jzMNSFU7) |
-| 8 | register intents.intatto.near on usdt.tether-token.near | [`FYYHdCJh…`](https://explorer.near.org/transactions/FYYHdCJhfi1kJYmyYZHx4LFGspLRrEMgiv3DCw9Yz3kU) |
-| 9 | intents-owner.intatto.near deposits 0.1 NEAR (its records' storage and the signer's deposits) | [`3DBv3D2D…`](https://explorer.near.org/transactions/3DBv3D2DAsiPZdRe9T6jcTKxX63HCc8pwHYnchD6joi9) |
-| 10 | set_agent(intents-agent.intatto.near): no NEAR out; sell at most 0.3 wNEAR per swap and per 24h | [`5n5BeBUW…`](https://explorer.near.org/transactions/5n5BeBUWaWugsPueYTgUfLazX4em1sxEUaC7KK38mWye) |
-| 11 | register intents-owner.intatto.near on wrap.near | [`5niT2C7B…`](https://explorer.near.org/transactions/5niT2C7BzNPhXHp7jAiU3dN56XYHZUoW4ccpfJXXvDF9) |
-| 12 | register intents-owner.intatto.near on usdt.tether-token.near | [`EMTdkPQg…`](https://explorer.near.org/transactions/EMTdkPQgf81XR2qhuRhTH9UmBh6c6qYWg1neiiPZqfHi) |
-| 13 | wrap 0.3 NEAR | [`Djx47Wxe…`](https://explorer.near.org/transactions/Djx47WxeNsGxLdZS867BaYd1PsTqHb7BvvhQtuiVrd6D) |
-| 14 | deposit 0.3 wNEAR into intents.intatto.near | [`9J2Ngcts…`](https://explorer.near.org/transactions/9J2NgctsL2oZxotVGqqrCrSJUW1CSdtXE3LFvQewjGux) |
-| 15 | move 0.3 wNEAR into the vault's account on intents.near (ft_transfer_call as the vault) | [`8h9pYfRe…`](https://explorer.near.org/transactions/8h9pYfReowgUk84gPPxF4oMfUbomypAEa9A3MNoazmDD) |
-| 16 | set_intent_policy: wNEAR -> USDt only, at no less than 3.3 USDt per wNEAR | [`97GtBwrJ…`](https://explorer.near.org/transactions/97GtBwrJVuLVN8kUedSQEFZEjZtDDQeHujjDofmA45pm) |
-| 17 | add a function-call key to intents-agent.intatto.near: agent_intent_swap,settle_intent_swap on intents.intatto.near, 1 NEAR allowance | [`97zDDovC…`](https://explorer.near.org/transactions/97zDDovC8wyBnvobdjxaY9LKQVhp2Hhxon2yEPqbwFP1) |
+| 1 | create intents.intatto.near with 4.19254 NEAR | [`4hmHDx2t…`](https://nearblocks.io/txns/4hmHDx2tRSUunBX7UJpt9muhrkr6UNAchdHTnho1FxhE) |
+| 2 | deploy HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC (commit fc23fbc) to intents.intatto.near with new({"exchange_id":"v2.ref-finance.near","treasury_id":"eddyhamezz.near"}) | [`6vcbjSzE…`](https://nearblocks.io/txns/6vcbjSzEWVpamvF42zxSga4P66pgpEf1Zpe4CMVGRoxd) |
+| 3 | create intents-owner.intatto.near with 0.7 NEAR | [`FCCx7oEv…`](https://nearblocks.io/txns/FCCx7oEve7iAFewh7k7ehy2wdS9bKNaTLT8DYS5CBJsK) |
+| 4 | create intents-agent.intatto.near with 0.35 NEAR | [`8NB17xx6…`](https://nearblocks.io/txns/8NB17xx6tpsH32Ss4bdvMQpC9MijQa1bKEpozcU3JB5L) |
+| 5 | bind intents.intatto.near to intents.near and v1.signer (once, for good) | [`8q32sfmL…`](https://nearblocks.io/txns/8q32sfmLfrpDuHkcJzNdFccHsU4Fwdzb78hCwNyP7stM) |
+| 6 | register the vault's key: v1.signer derived_public_key(intatto/intents.near/v1, intents.intatto.near, 1) on intents.near, then check it is the only key | [`7DTFZe3w…`](https://nearblocks.io/txns/7DTFZe3w6y8DCEH5iCm4FCBKnKiPB4VSdaXHN5MHc6rp) |
+| 7 | register intents.intatto.near on wrap.near | [`6x24zkvU…`](https://nearblocks.io/txns/6x24zkvUvoNzG5gC8DdHhQWLFv6HZiT8GdJ6jzMNSFU7) |
+| 8 | register intents.intatto.near on usdt.tether-token.near | [`FYYHdCJh…`](https://nearblocks.io/txns/FYYHdCJhfi1kJYmyYZHx4LFGspLRrEMgiv3DCw9Yz3kU) |
+| 9 | intents-owner.intatto.near deposits 0.1 NEAR (its records' storage and the signer's deposits) | [`3DBv3D2D…`](https://nearblocks.io/txns/3DBv3D2DAsiPZdRe9T6jcTKxX63HCc8pwHYnchD6joi9) |
+| 10 | set_agent(intents-agent.intatto.near): no NEAR out; sell at most 0.3 wNEAR per swap and per 24h | [`5n5BeBUW…`](https://nearblocks.io/txns/5n5BeBUWaWugsPueYTgUfLazX4em1sxEUaC7KK38mWye) |
+| 11 | register intents-owner.intatto.near on wrap.near | [`5niT2C7B…`](https://nearblocks.io/txns/5niT2C7BzNPhXHp7jAiU3dN56XYHZUoW4ccpfJXXvDF9) |
+| 12 | register intents-owner.intatto.near on usdt.tether-token.near | [`EMTdkPQg…`](https://nearblocks.io/txns/EMTdkPQgf81XR2qhuRhTH9UmBh6c6qYWg1neiiPZqfHi) |
+| 13 | wrap 0.3 NEAR | [`Djx47Wxe…`](https://nearblocks.io/txns/Djx47WxeNsGxLdZS867BaYd1PsTqHb7BvvhQtuiVrd6D) |
+| 14 | deposit 0.3 wNEAR into intents.intatto.near | [`9J2Ngcts…`](https://nearblocks.io/txns/9J2NgctsL2oZxotVGqqrCrSJUW1CSdtXE3LFvQewjGux) |
+| 15 | move 0.3 wNEAR into the vault's account on intents.near (ft_transfer_call as the vault) | [`8h9pYfRe…`](https://nearblocks.io/txns/8h9pYfReowgUk84gPPxF4oMfUbomypAEa9A3MNoazmDD) |
+| 16 | set_intent_policy: wNEAR -> USDt only, at no less than 3.3 USDt per wNEAR | [`97GtBwrJ…`](https://nearblocks.io/txns/97GtBwrJVuLVN8kUedSQEFZEjZtDDQeHujjDofmA45pm) |
+| 17 | add a function-call key to intents-agent.intatto.near: agent_intent_swap,settle_intent_swap on intents.intatto.near, 1 NEAR allowance | [`97zDDovC…`](https://nearblocks.io/txns/97zDDovC8wyBnvobdjxaY9LKQVhp2Hhxon2yEPqbwFP1) |
 
 Swap (`scripts/mainnet-intents.sh swap --send`, which ran `agent/intent-swap.mjs`):
 
 | Step | Signer | Transaction |
 |---|---|---|
-| `agent_intent_swap`: checks, reserve, MPC signature, signed payload logged | `intents-agent.intatto.near` | [`GbHfV9nq…`](https://explorer.near.org/transactions/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT) |
-| `execute_intents` with the solver's intent: intent `5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi` executed | the relay (`intents.near` relayer key) | [`EJY7oiU1…`](https://explorer.near.org/transactions/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
-| `settle_intent_swap`: nonce used, owner credited 1.130742 USDt (`intent_swap_settled`) | `intents-agent.intatto.near` | [`73aJTu55…`](https://explorer.near.org/transactions/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
+| `agent_intent_swap`: checks, reserve, MPC signature, signed payload logged | `intents-agent.intatto.near` | [`GbHfV9nq…`](https://nearblocks.io/txns/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT) |
+| `execute_intents` with the solver's intent: intent `5aGuMWbXy1QM5ocroB2mkvTagtHmYvxze5KY1jLvwmUi` executed | the relay (`intents.near` relayer key) | [`EJY7oiU1…`](https://nearblocks.io/txns/EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE) |
+| `settle_intent_swap`: nonce used, owner credited 1.130742 USDt (`intent_swap_settled`) | `intents-agent.intatto.near` | [`73aJTu55…`](https://nearblocks.io/txns/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) |
 
 All 20 were checked over RPC on 2026-11-11: every one succeeded, with no failed receipt.
 
