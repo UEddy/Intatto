@@ -976,7 +976,14 @@ async fn an_extra_ai_decision_argument_is_recorded_but_changes_nothing() -> Test
         "ai_decision": ai_decision,
     });
     let (result, answered) = tokio::join!(
-        s.env.call_on(s.env.vault_id(), &agent, "agent_intent_swap", args, NO_DEPOSIT, tgas(150)),
+        s.env.call_on(
+            s.env.vault_id(),
+            &agent,
+            "agent_intent_swap",
+            args,
+            NO_DEPOSIT,
+            tgas(150)
+        ),
         async {
             let pending = s.it.wait_for_pending(&s.env, 1).await?;
             s.it.respond(&s.env, &pending[0]).await
@@ -985,9 +992,14 @@ async fn an_extra_ai_decision_argument_is_recorded_but_changes_nothing() -> Test
     answered?;
     let result = result?;
     let signed = events(&result, "intent_swap_signed");
-    assert!(result.assert_success().json::<bool>()?, "the swap should be signed");
+    assert!(
+        result.assert_success().json::<bool>()?,
+        "the swap should be signed"
+    );
     assert_eq!(signed.len(), 1);
-    let message = signed[0]["signed_data"]["payload"]["message"].as_str().expect("message");
+    let message = signed[0]["signed_data"]["payload"]["message"]
+        .as_str()
+        .expect("message");
     assert_eq!(
         near_sdk::serde_json::from_str::<Value>(message)?["intents"],
         json!([{ "intent": "token_diff", "diff": {
@@ -997,7 +1009,10 @@ async fn an_extra_ai_decision_argument_is_recorded_but_changes_nothing() -> Test
     );
     assert!(!message.contains("ai_decision") && !message.contains("56b9ec0d"));
     // Reserved exactly as without the extra argument.
-    assert_eq!(s.intents_snapshot().await?, [5 * WHOLE / 2, 0, 3 * WHOLE, 0]);
+    assert_eq!(
+        s.intents_snapshot().await?,
+        [5 * WHOLE / 2, 0, 3 * WHOLE, 0]
+    );
     Ok(())
 }
 
