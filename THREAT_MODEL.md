@@ -1,12 +1,17 @@
 # Threat model
 
-This covers the vault contract in `src/`, deployed on testnet as `vault-v1.intatto-dev.testnet`
-with `exchange_id = ref-finance-101.testnet` (Rhea / Ref V1, ref-exchange 1.9.19). It is a
-working document, not an audit.
+This covers the vault contract in `src/` and its deployments. It is a working document, not an
+audit.
 
-vault-v1 runs the build without the swap fee (code hash `J5Mo…`). The fee build (invariants 12
-and 13) is not deployed yet. It goes to a fresh testnet account, vault-v2, initialized with
-`new(exchange_id, treasury_id)`, so vault-v1 and its canary are left as they are.
+| Deployment | Build | Exchange |
+|---|---|---|
+| `vault.intatto.near` (mainnet, the canary's vault) | reproducible build of `6cfa90e` (`3z1W5Sfh…`), with the swap fee (invariants 12 and 13), without the intents path | `v2.ref-finance.near` (ref-exchange 1.9.21) |
+| `intents.intatto.near` (mainnet) | reproducible build of `fc23fbc` (`HRkrMN8o…`), with the intents path (invariants 14 to 18) | `v2.ref-finance.near` |
+| `vault-v1.intatto-dev.testnet` (the testnet canary's vault) | reproducible build of `b85cece` (`J5Mo…`), no swap fee | `ref-finance-101.testnet` (ref-exchange 1.9.19) |
+| `vault-v2.intatto-dev.testnet` | local non-reproducible build of the fee code (`7aiNbHTn…`) | `ref-finance-101.testnet` |
+
+The fee build went to fresh accounts initialized with `new(exchange_id, treasury_id)`, so vault-v1
+and its canary were left as they are.
 
 ## What the contract is
 
@@ -150,7 +155,7 @@ exchange beyond rejected calls.
   - a panicking receipt reverts its state changes;
   - callbacks run with the results of the promises they follow;
   - block timestamps are close enough to real time for 24-hour windows and locks.
-- **The exchange contract** (`ref-finance-101.testnet`). The vault credits the amounts the
+- **The exchange contract** (`ref-finance-101.testnet` on testnet, `v2.ref-finance.near` on mainnet). The vault credits the amounts the
   exchange reports from `swap` and `withdraw`, and keeps owners' tokens in the vault's account
   on the exchange between steps. An exchange that reported false amounts could make the vault
   credit balances backed by other owners' tokens.
@@ -187,14 +192,17 @@ exchange beyond rejected calls.
   It cannot withdraw, register an agent or change the policy. Unfreezing does matter: if the
   current agent's key is also compromised, unfreezing lets that agent spend again within the
   current policy. Freeze is therefore only as strong as the owner key's custody.
-- **The vault account's key.** `vault-v1.intatto-dev.testnet` has a full-access key. Whoever
-  holds it can deploy any code to the vault account, including code that sends every owner's
-  funds anywhere, or delete the account. See the limitations below.
+- **The vault account's key.** Every vault account has a full-access key: the deployer's key on
+  `vault.intatto.near`, kept offline, the key on `intents.intatto.near` (see the intents path
+  below), and the testnet accounts' keys. Whoever holds one can deploy any code to that vault
+  account, including code that sends every owner's funds anywhere, or delete the account. The
+  mainnet keys are kept so the hackathon deployment's funds stay recoverable, and are removed
+  after an external audit (README, "After the hackathon"). See the limitations below.
 
-## Chain Signatures intents path (branch `chain-signatures`, live on mainnet)
+## Chain Signatures intents path (live on mainnet)
 
-This section covers code that exists only on the `chain-signatures` branch; master does not depend
-on it. It adds a second way for the agent to swap: through NEAR Intents, with the vault's intents
+This section covers the intents code (`src/intents.rs`, `src/intent_swap.rs`), merged into master.
+The canary's `vault.intatto.near` runs an earlier build without it. It adds a second way for the agent to swap: through NEAR Intents, with the vault's intents
 account signed for by the MPC network.
 
 Since 2026-11-11 it runs on mainnet as **`intents.intatto.near`**:
@@ -635,7 +643,7 @@ Limits of this measurement:
 
 ## Passkey sign-in (mainnet only, experimental)
 
-Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only. The console labels the passkey
+The console labels the passkey
 path **"Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only."**, in
 a banner and in the wallet menu, and recommends a withdrawal lock. Code: `web/src/wallet/passkey.ts`.
 

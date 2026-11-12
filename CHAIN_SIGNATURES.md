@@ -1,14 +1,15 @@
-# Chain Signatures intents path (branch `chain-signatures`)
+# Chain Signatures intents path
 
 An agent swap through NEAR Intents. The vault's own account on `intents.near` is signed for by
 the MPC network (`v1.signer`, domain 1, Ed25519). The agent picks a pair and two amounts. The
 vault checks them against the owner's policy, then builds the NEP-413 `token_diff` itself, has
-it signed, and settles it by asking `intents.near` whether the nonce was used. Master does not
-depend on any of this.
+it signed, and settles it by asking `intents.near` whether the nonce was used. The code is in
+master (`src/intents.rs`, `src/intent_swap.rs`); the canary's `vault.intatto.near` runs an earlier
+build without it.
 
 Invariants 14 to 18 and the trust assumptions (MPC 11-of-16, intents.near governance, the vault
 account's full-access key) are in
-[THREAT_MODEL.md](THREAT_MODEL.md#chain-signatures-intents-path-branch-chain-signatures-live-on-mainnet).
+[THREAT_MODEL.md](THREAT_MODEL.md#chain-signatures-intents-path-live-on-mainnet).
 
 ## Live on mainnet, 2026-11-11
 

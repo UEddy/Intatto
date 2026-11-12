@@ -14,6 +14,12 @@ Only the invoice goes through.
 `vault-v2.intatto-dev.testnet`. Both modes ran against it on 2026-11-11; see
 [Results](#results-2026-11-11). `--dry-run` (below) still works without a key and sends nothing.
 
+**Also run on mainnet, 2026-11-12**, on `demo.intatto.near`'s vault on `vault.intatto.near`, with
+`attacker.intatto.near` as the attacker and a private key deleted after the runs
+([scripts/mainnet-injection-demo.sh](../scripts/mainnet-injection-demo.sh)): the same three attack
+payments were refused and only the invoice was paid. Transactions are in the main
+[README](../README.md#prompt-injection-attack-the-agent-was-told-to-drain-the-vault).
+
 ## Results, 2026-11-11
 
 The vault before the first run: 0.0978 NEAR, allowlist `[demo-merchant.intatto-dev.testnet]`,

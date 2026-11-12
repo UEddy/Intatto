@@ -8,6 +8,11 @@ Author: [UEddy](https://github.com/UEddy)
 
 **The agent's key is public. Take the money if you can.**
 
+**Track: AI Security & Defense.** Spending limits and a policy engine enforced by the contract, a
+sandboxed wallet the agent can trade from but never withdraw from, NEAR function-call keys, and AI
+decisions with TEE attestation receipts: an AI agent gets money without getting the keys to it.
+Also entered in Unstoppable DeFi and Agent Economy ([Tracks](#tracks)).
+
 To prove it, we published the agent's key with a real NEAR bounty on it: the canary is an AI
 agent's vault on NEAR mainnet holding 0.99761 NEAR, and its key is in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
@@ -562,15 +567,23 @@ per call.
 
 ## Tracks
 
-- **AI Security & Defense (`security`), primary.** The agent's key is public and the money is
-  still there: the canary invites anyone to drain it with the published key, and the board shows
-  every attempt and the contract's reason for refusing it. On mainnet, an agent that obeyed a prompt
-  injection telling it to drain its vault was refused by the contract every time it tried
-  ([Prompt-injection attack](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)), and
-  the model's trade decisions carry receipts from an attested TEE
-  ([AI decisions, verifiable](#ai-decisions-verifiable)). The deployed code is checked live against
-  its reproducible build, and every trust assumption is written down in
-  [THREAT_MODEL.md](THREAT_MODEL.md).
+- **AI Security & Defense (`security`), primary.** What the track asks for, and where it is here:
+  - *Spending limits and a policy engine:* per-trade and 24-hour caps, a receiver allowlist, pool
+    and pair allowlists, a slippage bound against the exchange's own quote and price floors, all
+    checked by the contract on every agent call ([`src/policy.rs`](src/policy.rs),
+    [What the contract guarantees](#what-the-contract-guarantees-and-where-it-is-checked)).
+  - *A sandboxed wallet:* the vault holds the money; the agent can trade from it and never
+    withdraw, and the owner can freeze it in one call or lock withdrawals until a date.
+  - *Function-call keys:* the agent's key can call only the vault's agent methods and cannot attach
+    a deposit ([exact limits](#the-agents-function-call-key-exact-limits)).
+  - *TEE attestation:* the model's trade decisions carry signature receipts from an attested TEE,
+    recorded with each trade ([AI decisions, verifiable](#ai-decisions-verifiable)).
+  - *Adversarial proof:* the canary's agent key is public on mainnet and the board shows every
+    attempt and the contract's reason for refusing it; on mainnet, an agent that obeyed a prompt
+    injection telling it to drain its vault was refused every time it tried
+    ([Prompt-injection attack](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)).
+    The deployed code is checked live against its reproducible build, and every trust assumption
+    is written down in [THREAT_MODEL.md](THREAT_MODEL.md).
 - **Unstoppable DeFi (`defi`).** A vault and a trading agent that settles through NEAR Intents,
   with no custodian of the agent's key: swaps go through Rhea (Ref V1)
   under on-chain pool, pair, cap and slippage rules, the slippage checked against the exchange's
@@ -642,7 +655,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   network, `intents.near` governance) are in [THREAT_MODEL.md](THREAT_MODEL.md).
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and both mainnet vaults use reproducible builds.
-- Passkey sign-in (mainnet only): Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only.
+- Passkey sign-in (mainnet only), experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only.
 - The mainnet deployment stays live after the hackathon. [scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)
   remains in the repository as the operator's way to wind it down safely if ever needed.
 - The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)
