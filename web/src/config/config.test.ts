@@ -20,7 +20,7 @@ describe("network configs", () => {
   it("never mix networks", () => {
     for (const c of Object.values(NETWORKS)) {
       const suffix = c.networkId === "testnet" ? ".testnet" : ".near";
-      const accounts = [c.exchangeId, ...c.pool.tokenIds, ...c.tokens.map((t) => t.contractId), c.vaultId, c.canary?.ownerId, c.canary?.agentId].filter(Boolean);
+      const accounts = [c.exchangeId, ...c.pool.tokenIds, ...c.tokens.map((t) => t.contractId), c.vaultId, c.canary?.ownerId, c.canary?.agentId, c.liveVaultOwner].filter(Boolean);
       for (const a of accounts) expect(a!.endsWith(suffix), `${a} on ${c.networkId}`).toBe(true);
     }
   });

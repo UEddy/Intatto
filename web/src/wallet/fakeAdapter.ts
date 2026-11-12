@@ -26,6 +26,9 @@ export class FakeAdapter implements SignerAdapter {
     this.connected = false;
   }
   async submit(_signerId: string, plans: readonly TxPlan[]): Promise<SubmittedTx[]> {
+    // Every signing request, counted for the e2e checks that some views sign nothing.
+    const w = window as unknown as { __e2eSubmits?: number };
+    w.__e2eSubmits = (w.__e2eSubmits ?? 0) + 1;
     await new Promise((r) => setTimeout(r, 300));
     return plans.map((p) => ({ hash: E2E_FREEZE_TX, receiverId: p.receiverId }));
   }

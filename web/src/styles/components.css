@@ -198,6 +198,13 @@
 .colophon-meta {
   color: var(--ink-3);
 }
+.colophon-built {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
 @media (min-width: 1024px) {
   .colophon-inner {
     grid-template-columns: 1fr auto;

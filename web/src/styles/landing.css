@@ -146,6 +146,83 @@
   }
 }
 
+/* The plain line saying what Intatto is, between the headline and the lede. */
+.hero-what {
+  font-size: clamp(18px, 1.75vw, 22px);
+  line-height: 1.5;
+  color: var(--ink);
+  max-width: 52ch;
+}
+
+/* ---------- how it works ---------- */
+
+.how-steps {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.how-step {
+  position: relative;
+  padding: 22px 22px 24px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.35s ease;
+  min-width: 0;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .how-step:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 24px 44px -30px rgba(28, 26, 23, 0.45);
+  }
+}
+.how-num {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--ink-3);
+}
+.how-title {
+  margin: 10px 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 2vw, 26px);
+  line-height: 1.15;
+}
+.how-step p {
+  color: var(--ink-2);
+}
+.how-limits {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+.how-limits dt {
+  font-size: 12.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.how-limits dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.how-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+}
+@media (min-width: 1024px) {
+  .how-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
 /* ---------- the stack of pop-out cards ---------- */
 
 .stack-wrap {
@@ -565,5 +642,22 @@
   .reveal--pending {
     opacity: 0;
     transform: translateY(36px) scale(0.985);
+  }
+}
+
+/* ---------- the intents panel in its frame ---------- */
+
+/* The frame draws the panel's edge; the panel's own rules would double it. */
+.frame--intents .intents {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* Wide screens: the explanation stays in view while the three checks scroll past it. */
+@media (min-width: 1024px) {
+  .frame--intents .intents-head {
+    position: sticky;
+    top: 24px;
+    align-self: start;
   }
 }

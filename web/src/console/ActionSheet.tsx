@@ -33,13 +33,18 @@ export function useAction() {
   return run;
 }
 
-export function ActionProvider({ children }: { children: ReactNode }) {
+/**
+ * Runs owner actions through the review sheet. Read-only (a live vault viewed by anyone): run
+ * does nothing, so no sheet opens and nothing can reach the wallet; the controls that would call
+ * it are disabled too (ConsolePage).
+ */
+export function ActionProvider({ children, readOnly = false }: { children: ReactNode; readOnly?: boolean }) {
   const [current, setCurrent] = useState<{ intent: Intent; options: Options } | null>(null);
-  const run = useCallback((intent: Intent, options: Options = {}) => setCurrent({ intent, options }), []);
+  const run = useCallback((intent: Intent, options: Options = {}) => (readOnly ? undefined : setCurrent({ intent, options })), [readOnly]);
   return (
     <ActionContext.Provider value={run}>
       {children}
-      {current && <ActionSheet key={current.intent.title + current.intent.plans.length} intent={current.intent} options={current.options} onClose={() => setCurrent(null)} />}
+      {current && !readOnly && <ActionSheet key={current.intent.title + current.intent.plans.length} intent={current.intent} options={current.options} onClose={() => setCurrent(null)} />}
     </ActionContext.Provider>
   );
 }

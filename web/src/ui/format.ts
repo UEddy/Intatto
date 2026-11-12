@@ -29,9 +29,9 @@ export function durationParts(ns: bigint): [string, string][] {
   }, []);
 }
 
-/** "6 Dec 2026" */
+/** "6 Dec 2026", the date in UTC (so it always agrees with the UTC times shown next to it). */
 export function formatShortDate(ns: bigint | string): string {
-  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(nsToDate(ns));
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(nsToDate(ns));
 }
 
 /** Coarse version for prose: "27 days", "4 hours", "12 minutes". */
@@ -48,13 +48,13 @@ export function nsToDate(ns: bigint | string): Date {
   return new Date(Number(BigInt(ns) / NS_PER_MS));
 }
 
-/** "6 Dec 2026, 22:33" in the viewer's zone. */
+/** "6 Dec 2026, 22:33 UTC": always UTC, and says so, whatever the viewer's zone. */
 export function formatDateTime(ns: bigint | string): string {
-  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(nsToDate(ns));
+  return `${new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" }).format(nsToDate(ns))} UTC`;
 }
 
 export function formatDate(ns: bigint | string): string {
-  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric" }).format(nsToDate(ns));
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(nsToDate(ns));
 }
 
 /** ISO-8601 UTC, for sources and tooltips. */

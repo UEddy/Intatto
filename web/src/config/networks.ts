@@ -132,6 +132,11 @@ export interface NetworkConfig {
   readonly canary: CanaryConfig | null;
   /** Null until the demo vault is set up (scripts/canary-testnet.sh with PROFILE=demo). */
   readonly demo: DemoConfig | null;
+  /**
+   * An owner of a vault on `vaultId` whose console anyone may view read-only ("See a live vault"
+   * at #/vault?view=live): balances, policy and agent activity, with owner actions disabled.
+   */
+  readonly liveVaultOwner: string | null;
   readonly expectedBuild: ExpectedBuild | null;
   /** Null where no Chain Signatures vault runs. */
   readonly intents: IntentsConfig | null;
@@ -198,6 +203,8 @@ export const TESTNET: NetworkConfig = {
     agentPublicKey: "ed25519:CTLx5YMheDj5LdCYLGG62k2PnZ7CznRasdbnKBuFVtd3",
     merchantId: "demo-merchant.intatto-dev.testnet",
   },
+  // The demo owner's vault is on vault-v2, not on vaultId: no live vault view on testnet.
+  liveVaultOwner: null,
   // `cargo near build reproducible-wasm` of the pushed commit below, in a fresh clone
   // (2026-11-08); vault-v1 runs it since the upgrade in canary.run.
   expectedBuild: {
@@ -267,6 +274,9 @@ export const MAINNET: NetworkConfig = {
     },
   },
   demo: null,
+  // The mainnet smoke test's owner (scripts/mainnet-smoke.sh, 18/18 on 2026-11-11): a vault with a
+  // policy, a completed swap and five refused agent calls, all on vaultId.
+  liveVaultOwner: "demo.intatto.near",
   // `cargo near build reproducible-wasm` of commit 6cfa90e in a fresh clone (2026-11-09), the
   // build scripts/mainnet-deploy.sh refuses to deploy anything but; vault.intatto.near runs it.
   expectedBuild: {

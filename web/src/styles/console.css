@@ -750,3 +750,50 @@
 .plan-action {
   min-width: 0;
 }
+
+/* ---------- a live vault, read-only (#/vault?view=live) ---------- */
+
+/* The owner controls sit in a fieldset that is disabled in read-only; it adds no box of its own. */
+.console-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.readonly-note {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.console-intro-note {
+  margin-top: 14px;
+  max-width: 60ch;
+}
+/* Each owner action says why it is disabled; the note above says it for assistive technology. */
+.console-fieldset:disabled .panel::after,
+.console-fieldset:disabled .kill::after {
+  content: "Connect the owner's wallet to change this.";
+  display: block;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule-strong);
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+/* Read-only, nobody can use the kill switch: it stays in the page instead of pinned to a phone's
+   screen bottom, where its note would cover the content. */
+.console-fieldset:disabled .kill {
+  flex-wrap: wrap;
+  position: static;
+}
+.console-fieldset:disabled .kill::after {
+  flex-basis: 100%;
+}
+.console-fieldset:disabled :is(button, input, select, textarea) {
+  cursor: not-allowed;
+}
+/* Disabled owner actions must look disabled, the wax kill switch included. */
+.console-fieldset:disabled :is(.btn, .kill-btn, .seg-btn) {
+  opacity: 0.45;
+  box-shadow: none;
+}

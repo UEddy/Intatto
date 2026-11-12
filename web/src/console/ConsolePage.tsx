@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { useServices } from "../app/services";
 import { SectionMark } from "../ui/primitives";
 import { useChainNow } from "../ui/useNow";
@@ -15,6 +16,8 @@ import { ActivityFeed } from "../activity/ActivityFeed";
 export function ConsolePage() {
   const { config } = useServices();
   const wallet = useWallet();
+  const [params] = useSearchParams();
+  const live = config.liveVaultOwner;
 
   if (!config.vaultId) {
     return (
@@ -22,6 +25,14 @@ export function ConsolePage() {
         <SectionMark>Owner console · {config.label}</SectionMark>
         <h1 className="display display--l">The {config.label.toLowerCase()} vault isn't deployed yet.</h1>
       </main>
+    );
+  }
+  // "See a live vault": anyone may view this owner's console, read-only. It signs nothing.
+  if (live && params.get("view") === "live") {
+    return (
+      <ActionProvider readOnly>
+        <ConnectedConsole ownerId={live} vaultId={config.vaultId} readOnly />
+      </ActionProvider>
     );
   }
   if (wallet.status !== "connected" || !wallet.accountId) {
@@ -37,7 +48,18 @@ export function ConsolePage() {
           <button type="button" className="btn btn--ink" onClick={() => void wallet.connect()} disabled={wallet.status === "connecting" || wallet.status === "restoring"}>
             {wallet.status === "connecting" ? "Connecting…" : "Connect wallet"}
           </button>
+          {live && (
+            <a className="btn btn--quiet" href="#/vault?view=live">
+              See a live vault
+            </a>
+          )}
         </div>
+        {live && (
+          <p className="muted small console-intro-note">
+            A live vault opens <span className="mono">{live}</span> on {config.label.toLowerCase()} read-only: its balances, its policy and every agent call, allowed or
+            refused. It signs nothing.
+          </p>
+        )}
         {wallet.error && <p className="field-hint field-hint--error">{wallet.error}</p>}
       </main>
     );
@@ -49,9 +71,11 @@ export function ConsolePage() {
   );
 }
 
-function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: string }) {
+function ConnectedConsole({ ownerId, vaultId, readOnly = false }: { ownerId: string; vaultId: string; readOnly?: boolean }) {
   const c = useConsole(ownerId);
-  const { session } = useWallet();
+  const wallet = useWallet();
+  const { session } = wallet;
+  const { config } = useServices();
   const [tab, setTab] = useState<"vault" | "activity">("vault");
   const nowNs = useChainNow(c.block.data?.timestampNs, c.block.dataUpdatedAt);
   const v = c.vault.data?.value;
@@ -61,11 +85,25 @@ function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: stri
   return (
     <main className="page console" id="main">
       <header className="console-head">
-        <SectionMark>Owner console</SectionMark>
-        <h1 className="display display--l">Your vault</h1>
+        <SectionMark>{readOnly ? `A live vault · ${config.label}` : "Owner console"}</SectionMark>
+        <h1 className="display display--l">{readOnly ? "A live vault, read-only" : "Your vault"}</h1>
         <p className="mono console-owner">{ownerId}</p>
       </header>
-      {session.notice && (
+      {readOnly && (
+        <aside className="notice readonly-note" id="readonly-note" role="note">
+          <p>
+            <strong>Read-only.</strong> This is <span className="mono">{ownerId}</span>'s vault, read live from {config.label.toLowerCase()}: its balances, its policy and
+            every agent call, allowed or refused. Owner actions are shown but disabled. Connect the owner's wallet to change this. This view signs nothing and holds
+            no keys.
+          </p>
+          <div className="hero-actions">
+            <a className="btn btn--quiet btn--small" href="#/vault">
+              Back
+            </a>
+          </div>
+        </aside>
+      )}
+      {!readOnly && session.notice && (
         <aside className="notice notice--warn" role="note" aria-label="Passkey wallet">
           <strong>{session.notice}</strong> {PASSKEY_LOCK_ADVICE} <a href="#lock">Lock withdrawals</a>.
         </aside>
@@ -81,7 +119,8 @@ function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: stri
       </div>
 
       <div className="console-grid" data-tab={tab}>
-        <div className="console-main">
+        {/* Read-only: a disabled fieldset disables every owner control inside it, natively. */}
+        <fieldset className="console-main console-fieldset" disabled={readOnly} aria-describedby={readOnly ? "readonly-note" : undefined}>
           {v && <KillSwitch vaultId={vaultId} vault={v} />}
           <Overview vault={c.vault.data} tokens={c.tokens} nowNs={nowNs} />
           {c.vault.isError && <p className="notice notice--warn">Could not read the vault: {String(c.vault.error)}</p>}
@@ -103,9 +142,9 @@ function ConnectedConsole({ ownerId, vaultId }: { ownerId: string; vaultId: stri
               )}
             </>
           )}
-        </div>
+        </fieldset>
         <aside className="console-feed" aria-label="Activity">
-          <ActivityFeed ownerId={ownerId} vault={v ?? null} />
+          <ActivityFeed ownerId={ownerId} vault={v ?? null} readOnly={readOnly} />
         </aside>
       </div>
     </main>

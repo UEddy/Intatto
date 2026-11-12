@@ -465,6 +465,17 @@ geolocation, USB, Bluetooth, HID, serial and payment. A static header cannot car
 nonce, so its `script-src` allows `'self' 'unsafe-inline'`, and the `<meta>` policy below still
 requires the nonce: a script must pass both.
 
+Why the header needs `'unsafe-inline'` (checked 2026-11-12, Cloudflare build under its real
+`_headers`): the site itself has no inline script (`boot.js` and the app are files from `'self'`),
+but each wallet's executor runs as inline script inside near-connect's sandboxed `srcdoc` iframe,
+and that iframe inherits both policies. Its scripts carry this load's nonce, which the `<meta>`
+policy accepts; a header can only name a fixed nonce, which no script could match at the same
+time. With the header's `script-src` set to `'self'` alone, Meteor's executor never appeared and
+Chrome reported "Executing inline script violates the following Content Security Policy
+directive 'script-src 'self''". With `'unsafe-inline'` it appeared, and an inline script added
+without the nonce was still refused, by the `<meta>` policy. So `'unsafe-inline'` in the header
+admits nothing the nonce does not.
+
 GitHub Pages cannot set headers, so the policy is a `<meta>` tag. `boot.js`, the first script on
 the page, inserts it together with a nonce that is random on every page load
 (`crypto.getRandomValues`, 18 bytes) and never appears in the served HTML. Only `boot.js` runs

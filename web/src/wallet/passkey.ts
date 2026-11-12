@@ -45,7 +45,9 @@ export function passkeyManifestEntry(baseUrl: string): WalletManifest {
     name: "Passkey (experimental)",
     icon: ICON,
     description: PASSKEY_EXPERIMENTAL_LABEL,
-    website: "https://github.com/NEAR-DevHub/near-connect-passkey",
+    // The picker shows this host under the wallet's name: this site, which serves the executor
+    // (its upstream source, near-connect-passkey, is recorded in THREAT_MODEL.md).
+    website: "https://intatto.pages.dev",
     version: PASSKEY_EXECUTOR_COMMIT.slice(0, 7),
     // An absolute path: near-connect resolves relative executor URLs against location.origin.
     executor: `${baseUrl}wallets/passkey-executor-${PASSKEY_EXECUTOR_COMMIT.slice(0, 7)}.js`,

@@ -14,7 +14,8 @@ import { describeActivity, type FeedItem, type TokenLookup } from "./describe";
 export const FEED_POLL_MS = 20_000;
 const PAGE = 50;
 
-export function ActivityFeed({ ownerId }: { ownerId: string; vault?: VaultView | null }) {
+/** `readOnly`: someone else's vault, viewed read-only, so the wording says "this", not "your". */
+export function ActivityFeed({ ownerId, readOnly = false }: { ownerId: string; vault?: VaultView | null; readOnly?: boolean }) {
   const { chain, config, indexer } = useServices();
   const vaultId = config.vaultId!;
   const now = useNow(15_000);
@@ -49,7 +50,7 @@ export function ActivityFeed({ ownerId }: { ownerId: string; vault?: VaultView |
         <div>
           <SectionMark>Activity</SectionMark>
           <h2 id="feed-title" className="card-title">
-            Everything that touched your vault
+            Everything that touched {readOnly ? "this" : "your"} vault
           </h2>
         </div>
         <span className="live-dot">{feed.isFetching ? "Checking…" : feed.dataUpdatedAt ? `Updated ${formatAgo(now - feed.dataUpdatedAt)}` : ""}</span>
@@ -100,7 +101,7 @@ export function ActivityFeed({ ownerId }: { ownerId: string; vault?: VaultView |
 
       <footer className="card-foot">
         <span>
-          From the vault's history, filtered to your account. Caps quoted are the ones in force at the time.
+          From the vault's history, filtered to {readOnly ? "this" : "your"} account. Caps quoted are the ones in force at the time.
         </span>
         {sources
           .filter((s) => s.attribution)

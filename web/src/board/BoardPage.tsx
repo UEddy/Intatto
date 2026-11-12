@@ -12,6 +12,7 @@ import { AgentKeyCard } from "./AgentKeyCard";
 import { AttemptLog, canarySubject, demoSubject } from "./AttemptLog";
 import { Faq } from "./Faq";
 import { HeroStack, SealFace } from "./HeroStack";
+import { HowItWorks } from "./HowItWorks";
 import { IntegrityCheck } from "./IntegrityCheck";
 import { IntentsPanel } from "./IntentsPanel";
 import { RulesPanel } from "./RulesPanel";
@@ -53,7 +54,7 @@ export function BoardPage() {
   if (!b.enabled || !b.canary || !b.vaultId) {
     return (
       <main className="page board board--empty" id="main">
-        <SectionMark>Break-price board · {config.label}</SectionMark>
+        <SectionMark>Live bounty · {config.label}</SectionMark>
         <h1 className="display display--l">The {config.label.toLowerCase()} canary isn't live yet.</h1>
         <p className="lede">
           When it is, this page will show its vault, its published agent key and every attempt to break it. The testnet canary is running now.
@@ -137,15 +138,17 @@ export function BoardPage() {
 
       <section className="board-hero" aria-labelledby="board-title">
         <div className="board-hero-text">
-          <SectionMark>Break-price board · {config.label} canary</SectionMark>
+          <SectionMark>Live bounty · {config.label} canary</SectionMark>
           <h1 id="board-title" className="display display--hero">
             The key is public.
             <br />
             <em>{state.seal === "broken" ? "The seal is broken." : "The money is still here."}</em>
           </h1>
+          <p className="hero-what">
+            Intatto is a NEAR vault your AI agent trades from, within limits the contract enforces. To prove it, we published this vault's agent key.
+          </p>
           <p className="lede">
-            This vault's agent key is published. Anyone can sign with it. The vault contract's policy lets that key move nothing, and this page shows, live from the
-            chain, whether that is still true.
+            Anyone can sign with that key. The vault contract's policy lets it move nothing, and this page shows, live from the chain, whether that is still true.
           </p>
           <div className="hero-status" aria-live="polite">
             {state.seal === "unknown" ? (
@@ -228,6 +231,10 @@ export function BoardPage() {
           <strong>Setup changed.</strong> {state.warnings.join(" ")}
         </aside>
       )}
+
+      <Section id="how-title" lead="How it works." rest="Three steps, and the contract does the rest.">
+        <HowItWorks />
+      </Section>
 
       <Section id="why-title" lead="Why it matters." rest="Most trading bots hold your key.">
         <WhyItMatters />

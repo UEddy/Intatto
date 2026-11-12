@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useServices } from "../app/services";
 import type { Chain } from "../near/chain";
 import { NearConnectAdapter } from "./nearConnect";
-import { PLAIN_SESSION, type SignerAdapter, type WalletSession } from "./types";
+import { PLAIN_SESSION, WalletRejectedError, type SignerAdapter, type WalletSession } from "./types";
 
 export interface WalletState {
   readonly adapter: SignerAdapter;
@@ -50,7 +50,9 @@ export function WalletProvider({ children, adapter: given }: { children: ReactNo
       await readSession();
     } catch (e) {
       setStatus(accountId ? "connected" : "disconnected");
-      setError(e instanceof Error ? e.message : String(e));
+      // Closing the wallet picker (or declining in the wallet) is a choice, not a failure: reset
+      // quietly. Only real failures are shown.
+      if (!(e instanceof WalletRejectedError)) setError(e instanceof Error ? e.message : String(e));
     }
   }, [adapter, accountId, readSession]);
 

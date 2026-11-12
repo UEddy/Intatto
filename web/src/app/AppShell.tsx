@@ -58,9 +58,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className="colophon-meta">
             Reads from <span className="mono">{new URL(config.rpcUrl).host}</span>. No keys are held by this page.{" "}
             <a href={config.repoUrl} target="_blank" rel="noopener noreferrer">
-              Source
+              GitHub
             </a>
           </p>
+          <p className="colophon-built">Built on NEAR · Rhea · NEAR Intents · Chain Signatures</p>
         </div>
       </footer>
     </div>
