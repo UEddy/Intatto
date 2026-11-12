@@ -257,6 +257,30 @@ through. The model, DeepSeek V4.1 Flash, ignored the injection and paid only the
 is logged, and every transaction from the demo agent's key, rejections included, shows up in the
 board's "Prompt-injection demo" log.
 
+## AI decisions, verifiable
+
+Before each NEAR Intents trade, the agent ([agent/intent-swap.mjs](agent/intent-swap.mjs)) asks a
+model on NEAR AI Cloud whether to take the solver's quote
+([agent/ai-decision.mjs](agent/ai-decision.mjs)). It keeps the completion's signature receipt:
+SHA-256 of the exact request bytes and of the exact response bytes, and an ECDSA signature over
+`model:request_hash:response_hash` by a signing address that NEAR AI attests is inside its TEE. The
+agent trades only if the model says "trade" and the receipt checks out: the signed text matches
+the hashes it computed, and the signature recovers to that address. The hashes and the receipt
+then go into the trade's own transaction, as an extra `ai_decision` argument of
+`agent_intent_swap`. The deployed vaults ignore arguments they do not know, so no redeploy is
+needed. They are recorded on chain in the transaction's arguments, not in any log or state of the
+vault (`an_extra_ai_decision_argument_is_recorded_but_changes_nothing` in
+[tests/chain_signatures.rs](tests/chain_signatures.rs) checks this). The board shows "Verify AI
+decision" on a trade whose arguments hold a receipt that signs exactly those hashes. The link
+opens NEAR AI's Verification Center with the receipt in the URL fragment, which the browser never
+sends to the server. **What this proves:** this response came from this model, running in an
+attested TEE (model, gateway, NVIDIA GPU and Intel TDX attestation, checked by the Verification
+Center), and its request and response hashes are the ones recorded with this trade. **What it
+does not prove:** the agent's own code does not run in a TEE. Nothing shows that the agent sent
+the model honest facts, or that it acted on the answer rather than ignoring it, beyond the trade
+itself. The prompt and the reply stay with the agent, in its run log, and only their hashes are
+public. The vault's policy, not the model, is what limits the trade.
+
 ## What the contract guarantees, and where it is checked
 
 The full list of invariants and trust assumptions is in [THREAT_MODEL.md](THREAT_MODEL.md).

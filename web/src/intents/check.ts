@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import type { IntentsConfig } from "../config/networks";
+import { aiDecisionOf, type AiDecision } from "./aiDecision";
 import { base58Encode } from "../near/base58";
 import type { FtMetadata } from "../contract/views";
 import { ftMetadata } from "../contract/views";
@@ -294,6 +295,8 @@ export const TX_PROBLEM: Record<TxProblem, string> = {
 /** The whole swap, checked step by step; a later step is only checked if the earlier ones hold. */
 export interface SwapCheck {
   readonly sign: Checked<{ signed: SignedSwap }>;
+  /** The NEAR AI decision recorded in the trade's arguments, if any (aiDecision.ts). */
+  readonly aiDecision: AiDecision;
   /** Recomputed from the signed payload; null if signing did not check out. */
   readonly intentHash: string | null;
   readonly execute: Checked<Record<never, never>> | null;
@@ -305,12 +308,14 @@ export async function checkSwap(
   tx: (hash: string, senderId: string) => Promise<TxOutcome | null>,
 ): Promise<SwapCheck> {
   // One after another: the archival node rate-limits bursts.
-  const sign = checkSignTx(await tx(cfg.swap.signTxHash, cfg.agentId), cfg);
-  if (!sign.ok) return { sign, intentHash: null, execute: null, settle: null };
+  const signTx = await tx(cfg.swap.signTxHash, cfg.agentId);
+  const sign = checkSignTx(signTx, cfg);
+  const aiDecision: AiDecision = signTx ? aiDecisionOf(signTx) : { kind: "none" };
+  if (!sign.ok) return { sign, aiDecision, intentHash: null, execute: null, settle: null };
   const intentHash = await nep413Hash(sign.signed.message, sign.signed.nonce, sign.signed.recipient);
   const execute = checkExecuteTx(await tx(cfg.swap.executeTxHash, cfg.verifierId), cfg, intentHash, sign.signed.nonce);
   const settle = checkSettleTx(await tx(cfg.swap.settleTxHash, cfg.agentId), cfg);
-  return { sign, intentHash, execute, settle };
+  return { sign, aiDecision, intentHash, execute, settle };
 }
 
 /* ---------- the four checks, as the panel runs them ---------- */

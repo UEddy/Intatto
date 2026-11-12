@@ -952,6 +952,55 @@ async fn a_bad_signer_answer_is_refunded() -> TestResult {
     Ok(())
 }
 
+#[tokio::test]
+async fn an_extra_ai_decision_argument_is_recorded_but_changes_nothing() -> TestResult {
+    // The agent puts its NEAR AI decision receipt (hashes and signature) into the
+    // agent_intent_swap arguments, so it is on chain with the trade. The deployed vaults do not
+    // know the field: this checks they accept it and ignore it (near-sdk input structs reject
+    // unknown fields only with #[near(deny_unknown_arguments)], which this contract never uses),
+    // and that nothing of it reaches what the vault signs.
+    let s = CsEnv::ready().await?;
+    let (agent, wnear, usdt) = (s.env.agent.clone(), s.it.wnear.clone(), s.it.usdt.clone());
+    let (amount_in, amount_out) = (WHOLE / 2, 2 * WHOLE);
+    let ai_decision = json!({
+        "request_hash": "56b9ec0db2ea8772dad81a393d42a913872006984b30e6128b19c9bf3fb614a4",
+        "response_hash": "ef0386e717e78f512761dce998b695e6bc5d7339f7917486dc33ac574b6de61b",
+        "receipt": { "completion_id": "chatcmpl-test", "model": "m", "signature": "0x00" },
+    });
+    let args = json!({
+        "owner_id": s.env.owner,
+        "token_in": wnear,
+        "token_out": usdt,
+        "amount_in": U128(amount_in),
+        "amount_out": U128(amount_out),
+        "ai_decision": ai_decision,
+    });
+    let (result, answered) = tokio::join!(
+        s.env.call_on(s.env.vault_id(), &agent, "agent_intent_swap", args, NO_DEPOSIT, tgas(150)),
+        async {
+            let pending = s.it.wait_for_pending(&s.env, 1).await?;
+            s.it.respond(&s.env, &pending[0]).await
+        }
+    );
+    answered?;
+    let result = result?;
+    let signed = events(&result, "intent_swap_signed");
+    assert!(result.assert_success().json::<bool>()?, "the swap should be signed");
+    assert_eq!(signed.len(), 1);
+    let message = signed[0]["signed_data"]["payload"]["message"].as_str().expect("message");
+    assert_eq!(
+        near_sdk::serde_json::from_str::<Value>(message)?["intents"],
+        json!([{ "intent": "token_diff", "diff": {
+            format!("nep141:{wnear}"): format!("-{amount_in}"),
+            format!("nep141:{usdt}"): amount_out.to_string(),
+        }}])
+    );
+    assert!(!message.contains("ai_decision") && !message.contains("56b9ec0d"));
+    // Reserved exactly as without the extra argument.
+    assert_eq!(s.intents_snapshot().await?, [5 * WHOLE / 2, 0, 3 * WHOLE, 0]);
+    Ok(())
+}
+
 /// Every policy rejection is logged with its reason, fails the call, reserves nothing and asks
 /// the signer for nothing.
 #[tokio::test]

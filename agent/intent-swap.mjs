@@ -4,12 +4,18 @@
 //   1. Message Bus `quote` for selling exactly --amount-in of --token-in for --token-out.
 //   2. Read-only preflight on the vault: intents key verified, pair listed, best quote at or above
 //      the owner's floor, enough intents balance, and the agent key allowed to call the vault.
-//   3. `agent_intent_swap(owner, token_in, token_out, amount_in, amount_out = quote)`, signed with
-//      the agent's function-call key. The vault builds the NEP-413 token_diff, the MPC network
+//   3. The trade decision on NEAR AI Cloud (ai-decision.mjs): a model in NEAR AI's attested TEE is
+//      asked whether to take the quote. The agent keeps the completion's signature receipt and
+//      checks it (signed text = model:request_hash:response_hash, signature recovers to the
+//      signing address); a "skip" or a receipt that does not check out stops here.
+//   4. `agent_intent_swap(owner, token_in, token_out, amount_in, amount_out = quote, ai_decision)`,
+//      signed with the agent's function-call key. `ai_decision` (the two hashes and the receipt)
+//      is not read by the vault, which ignores unknown arguments: it is there to be on chain, in
+//      this transaction's arguments, with the trade it decided. The vault builds the NEP-413 token_diff, the MPC network
 //      signs it, and the vault logs the signed payload (`intent_swap_signed`).
-//   4. Message Bus `publish_intent` with that payload and the quote's hash, then `get_status`
+//   5. Message Bus `publish_intent` with that payload and the quote's hash, then `get_status`
 //      until the relay reports SETTLED or gives up.
-//   5. `settle_intent_swap(intent_id)`: the vault asks intents.near whether the nonce was used and
+//   6. `settle_intent_swap(intent_id)`: the vault asks intents.near whether the nonce was used and
 //      credits the output (or, after the deadline, refunds the input).
 //
 //   node agent/intent-swap.mjs --vault V --owner O --agent A --token-in T --token-out U --amount-in N [--dry-run]
@@ -20,12 +26,15 @@
 //   INTENT_AGENT_KEY_FILE  a near CLI key file holding it ({"private_key": "ed25519:..."}), as
 //                     scripts/mainnet-intents.sh passes the legacy-keychain key file
 //   NEAR_INTENTS_JWT  ~/.config/intatto/intents.env only, mode 600 (intents-env.mjs)
+//   NEAR_AI_API_KEY   NEAR AI Cloud (environment, or agent/.env); NEAR_AI_MODEL and
+//                     NEAR_AI_BASE_URL override the model and the endpoint
 // NEAR_RPC overrides the RPC (default: mainnet FastNEAR). --dry-run stops after the preflight and
-// prints the transaction it would send; it signs and sends nothing.
+// asks NEAR AI for the decision, then prints the transaction it would send; it signs and sends nothing.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { aiDecisionArg, decideTrade, DEFAULT_BASE_URL, DEFAULT_MODEL } from "./ai-decision.mjs";
 import { jwtClaims, loadIntentsJwt } from "./intents-env.mjs";
 import { MessageBus, meetsFloor } from "./message-bus.mjs";
 import { keyPair, serializeTransaction, signTransaction } from "./near-tx.mjs";
@@ -171,6 +180,19 @@ export class Chain {
   }
 }
 
+/** "300000000000000000000000" with 24 decimals -> "0.3" (exact, no rounding). */
+export function units(raw, decimals) {
+  const v = BigInt(raw);
+  const scale = 10n ** BigInt(decimals);
+  const frac = (v % scale).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return `${v / scale}${frac ? `.${frac}` : ""}`;
+}
+
+/** out per one whole in, to 3 decimals, rounded down: (3e23, 1130742, 24, 6) -> "3.769". */
+export function rate(amountIn, amountOut, decimalsIn, decimalsOut) {
+  return units((BigInt(amountOut) * 10n ** BigInt(decimalsIn + 3)) / (BigInt(amountIn) * 10n ** BigInt(decimalsOut)), 3);
+}
+
 function usage(message) {
   if (message) console.error(message);
   console.error("usage: node agent/intent-swap.mjs --vault V --owner O --agent A --token-in T --token-out U --amount-in N [--min-deadline-ms 120000] [--dry-run]");
@@ -202,7 +224,7 @@ async function main() {
   loadEnvFile(env); // agent/.env, gitignored; the environment wins
   const jwt = settleOnly ? null : loadIntentsJwt();
   const agentKey = agentSecret(env);
-  const secrets = [jwt, agentKey].filter((s) => typeof s === "string" && s.length >= 8);
+  const secrets = [jwt, agentKey, env.NEAR_AI_API_KEY].filter((s) => typeof s === "string" && s.length >= 8);
   const runs = join(here, "runs");
   mkdirSync(runs, { recursive: true });
   const logFile = join(runs, `${new Date().toISOString().replace(/[:.]/g, "-")}-intent-swap${opts["dry-run"] ? "-dry" : ""}.jsonl`);
@@ -265,19 +287,37 @@ async function main() {
   log("preflight", preflight);
   const failed = Object.entries(preflight).filter(([k, v]) => v === false).map(([k]) => k);
   if (failed.length > 0) throw new Error(`preflight failed: ${failed.join(", ")}`);
-  const args = { owner_id: opts.owner, token_in: tokenIn, token_out: tokenOut, amount_in: amountIn, amount_out: quote.amount_out };
+  // 3. The decision, on NEAR AI Cloud, with its TEE signature receipt.
+  const [metaIn, metaOut] = await Promise.all([chain.view(tokenIn, "ft_metadata", {}), chain.view(tokenOut, "ft_metadata", {})]);
+  const facts = {
+    amountIn: units(amountIn, metaIn.decimals),
+    symbolIn: metaIn.symbol,
+    tokenIn,
+    amountOut: units(quote.amount_out, metaOut.decimals),
+    symbolOut: metaOut.symbol,
+    tokenOut,
+    rate: rate(amountIn, quote.amount_out, metaIn.decimals, metaOut.decimals),
+    floor: rate(pair.per_in, pair.min_out, metaIn.decimals, metaOut.decimals),
+  };
+  const decision = await decideTrade({ facts, apiKey: env.NEAR_AI_API_KEY, baseUrl: env.NEAR_AI_BASE_URL ?? DEFAULT_BASE_URL, model: env.NEAR_AI_MODEL ?? DEFAULT_MODEL });
+  log("ai_decision", { decision: decision.decision, reason: decision.reason, request_hash: decision.request_hash, response_hash: decision.response_hash, receipt: decision.receipt, verify_url: decision.verify_url });
+  if (decision.decision !== "trade") {
+    log("done", { traded: false, why: "the AI decision was skip", log: logFile });
+    return;
+  }
+  const args = { owner_id: opts.owner, token_in: tokenIn, token_out: tokenOut, amount_in: amountIn, amount_out: quote.amount_out, ai_decision: aiDecisionArg(decision) };
   if (opts["dry-run"]) {
     log("dry-run", { would_call: `${opts.vault}.agent_intent_swap`, args, gas: SWAP_GAS.toString(), then: "publish_intent, get_status, settle_intent_swap" });
     return;
   }
 
-  // 3. The vault builds, the MPC network signs.
+  // 4. The vault builds, the MPC network signs.
   const outcome = await chain.call({ signerId: opts.agent, keys: keys(), receiverId: opts.vault, method: "agent_intent_swap", args, gas: SWAP_GAS });
   const result = intentSwapResult(outcome, opts.vault);
   log("agent_intent_swap", { tx: outcome.transaction?.hash, result: { ...result, signedData: result.signedData ? "(logged by the vault)" : undefined } });
   if (result.kind !== "signed") throw new Error(`the vault did not sign: ${JSON.stringify(result)}`);
 
-  // 4. Publish and watch.
+  // 5. Publish and watch.
   const published = await bus.publishIntent({ quoteHash: quote.quote_hash, signedData: result.signedData });
   log("publish_intent", published);
   if (published?.status !== "OK") throw new Error(`publish_intent failed: ${JSON.stringify(published)}`);
@@ -290,7 +330,7 @@ async function main() {
   }
   log("get_status", status ?? {});
 
-  // 5. Settle on chain. An unsettled intent can only be refunded once its deadline has passed.
+  // 6. Settle on chain. An unsettled intent can only be refunded once its deadline has passed.
   if (status?.status !== "SETTLED") {
     const wait = deadlineMs + 5_000 - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -313,6 +353,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     } catch {
       // No key file: nothing more to redact.
     }
+    if (process.env.NEAR_AI_API_KEY) secrets.push(process.env.NEAR_AI_API_KEY);
     console.error(redact(`error: ${err.message}`, secrets));
     process.exit(1);
   });
