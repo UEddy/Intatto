@@ -27,7 +27,9 @@ export const PASSKEY_EXECUTOR_SHA256 = "2d289931d4dcefbbe84ab486616b5002d460cc9d
 export const PASSKEY_SPONSOR_ID = "helper.trezu.near";
 
 /** Shown wherever the passkey path is offered or in use. */
-export const PASSKEY_EXPERIMENTAL_LABEL = "Experimental: unaudited wallet contract, upgradeable by Trezu; small amounts only.";
+/** The passkey wallet's status, in the wallet picker and in the console's banner while it is connected. */
+export const PASSKEY_EXPERIMENTAL_LABEL =
+  "Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract.";
 export const PASSKEY_LOCK_ADVICE =
   "We recommend locking withdrawals: while a lock is in force, not even a changed wallet contract can take funds out of your vault.";
 

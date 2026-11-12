@@ -53,6 +53,9 @@ describe("passkey manifest entry", () => {
     expect(entry.version).toBe(PASSKEY_EXECUTOR_COMMIT.slice(0, 7));
     expect(entry.permissions).toEqual({ storage: true, webauthn: true });
     expect(entry.description).toBe(PASSKEY_EXPERIMENTAL_LABEL);
+    // The status as tested (2026-11-12): sign-in on a phone, no transaction signed yet.
+    expect(PASSKEY_EXPERIMENTAL_LABEL).toBe("Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract.");
+    expect(PASSKEY_EXPERIMENTAL_LABEL).not.toMatch(/end to end|[\u2013\u2014]/);
     expect(passkeyManifestEntry("/Intatto/").executor).toBe("/Intatto/wallets/passkey-executor-798e9e5.js");
   });
 
