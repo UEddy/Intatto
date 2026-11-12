@@ -375,7 +375,7 @@ export function BoardPage() {
             <p>
               So the funds in this hackathon deployment stay recoverable if something goes wrong. It also means the contract's code can change. If it does, its code hash
               changes, and the integrity check above shows <strong>CODE CHANGED</strong> within {BOARD_POLL_MS / 1000} seconds. Judge the vault by the code that is
-              running, not by what anyone says.
+              running, not by what anyone says. The key is kept offline and will be removed after an external audit, which makes the code permanent.
             </p>
           </div>
         </div>

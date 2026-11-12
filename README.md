@@ -16,7 +16,9 @@ contract, and the contract refuses every one. Nothing has left the canary since 
 signed with the key yet). Watch every attempt live on the board at
 **[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)**, or try one yourself in
 [Try it](#try-it). A second canary has run on testnet since 2026-11-06, also untouched (0.9974
-NEAR).
+NEAR). The bounty is small because one person funds it. The amount does not change the test: the
+contract applies the same checks to every call, so the policy that refuses these 0.99761 NEAR
+refuses any balance.
 
 Today most trading bots hold your private key. In September 2024, attackers exploited a flaw in the Telegram trading bot Banana Gun and drained about $3 million from 11 users' bot wallets; because the bot held the keys, every transfer was a valid signed transaction that nothing on chain could refuse. The team refunded the users from its treasury.[^banana-gun] Intatto removes the key from the bot: the agent signs only calls the vault's policy allows, and the money stays in a contract it cannot empty.
 
@@ -25,6 +27,25 @@ one AI agent spend or swap them only within limits the owner sets on chain. The 
 function-call key. The contract, not the agent's software, checks every limit, so an agent that is
 buggy, compromised, prompt-injected, or whose key is simply public can move no more than the owner
 allowed. For the canary that is nothing at all.
+
+**What the operator can and cannot do today.** Every rule above is enforced by the contract, but
+during the hackathon the operator keeps the vault accounts' full-access keys, so owners still
+trust the operator's custody of those keys:
+
+- The deployer holds a full-access key on `vault.intatto.near`, kept offline. It acts as the vault
+  account itself, so it could transfer the NEAR and tokens that account holds for every owner, or
+  deploy different code. The board shows a code change as **CODE CHANGED** within 10 seconds; a
+  direct transfer leaves the code and the vault's own records unchanged, so only the account's
+  balance on an explorer would show it.
+- `intents.intatto.near` holds a full-access key, kept offline. With it, the operator could sign
+  intents for that vault outside its policy, or move its balances on `intents.near`
+  ([THREAT_MODEL.md](THREAT_MODEL.md#trust-assumptions-intents-path)).
+- Through the contract, nobody but the owner can withdraw: the agent key cannot, and the treasury
+  can withdraw only accrued fees. The 10 bps fee is a constant in the code; changing it means new
+  code, which the hash check shows. The canary's lock stops even the owner's key until 2026-11-20
+  ([CANARY.md](CANARY.md)).
+- Both keys will be removed after an external audit ([After the hackathon](#after-the-hackathon)),
+  which makes the code permanent.
 
 The repository has four parts: the vault contract (`src/`), including agent swaps through NEAR
 Intents signed by the MPC network ([CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)); a web app with an
@@ -52,7 +73,7 @@ and an optional time lock on the owner's own withdrawals.
 | Break-price board and owner console | **Live** at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet), the default | **Live** on the same site (network switch, or `?network=testnet`) |
 | Wallets | Meteor, Intear, HOT, MyNearWallet | Meteor, Intear |
 | Passkey sign-in | **Experimental**: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only. See [THREAT_MODEL.md](THREAT_MODEL.md#passkey-sign-in-mainnet-only-experimental). | Not available (mainnet only) |
-| Teardown | **Planned** after the canary's lock ends on 2026-11-20 ([scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)) | |
+| After the hackathon | **Staying live**: the vaults, the canary and the board keep running ([After the hackathon](#after-the-hackathon)) | |
 
 | | Mainnet |
 |---|---|
@@ -490,6 +511,30 @@ rate is in the code, anyone can verify it from the code hash (step 2).
 Per completed swap, the agent pays about 0.0036 NEAR of gas whatever the size (table above). At
 0.10%, the fee equals that gas cost on a swap whose output is worth 3.6 NEAR.
 
+## After the hackathon
+
+The mainnet deployment stays live after judging: `vault.intatto.near`, `intents.intatto.near`, the
+canary and the board at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet).
+
+- **The canary stays funded.** Its withdrawal lock ends on 2026-11-20 12:00 UTC; after that the
+  owner's key could withdraw, and the owner does not plan to. Under [CANARY.md](CANARY.md)'s rules
+  any decrease is a break whoever signs it, so a withdrawal would show on the board as one.
+- **Audit, then permanent code.** The contract has not been audited. After an external audit, both
+  upgrade keys are removed (the deployer's full-access key on `vault.intatto.near` and the
+  full-access key on `intents.intatto.near`), so no one, the operator included, can change the
+  code again. Until then they are disclosed above and in [THREAT_MODEL.md](THREAT_MODEL.md).
+- **More venues and pairs.** The policy already takes any list of Rhea pools and intent pairs;
+  next are more pairs on both paths, chosen by liquidity.
+- **Agents that owners run themselves.** Intatto does not run agents, because running one would
+  mean holding its key. Next is a template an owner deploys on their own infrastructure, built on
+  [agent/](agent/README.md) and the [Bring your own agent](#bring-your-own-agent) interface.
+- **Passkeys end to end.** Signing transactions with a passkey, tested and documented, before
+  passkey wallets are recommended for more than small amounts.
+
+The 10 bps fee on agent swaps is the revenue model ([Business model](#business-model)): every vault
+pays for its own storage and every caller its own gas, so each new vault costs the operator nothing
+per call.
+
 ## Tracks
 
 - **Unstoppable DeFi (`defi`).** A vault with a trading agent: swaps go through Rhea (Ref V1)
@@ -560,14 +605,15 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   runs the reproducible build of commit `fc23fbc` (`HRkrMN8o…`, run 43063218549).
 - The deployer keeps a full-access key on both vault accounts, so the funds in this hackathon
   deployment stay recoverable. That key can replace the code. For the canary's vault, the board's
-  integrity check shows any change within 10 seconds ([CANARY.md](CANARY.md)).
+  integrity check shows any change within 10 seconds ([CANARY.md](CANARY.md)). Both keys are
+  removed after an external audit ([After the hackathon](#after-the-hackathon)).
 - The NEAR Intents path has settled one swap on mainnet. Its limits and trust assumptions (the MPC
   network, `intents.near` governance) are in [THREAT_MODEL.md](THREAT_MODEL.md).
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and both mainnet vaults use reproducible builds.
 - Passkey sign-in (mainnet only): Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only.
-- Planned: taking the mainnet deployment apart after the canary's lock ends on 2026-11-20
-  ([scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)).
+- The mainnet deployment stays live after the hackathon. [scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)
+  remains in the repository as the operator's way to wind it down safely if ever needed.
 - The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)
   (mainnet by default; testnet through the network switch).
 

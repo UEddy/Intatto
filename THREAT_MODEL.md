@@ -361,7 +361,8 @@ All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 
   The operator holds this key offline. It signed only the setup steps (deploy, `setup_intents`,
   `register_intents_key`, the vault's two token registrations).
 
-  Removing it ("locking" the account) is the post-hackathon step. It makes the code permanent,
+  Removing it ("locking" the account) is planned after an external audit, together with the
+  deployer's key on `vault.intatto.near` (README, "After the hackathon"). It makes the code permanent,
   with the trade-offs under Known limitations: no upgrades, so no fixes and no recovery of stuck
   amounts. Until then, every guarantee of the intents vault holds only as far as the operator's
   custody of that key.
