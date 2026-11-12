@@ -552,16 +552,21 @@ per call.
 
 ## Tracks
 
-- **Unstoppable DeFi (`defi`), primary.** A vault and a trading agent that settles through NEAR
-  Intents, with no custodian of the agent's key: swaps go through Rhea (Ref V1)
+- **AI Security & Defense (`security`), primary.** The agent's key is public and the money is
+  still there: the canary invites anyone to drain it with the published key, and the board shows
+  every attempt and the contract's reason for refusing it. On mainnet, an agent that obeyed a prompt
+  injection telling it to drain its vault was refused by the contract every time it tried
+  ([Prompt-injection attack](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)), and
+  the model's trade decisions carry receipts from an attested TEE
+  ([AI decisions, verifiable](#ai-decisions-verifiable)). The deployed code is checked live against
+  its reproducible build, and every trust assumption is written down in
+  [THREAT_MODEL.md](THREAT_MODEL.md).
+- **Unstoppable DeFi (`defi`).** A vault and a trading agent that settles through NEAR Intents,
+  with no custodian of the agent's key: swaps go through Rhea (Ref V1)
   under on-chain pool, pair, cap and slippage rules, the slippage checked against the exchange's
   own quote, with a 10 bps protocol fee fixed in the code (live on mainnet). Agent swaps also go
   through NEAR Intents, signed by the MPC network for the vault's own account and checked against
   the owner's pair allowlist and price floors (live on mainnet, [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)).
-- **AI Security & Defense (`security`).** The agent's key is public and the money is still there:
-  the canary invites anyone to drain it with the published key, and the board shows every attempt
-  and the contract's reason for refusing it. The prompt-injection demo shows the same contract
-  refusing an agent that obeys the injection.
 - **Agent Economy (`agents`).** It gives an agent a wallet it can spend from without holding the
   owner's key, within a budget the owner sets and can freeze at any time.
 
