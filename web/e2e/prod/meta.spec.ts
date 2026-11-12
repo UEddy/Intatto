@@ -29,3 +29,17 @@ test("link preview tags are in the served HTML, with absolute URLs and a 1200x63
   expect(png.subarray(1, 4).toString("latin1")).toBe("PNG");
   expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
 });
+
+test("the seal mark is the favicon and the touch icon, served from this site", async ({ request }) => {
+  const html = await (await request.get("./")).text();
+  expect(html).toContain('<link rel="icon" href="./favicon.svg" type="image/svg+xml" />');
+  expect(html).toContain('<link rel="apple-touch-icon" href="./apple-touch-icon.png" />');
+  const svg = await request.get("favicon.svg");
+  expect(svg.status()).toBe(200);
+  expect(await svg.text()).toMatch(/^<svg[^>]+viewBox="-8 -8 216 216"/);
+  const touch = await request.get("apple-touch-icon.png");
+  expect(touch.status()).toBe(200);
+  expect(touch.headers()["content-type"]).toBe("image/png");
+  const png = await touch.body();
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([180, 180]);
+});

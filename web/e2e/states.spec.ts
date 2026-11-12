@@ -131,3 +131,25 @@ test("the ticker and the card stack: live values, controls, and still with reduc
   await page.waitForTimeout(6000);
   await expect(stack.locator('[data-depth="0"]')).toHaveClass(/stack-card--bounty/);
 });
+
+test("the header's seal mark: decorative, centred on the wordmark, its size reserved", async ({ page }, info) => {
+  test.skip(info.project.name.startsWith("768"), "1440 and 360, light and dark");
+  await mockChain(page, scenarios(NOW_NS)["attempts-matches"]!, NOW_NS);
+  await page.goto("./?network=testnet#/");
+  const home = page.getByRole("link", { name: "Intatto, home" });
+  await expect(home).toHaveAttribute("href", "#/");
+  const mark = home.locator("svg.wordmark-seal");
+  await expect(mark).toHaveAttribute("aria-hidden", "true");
+  // Reserved before fonts or styles load: the element itself carries its size.
+  await expect(mark).toHaveAttribute("width", "30");
+  await expect(mark).toHaveAttribute("height", "30");
+  await page.evaluate(() => document.fonts.ready);
+  const box = (await mark.boundingBox())!;
+  const word = (await home.locator(".wordmark-name").boundingBox())!;
+  const px = info.project.name.startsWith("360") ? 24 : 30;
+  expect([Math.round(box.width), Math.round(box.height)]).toEqual([px, px]);
+  expect(Math.abs(box.y + box.height / 2 - (word.y + word.height / 2)), "centred on the wordmark").toBeLessThanOrEqual(2);
+  expect(word.x - (box.x + box.width), "gap to the wordmark").toBeCloseTo(10, 0);
+  await page.locator(".masthead").screenshot({ path: `screenshots/header-${info.project.name}.png` });
+});
+

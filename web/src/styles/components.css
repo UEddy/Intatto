@@ -53,10 +53,28 @@
 .wordmark {
   grid-area: brand;
   display: flex;
-  align-items: baseline;
-  gap: 14px;
+  align-items: center;
+  gap: 10px;
   text-decoration: none;
   min-height: var(--tap);
+}
+/* The seal mark: the wordmark's cap height, its box reserved by its size (no layout shift). */
+.wordmark-seal {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+.wordmark-text {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+@media (max-width: 479px) {
+  .wordmark-seal {
+    width: 24px;
+    height: 24px;
+  }
 }
 .wordmark-name {
   font-family: var(--font-display);
@@ -631,6 +649,11 @@ code {
   font-size: 11.5px;
   font-weight: 650;
   letter-spacing: 0.28em;
+}
+.seal-mark-letter {
+  font-family: var(--font-display);
+  font-size: 150px;
+  font-weight: 600;
 }
 .seal-monogram {
   font-family: var(--font-display);

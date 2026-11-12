@@ -7,6 +7,7 @@ import { useServices } from "./services";
 import { useTheme } from "./theme";
 import { useWallet } from "../wallet/WalletProvider";
 import { shorten } from "../ui/format";
+import { SealMark } from "../ui/Seal";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { config } = useServices();
@@ -26,8 +27,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="masthead">
         <div className="masthead-inner">
           <NavLink to="/" className="wordmark" aria-label="Intatto, home">
-            <span className="wordmark-name">Intatto</span>
-            <span className="wordmark-tag">Your money stays intact.</span>
+            <SealMark size={30} className="wordmark-seal" />
+            <span className="wordmark-text">
+              <span className="wordmark-name">Intatto</span>
+              <span className="wordmark-tag">Your money stays intact.</span>
+            </span>
           </NavLink>
           <nav className="nav" aria-label="Main">
             <NavLink to="/" end className="nav-link">
