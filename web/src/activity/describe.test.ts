@@ -58,3 +58,14 @@ describe("activity feed lines", () => {
     expect(f.text).toMatch(/it was over your per-trade cap\.$/);
   });
 });
+
+describe("the voice of the feed", () => {
+  it("says \"the\" for someone else's vault, read-only, and \"your\" for the owner", () => {
+    const owner = describeActivity(txs, "intatto-dev.testnet", VAULT, tokens);
+    const visitor = describeActivity(txs, "intatto-dev.testnet", VAULT, tokens, "the");
+    expect(owner.some((f) => /\byour\b/.test(f.text)), "the fixture has a refusal that names a limit").toBe(true);
+    expect(visitor.filter((f) => /\byour\b/i.test(f.text)).map((f) => f.text)).toEqual([]);
+    expect(visitor.map((f) => f.label)).toEqual(owner.map((f) => f.label));
+  });
+});
+

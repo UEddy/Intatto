@@ -797,3 +797,56 @@
   opacity: 0.45;
   box-shadow: none;
 }
+
+/* ---------- what happens next ---------- */
+
+#next {
+  margin-bottom: 20px;
+}
+.next-steps {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding-left: 1.4em;
+}
+.next-steps > li::marker {
+  font-family: var(--font-display);
+  color: var(--ink-3);
+}
+.next-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+.next-steps p {
+  color: var(--ink-2);
+}
+.next-steps .snippet {
+  margin-top: 10px;
+}
+.next-why {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+@media (min-width: 1024px) {
+  .next-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding-left: 0;
+    list-style-position: inside;
+  }
+}

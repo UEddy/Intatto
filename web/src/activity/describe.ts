@@ -35,19 +35,19 @@ const amountOf = (tokens: TokenLookup, id: string, raw: string) => {
 const symbolOf = (tokens: TokenLookup, id: string) => tokens(id)?.symbol ?? id;
 const near = (raw: string) => `${formatNear(BigInt(raw), { maxFraction: 6 })} NEAR`;
 
-function capClause(e: Extract<VaultEvent, { event: "spend_rejected" | "swap_rejected" }>, policy: Policy | null | undefined, tokens: TokenLookup): string {
+function capClause(e: Extract<VaultEvent, { event: "spend_rejected" | "swap_rejected" }>, policy: Policy | null | undefined, tokens: TokenLookup, whose: string): string {
   const d = e.data;
   const known = policy !== undefined;
   if (e.event === "spend_rejected") {
     switch (d.reason) {
       case "over_per_tx_cap":
-        return known ? `your per-payment cap is ${near(policy?.per_tx_cap ?? "0")}` : "it was over your per-payment cap";
+        return known ? `${whose} per-payment cap is ${near(policy?.per_tx_cap ?? "0")}` : `it was over ${whose} per-payment cap`;
       case "over_daily_cap":
-        return known ? `your 24-hour cap is ${near(policy?.daily_cap ?? "0")}` : "it would exceed your 24-hour cap";
+        return known ? `${whose} 24-hour cap is ${near(policy?.daily_cap ?? "0")}` : `it would exceed ${whose} 24-hour cap`;
       case "receiver_not_allowlisted":
-        return `${e.data.receiver_id} is not on your list of receivers`;
+        return `${e.data.receiver_id} is not on ${whose} list of receivers`;
       case "too_many_spends":
-        return known ? `your limit is ${policy?.max_spends_per_24h ?? 0} actions per 24 hours` : REASON_TEXT[d.reason];
+        return known ? `${whose} limit is ${policy?.max_spends_per_24h ?? 0} actions per 24 hours` : REASON_TEXT[d.reason];
       default:
         return REASON_TEXT[d.reason];
     }
@@ -56,19 +56,19 @@ function capClause(e: Extract<VaultEvent, { event: "spend_rejected" | "swap_reje
   const tp = policy?.tokens.find((t) => t.token_id === sw.token_in);
   switch (sw.reason) {
     case "over_per_tx_cap":
-      return known ? `your per-trade cap is ${tp ? amountOf(tokens, sw.token_in, tp.per_tx_cap) : `0 (${symbolOf(tokens, sw.token_in)} has no caps)`}` : "it was over your per-trade cap";
+      return known ? `${whose} per-trade cap is ${tp ? amountOf(tokens, sw.token_in, tp.per_tx_cap) : `0 (${symbolOf(tokens, sw.token_in)} has no caps)`}` : `it was over ${whose} per-trade cap`;
     case "over_daily_cap":
-      return known ? `your 24-hour cap is ${tp ? amountOf(tokens, sw.token_in, tp.daily_cap) : "0"}` : "it would exceed your 24-hour cap";
+      return known ? `${whose} 24-hour cap is ${tp ? amountOf(tokens, sw.token_in, tp.daily_cap) : "0"}` : `it would exceed ${whose} 24-hour cap`;
     case "pool_not_allowlisted":
-      return `pool #${sw.pool_id} is not allowed by your policy`;
+      return `pool #${sw.pool_id} is not allowed by ${whose} policy`;
     case "too_many_spends":
-      return known ? `your limit is ${policy?.max_spends_per_24h ?? 0} actions per 24 hours` : REASON_TEXT[sw.reason];
+      return known ? `${whose} limit is ${policy?.max_spends_per_24h ?? 0} actions per 24 hours` : REASON_TEXT[sw.reason];
     default:
       return REASON_TEXT[sw.reason];
   }
 }
 
-function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLookup): { tone: FeedTone; label: string; text: string } | null {
+function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLookup, whose: string): { tone: FeedTone; label: string; text: string } | null {
   switch (e.event) {
     case "deposit":
       return { tone: "owner", label: "Deposit", text: `Deposited ${near(e.data.amount)}${BigInt(e.data.storage_cost) > 0n ? ` (${near(e.data.storage_cost)} kept for the vault's storage)` : ""}.` };
@@ -95,7 +95,7 @@ function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLoo
     case "token_withdraw_refunded":
       return { tone: "alert", label: "Returned", text: `A withdrawal of ${amountOf(tokens, e.data.token_id, e.data.amount)} failed; it is back in the vault.` };
     case "spend_rejected":
-      return { tone: "blocked", label: "Blocked", text: `Blocked: ${e.data.caller_id} tried to send ${near(e.data.amount)} to ${e.data.receiver_id}; ${capClause(e, policy, tokens)}.` };
+      return { tone: "blocked", label: "Blocked", text: `Blocked: ${e.data.caller_id} tried to send ${near(e.data.amount)} to ${e.data.receiver_id}; ${capClause(e, policy, tokens, whose)}.` };
     case "spend_initiated":
       return { tone: "agent", label: "Paid", text: `Agent sent ${near(e.data.amount)} to ${e.data.receiver_id}.` };
     case "spend_completed":
@@ -106,7 +106,7 @@ function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLoo
       return {
         tone: "blocked",
         label: "Blocked",
-        text: `Blocked: ${e.data.caller_id} tried to swap ${amountOf(tokens, e.data.token_in, e.data.amount_in)} for ${symbolOf(tokens, e.data.token_out)}; ${capClause(e, policy, tokens)}.`,
+        text: `Blocked: ${e.data.caller_id} tried to swap ${amountOf(tokens, e.data.token_in, e.data.amount_in)} for ${symbolOf(tokens, e.data.token_out)}; ${capClause(e, policy, tokens, whose)}.`,
       };
     case "swap_initiated":
       return null; // swap_completed or swap_refunded follows
@@ -137,7 +137,8 @@ function line(e: VaultEvent, policy: Policy | null | undefined, tokens: TokenLoo
 }
 
 /** Feed lines for `ownerId`, newest first. `txs` may come in any order. */
-export function describeActivity(txs: readonly IndexedTx[], ownerId: string, vaultId: string, tokens: TokenLookup): FeedItem[] {
+/** `whose`: "your" in the owner's console, "the" when someone else's vault is shown read-only. */
+export function describeActivity(txs: readonly IndexedTx[], ownerId: string, vaultId: string, tokens: TokenLookup, whose = "your"): FeedItem[] {
   const receipts = txs
     .flatMap((tx) => tx.receipts.map((r, i) => ({ tx, r, i })))
     .sort((a, b) => a.r.blockHeight - b.r.blockHeight || a.i - b.i);
@@ -152,7 +153,7 @@ export function describeActivity(txs: readonly IndexedTx[], ownerId: string, vau
       }
       if (p.kind !== "event" || eventOwner(p.event) !== ownerId) return;
       const e = p.event;
-      const l = line(e, policy, tokens);
+      const l = line(e, policy, tokens, whose);
       if (e.event === "agent_set") policy = e.data.policy;
       if (e.event === "agent_removed") policy = null;
       if (l) items.push({ key: `${r.receiptId}:${j}`, hash: tx.hash, blockHeight: r.blockHeight, timestampNs: r.blockTimestampNs, ...l });

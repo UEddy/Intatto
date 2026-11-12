@@ -5,7 +5,9 @@ import { SectionMark } from "../ui/primitives";
 import { useChainNow } from "../ui/useNow";
 import { useWallet } from "../wallet/WalletProvider";
 import { ActionProvider } from "./ActionSheet";
+import { ReadOnlyContext } from "./readOnly";
 import { KillSwitch } from "./KillSwitch";
+import { NextSteps } from "./NextSteps";
 import { PASSKEY_LOCK_ADVICE } from "../wallet/passkey";
 import { DepositPanel, LockPanel, ReclaimPanel, WithdrawPanel } from "./MoneyPanels";
 import { Overview } from "./Overview";
@@ -30,9 +32,11 @@ export function ConsolePage() {
   // "See a live vault": anyone may view this owner's console, read-only. It signs nothing.
   if (live && params.get("view") === "live") {
     return (
-      <ActionProvider readOnly>
-        <ConnectedConsole ownerId={live} vaultId={config.vaultId} readOnly />
-      </ActionProvider>
+      <ReadOnlyContext.Provider value={true}>
+        <ActionProvider readOnly>
+          <ConnectedConsole ownerId={live} vaultId={config.vaultId} readOnly />
+        </ActionProvider>
+      </ReadOnlyContext.Provider>
     );
   }
   if (wallet.status !== "connected" || !wallet.accountId) {
@@ -107,6 +111,13 @@ function ConnectedConsole({ ownerId, vaultId, readOnly = false }: { ownerId: str
         <aside className="notice notice--warn" role="note" aria-label="Passkey wallet">
           <strong>{session.notice}</strong> {PASSKEY_LOCK_ADVICE} <a href="#lock">Lock withdrawals</a>.
         </aside>
+      )}
+
+      {/* What happens next: always on a live vault viewed read-only; for the owner, once the vault
+          exists and until its agent has been set and has acted. Outside the owner controls, so its
+          copy button works read-only too. It signs nothing. */}
+      {v && (readOnly || v.agent_id == null || v.recent_spends.length === 0) && (
+        <NextSteps vault={v} vaultId={vaultId} network={config.networkId} repoUrl={config.repoUrl} readOnly={readOnly} />
       )}
 
       <div className="console-tabs seg" role="tablist" aria-label="Console sections">

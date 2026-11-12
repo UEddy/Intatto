@@ -60,6 +60,30 @@ test("a live vault is read-only: it shows the owner's console and signs nothing"
     await expect(feed.locator(".stamp--blocked").first()).toBeVisible({ timeout: 30_000 });
   }
 
+  // What happens next: shown read-only too, outside the disabled owner controls, so its copy works.
+  const next = page.locator("#next");
+  await expect(next).toContainText("Give the agent a key");
+  await expect(next.locator("pre")).toContainText("--contract-account-id vault.intatto.near --function-names agent_spend,agent_swap");
+  await expect(next.locator("pre")).toContainText("add-key demo-agent.intatto.near");
+  await expect(next.getByRole("button", { name: "Copy command" })).toBeEnabled();
+
+  // Nothing a visitor reads in this view says "your": it is the owner's vault, not theirs.
+  // Hidden tab panels and labels count too. (The header's "Your vault" is the visitor's own page.)
+  const yours = await page.locator("main").evaluate((main) => {
+    const hits: string[] = [];
+    const words = (t: string | null) => (t && /\byour\b/i.test(t) ? t.replace(/\s+/g, " ").trim().slice(0, 120) : null);
+    const text = words(main.textContent);
+    if (text) for (const m of (main.textContent ?? "").replace(/\s+/g, " ").matchAll(/[^.]{0,60}\byour\b[^.]{0,60}/gi)) hits.push(m[0]);
+    for (const el of main.querySelectorAll("*")) {
+      for (const attr of ["aria-label", "title", "placeholder", "alt"]) {
+        const v = words(el.getAttribute(attr));
+        if (v) hits.push(`${attr}: ${v}`);
+      }
+    }
+    return hits;
+  });
+  expect(yours, "\"your\" in the read-only view").toEqual([]);
+
   expect(sends, "transactions sent").toEqual([]);
   expect(await page.evaluate(() => (window as unknown as { __e2eSubmits?: number }).__e2eSubmits ?? 0), "signing requests").toBe(0);
 });

@@ -40,7 +40,7 @@ export function ActivityFeed({ ownerId, readOnly = false }: { ownerId: string; v
 
   const pages = feed.data?.pages ?? [];
   const txs = pages.flatMap((p) => p.txs);
-  const items: FeedItem[] = feed.data ? describeActivity(txs, ownerId, vaultId, lookup) : [];
+  const items: FeedItem[] = feed.data ? describeActivity(txs, ownerId, vaultId, lookup, readOnly ? "the" : "your") : [];
   const arrivals = useArrivals(feed.data ? items.map((i) => i.key) : undefined);
   const sources = [...new Set(pages.flatMap((p) => [...p.sources]))].map((id) => indexer.sourceById(id)).filter((s): s is ActivitySource => !!s);
 
@@ -73,7 +73,7 @@ export function ActivityFeed({ ownerId, readOnly = false }: { ownerId: string; v
       ) : items.length === 0 ? (
         <div className="empty">
           <p className="empty-title">Nothing yet.</p>
-          <p>Deposits, policy changes, and every call your agent makes, allowed or refused, appear here.</p>
+          <p>Deposits, policy changes, and every call {readOnly ? "this" : "your"} agent makes, allowed or refused, appear here.</p>
         </div>
       ) : (
         <ol className="feed-list">

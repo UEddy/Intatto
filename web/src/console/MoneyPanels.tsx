@@ -4,6 +4,7 @@ import type { ExchangeLedger } from "../contract/abi.gen";
 import { formatNear, formatUnits, NEAR_DECIMALS } from "../near/units";
 import { formatDateTime, formatUtc } from "../ui/format";
 import { useAction } from "./ActionSheet";
+import { useReadOnly } from "./readOnly";
 import { AmountField, Panel, parsedOrZero } from "./fields";
 import * as I from "./intents";
 import type { TokenState } from "./useConsole";
@@ -30,6 +31,8 @@ function AssetTabs({ value, onChange, tokens, label }: { value: Asset; onChange:
 
 export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear, gasSponsored = false }: { vaultId: string; ownerId: string; vault: VaultView | null; tokens: TokenState[]; accountNear: bigint | null; gasSponsored?: boolean }) {
   const run = useAction();
+  // Someone else's vault, read-only: its copy names the owner, not "you".
+  const ro = useReadOnly();
   const funding = { accountId: ownerId, accountNear, gasSponsored };
   const [asset, setAsset] = useState<Asset>("near");
   const [amount, setAmount] = useState("");
@@ -70,11 +73,11 @@ export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear, gas
   };
 
   return (
-    <Panel id="deposit" mark="Deposit" title={vault ? "Add funds" : "Open your vault"}>
-      {!vault && <p className="panel-lede">Your first NEAR deposit creates the vault. A small part of it pays for the vault's storage on chain.</p>}
+    <Panel id="deposit" mark="Deposit" title={vault ? "Add funds" : ro ? "Open a vault" : "Open your vault"}>
+      {!vault && <p className="panel-lede">{ro ? "The owner's" : "Your"} first NEAR deposit creates the vault. A small part of it pays for the vault's storage on chain.</p>}
       <AssetTabs value={asset} onChange={(a) => (setAsset(a), setAmount(""))} tokens={tokens} label="Asset to deposit" />
       {asset === "near" ? (
-        <AmountField label="Amount" value={amount} onChange={setAmount} decimals={NEAR_DECIMALS} symbol="NEAR" max={spendable} maxLabel="Max" hint={accountNear !== null ? `Your account holds ${formatNear(accountNear, { maxFraction: 4 })} NEAR; Max keeps 0.05 for gas.` : undefined} />
+        <AmountField label="Amount" value={amount} onChange={setAmount} decimals={NEAR_DECIMALS} symbol="NEAR" max={spendable} maxLabel="Max" hint={accountNear !== null ? `${ro ? "The owner's" : "Your"} account holds ${formatNear(accountNear, { maxFraction: 4, mark: false })} NEAR; Max keeps 0.05 for gas.` : undefined} />
       ) : token?.info && token.role === "wnear" ? (
         <AmountField
           label="NEAR to wrap and deposit"
@@ -83,7 +86,7 @@ export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear, gas
           decimals={token.info.decimals}
           symbol={token.info.symbol}
           max={spendable}
-          hint={`Wraps NEAR from your account into ${token.info.symbol} and deposits it, in one approval.${inPolicy(token.id) ? "" : ` ${token.info.symbol} is not in your policy yet, so the vault would refuse it.`}`}
+          hint={`Wraps NEAR from ${ro ? "the owner's" : "your"} account into ${token.info.symbol} and deposits it, in one approval.${inPolicy(token.id) ? "" : ` ${token.info.symbol} is not in ${ro ? "the" : "your"} policy yet, so the vault would refuse it.`}`}
         />
       ) : token?.info ? (
         <AmountField
@@ -93,7 +96,7 @@ export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear, gas
           decimals={token.info.decimals}
           symbol={token.info.symbol}
           max={token.held}
-          hint={`You hold ${formatUnits(token.held ?? 0n, token.info.decimals, { maxFraction: 4 })} ${token.info.symbol}.${inPolicy(token.id) ? "" : " Not in your policy yet, so the vault would refuse it."}`}
+          hint={`${ro ? "The owner holds" : "You hold"} ${formatUnits(token.held ?? 0n, token.info.decimals, { maxFraction: 4, mark: false })} ${token.info.symbol}.${inPolicy(token.id) ? "" : ` Not in ${ro ? "the" : "your"} policy yet, so the vault would refuse it.`}`}
         />
       ) : null}
       <div className="panel-actions">
@@ -107,9 +110,11 @@ export function DepositPanel({ vaultId, ownerId, vault, tokens, accountNear, gas
 
 export function WithdrawPanel({ vaultId, ownerId, vault, tokens, lock }: { vaultId: string; ownerId: string; vault: VaultView; tokens: TokenState[]; lock: I.LockInfo }) {
   const run = useAction();
+  const ro = useReadOnly();
   const [asset, setAsset] = useState<Asset>("near");
   const [amount, setAmount] = useState("");
   const locked = I.lockActive(lock);
+  const goesTo = `Works while frozen. Goes to ${ro ? "the owner's" : "your"} own account.`;
   const token = tokens.find((t) => t.id === asset);
   const tokenBalance = (id: string) => BigInt(vault.tokens.find((t) => t.token_id === id)?.balance ?? "0");
 
@@ -140,9 +145,9 @@ export function WithdrawPanel({ vaultId, ownerId, vault, tokens, lock }: { vault
       <fieldset disabled={locked} className="panel-fields">
         <AssetTabs value={asset} onChange={(a) => (setAsset(a), setAmount(""))} tokens={tokens} label="Asset to withdraw" />
         {asset === "near" ? (
-          <AmountField label="Amount" value={amount} onChange={setAmount} decimals={NEAR_DECIMALS} symbol="NEAR" max={BigInt(vault.balance)} hint="Works while frozen. Goes to your own account." />
+          <AmountField label="Amount" value={amount} onChange={setAmount} decimals={NEAR_DECIMALS} symbol="NEAR" max={BigInt(vault.balance)} hint={goesTo} />
         ) : token?.info ? (
-          <AmountField label="Amount" value={amount} onChange={setAmount} decimals={token.info.decimals} symbol={token.info.symbol} max={tokenBalance(token.id)} hint="Works while frozen. Goes to your own account." />
+          <AmountField label="Amount" value={amount} onChange={setAmount} decimals={token.info.decimals} symbol={token.info.symbol} max={tokenBalance(token.id)} hint={goesTo} />
         ) : null}
         <div className="panel-actions">
           <button type="button" className="btn btn--ink" onClick={review} disabled={amount.trim() === ""}>
@@ -156,6 +161,7 @@ export function WithdrawPanel({ vaultId, ownerId, vault, tokens, lock }: { vault
 
 export function LockPanel({ vaultId, lock }: { vaultId: string; lock: I.LockInfo }) {
   const run = useAction();
+  const ro = useReadOnly();
   const [days, setDays] = useState("30");
   const n = Number(days);
   const valid = /^\d+$/.test(days.trim()) && n >= 1 && n <= 3650;
@@ -164,8 +170,9 @@ export function LockPanel({ vaultId, lock }: { vaultId: string; lock: I.LockInfo
   return (
     <Panel id="lock" mark="Lock" title="Lock withdrawals">
       <p className="panel-lede">
-        A lock is a promise you cannot break: until it ends, nobody, not even you, can withdraw or change the agent or policy. Your agent keeps acting within its current
-        policy, and you can still freeze.
+        {ro
+          ? "A lock is a promise the owner cannot break: until it ends, nobody, not even the owner, can withdraw or change the agent or policy. The agent keeps acting within its current policy, and the owner can still freeze."
+          : "A lock is a promise you cannot break: until it ends, nobody, not even you, can withdraw or change the agent or policy. Your agent keeps acting within its current policy, and you can still freeze."}
       </p>
       <div className="field">
         <label className="field-label" htmlFor="lock-days">

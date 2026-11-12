@@ -216,10 +216,16 @@
   justify-content: center;
   margin-top: 28px;
 }
+/* Wide screens: step 2 gets twice the width and lists its limits in two columns, and the three
+   cards share one height. Phones keep one column. */
 @media (min-width: 1024px) {
   .how-steps {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .how-limits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
   }
 }
 

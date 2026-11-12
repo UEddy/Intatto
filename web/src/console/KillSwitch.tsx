@@ -1,5 +1,6 @@
 import type { VaultView } from "../contract/abi.gen";
 import { useAction } from "./ActionSheet";
+import { useReadOnly } from "./readOnly";
 import { freeze, unfreeze } from "./intents";
 
 /**
@@ -9,6 +10,7 @@ import { freeze, unfreeze } from "./intents";
  */
 export function KillSwitch({ vaultId, vault }: { vaultId: string; vault: VaultView }) {
   const run = useAction();
+  const readOnly = useReadOnly();
   if (vault.frozen) {
     return (
       <div className="kill kill--frozen" role="region" aria-label="Kill switch">
@@ -26,7 +28,7 @@ export function KillSwitch({ vaultId, vault }: { vaultId: string; vault: VaultVi
     <div className="kill" role="region" aria-label="Kill switch">
       <div className="kill-text">
         <p className="kill-title">Kill switch</p>
-        <p className="kill-sub">Stops the agent from the next call on. Your funds stay.</p>
+        <p className="kill-sub">Stops the agent from the next call on. {readOnly ? "The owner's" : "Your"} funds stay.</p>
       </div>
       <button type="button" className="kill-btn kill-btn--wax" onClick={() => run(freeze({ vaultId, frozen: false }), { doneVerb: "Frozen" })}>
         Freeze vault

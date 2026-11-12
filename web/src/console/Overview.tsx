@@ -1,6 +1,9 @@
 import type { VaultView } from "../contract/abi.gen";
 import type { Sourced } from "../near/chain";
 import { formatNear, formatUnits } from "../near/units";
+
+/** Figures as on the board: rounded down to 4 decimals, no ellipsis; the exact amount is in each Source row. */
+const FIGURE = { maxFraction: 4, mark: false } as const;
 import { windowUsage } from "../activity/window";
 import { formatDateTime, formatDurationWords, formatInt, formatUtc } from "../ui/format";
 import { AccountLink, Badge, RawRow, Skeleton, Traceable } from "../ui/primitives";
@@ -20,7 +23,7 @@ export function Overview({ vault, tokens, nowNs }: { vault: Sourced<VaultView | 
           <p className="lfig-label">NEAR in vault</p>
           <Traceable source={source} path=".balance" extra={v ? <RawRow label="Raw" value={`${v.balance} yocto`} /> : undefined}>
             <p className="lfig-value">
-              {vault === undefined ? <Skeleton /> : formatNear(v ? BigInt(v.balance) : 0n, { maxFraction: 4 })}
+              {vault === undefined ? <Skeleton /> : formatNear(v ? BigInt(v.balance) : 0n, FIGURE)}
               <span className="lfig-unit">NEAR</span>
             </p>
           </Traceable>
@@ -34,13 +37,13 @@ export function Overview({ vault, tokens, nowNs }: { vault: Sourced<VaultView | 
               <p className="lfig-label">{t.info?.symbol ?? t.id}</p>
               <Traceable source={source} path={`.tokens[${t.id}].balance`} extra={entry ? <RawRow label="Raw" value={`${entry.balance} (${t.info?.decimals ?? "?"} decimals)`} /> : undefined}>
                 <p className="lfig-value">
-                  {vault === undefined || !t.info ? <Skeleton /> : formatUnits(bal, t.info.decimals, { maxFraction: 4 })}
+                  {vault === undefined || !t.info ? <Skeleton /> : formatUnits(bal, t.info.decimals, FIGURE)}
                   <span className="lfig-unit">{t.info?.symbol ?? ""}</span>
                 </p>
               </Traceable>
               {onEx > 0n && t.info && (
                 <p className="lfig-note">
-                  + {formatUnits(onEx, t.info.decimals, { maxFraction: 4 })} held on the exchange, reclaimable below
+                  + {formatUnits(onEx, t.info.decimals, FIGURE)} held on the exchange, reclaimable below
                 </p>
               )}
             </div>

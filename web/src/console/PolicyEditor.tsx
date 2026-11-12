@@ -3,6 +3,7 @@ import { useServices } from "../app/services";
 import type { VaultView } from "../contract/abi.gen";
 import { formatDateTime } from "../ui/format";
 import { useAction } from "./ActionSheet";
+import { useReadOnly } from "./readOnly";
 import { Panel } from "./fields";
 import * as I from "./intents";
 import { diffPolicy, emptyForm, formToPolicy, policyToForm, type PolicyForm, type TokenMeta } from "./policy";
@@ -11,6 +12,7 @@ import type { TokenState } from "./useConsole";
 export function PolicyEditor({ vaultId, vault, tokens, lock }: { vaultId: string; vault: VaultView; tokens: TokenState[]; lock: I.LockInfo }) {
   const { config } = useServices();
   const run = useAction();
+  const readOnly = useReadOnly();
   const metas: TokenMeta[] = tokens.filter((t) => t.info).map((t) => t.info!);
   const initial = useMemo(
     () => (vault.agent_id ? policyToForm(vault.agent_id, vault.policy, metas, config.pool.id) : emptyForm(metas)),
@@ -33,7 +35,7 @@ export function PolicyEditor({ vaultId, vault, tokens, lock }: { vaultId: string
   const poolSymbols = config.pool.tokenIds.map((id) => metas.find((m) => m.id === id)?.symbol ?? id).join(" / ");
 
   return (
-    <Panel id="policy" mark="Agent and policy" title="What your agent may do">
+    <Panel id="policy" mark="Agent and policy" title={readOnly ? "What this agent may do" : "What your agent may do"}>
       <p className="panel-lede">The contract checks every agent call against these rules. Anything outside them is refused and logged, whatever the agent tries.</p>
       {locked && (
         <p className="panel-blocked" role="note">

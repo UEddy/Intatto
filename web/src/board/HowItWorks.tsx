@@ -47,8 +47,9 @@ export function HowItWorks() {
           </span>
           <h3 className="how-title">Give your agent a key</h3>
           <p>
-            A function-call key that can call only <span className="mono">agent_spend</span> and <span className="mono">agent_swap</span> on the vault. It cannot attach a
-            deposit, so it cannot call any owner method: it can trade within your limits, and it can never withdraw.
+            A function-call key that can call only the vault's agent methods: <span className="mono">agent_spend</span> and <span className="mono">agent_swap</span>, and on the
+            intents vault <span className="mono">agent_intent_swap</span> and <span className="mono">settle_intent_swap</span>. It signs as the agent's account, not yours, and
+            cannot attach a deposit, so it cannot call any owner method: it can trade within your limits, and it can never withdraw.
           </p>
         </li>
       </ol>
