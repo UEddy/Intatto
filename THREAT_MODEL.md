@@ -148,7 +148,7 @@ exchange beyond rejected calls.
 
 ## Trust assumptions
 
-- **NEAR runtime.** We rely on the protocol for several things:
+- **NEAR runtime.** Intatto relies on the protocol for several things:
   - `predecessor_account_id` is the real caller;
   - function-call keys are limited to their receiver and methods, and cannot attach deposits;
   - a failed transfer's NEAR comes back to the contract;
@@ -414,7 +414,7 @@ All of these were read from mainnet on 2026-11-11 (blocks around 224,083,600 to 
 - **The Message Bus key's role is unverified.** The agent publishes signed intents through the
   Message Bus (`solver-relay-v2.chaindefuser.com`). Its documentation says it needs a Partner
   Portal JWT, and documents access only for KYC'd market-maker keys. The live swap's
-  `publish_intent`, sent with our Distribution Channel key, returned OK and the relay settled it.
+  `publish_intent`, sent with my Distribution Channel key, returned OK and the relay settled it.
   But earlier probes found the relay answering `quote`, `publish_intent` and `get_status`
   identically with that key, a malformed key and no key. So whether the key was required, or
   recognized, is still unverified. Nothing on chain depends on it: the relay can only submit what
@@ -589,7 +589,7 @@ Limits of this measurement:
     reclaims by owners whose own tokens are still there. Their tokens are not taken, but they
     cannot reclaim them until the shortfall is resolved: by an upgrade that claims the lostfound
     tokens, or by the missing tokens coming back to the account.
-  - Our own flows cannot reach this path. They withdraw with `unregister: false`, so the slot
+  - Intatto's own flows cannot reach this path. They withdraw with `unregister: false`, so the slot
     stays, and a failed withdrawal is put back without a storage check. The vault never
     unregisters, and 1.9.20 disables `storage_unregister` altogether.
   - It is reachable by anyone who can act as the vault account on the exchange, which today
@@ -633,7 +633,7 @@ Limits of this measurement:
   the floor less 10 bps.
 - **Fees on output held on the exchange are not collected.** If the vault is not registered
   with a swap's output token, the output stays on the exchange and is later reclaimed without a
-  fee. We register the vault with every token the console offers. An owner who lists another
+  fee. I register the vault with every token the console offers. An owner who lists another
   token can avoid the fee on it until the vault is registered with that token.
 - **A lost treasury key strands the fees.** Nothing can change `treasury_id`. Owner funds are not
   affected.
@@ -655,14 +655,14 @@ wallet contract, deployed as a global contract by account id (NEP-591):
 The passkey's public key determines the account id. The executor
 ([near-connect-passkey](https://github.com/NEAR-DevHub/near-connect-passkey)) signs each request
 with WebAuthn. Trezu's sponsor contract `helper.trezu.near` creates the account and relays the
-call, through a public function-call key, so the owner never holds a NEAR key. We run no relayer
-of our own.
+call, through a public function-call key, so the owner never holds a NEAR key. Intatto runs no relayer
+of its own.
 
 Trust and risks:
 
 - **Trezu can change the code of every passkey wallet.** Each code account holds one full-access
   key (checked on mainnet, 2026-11-09). Whoever holds it can redeploy the code for all `0s…`
-  wallets that use it. Malicious code could call `withdraw` on our vault as the owner. A
+  wallets that use it. Malicious code could call `withdraw` on the Intatto vault as the owner. A
   withdrawal lock (invariant 10) blocks that while it lasts. That is why the console recommends
   a lock for passkey owners.
 - **The wallet contract is unaudited.** Its README says: "DO NOT store any significant funds on
@@ -677,15 +677,15 @@ Trust and risks:
   (Cloudflare Pages), production deployments only, previews off. A preview at
   `<hash>.intatto.pages.dev` could claim the same rpId and ask for the same passkeys. Changing
   the domain later strands existing passkeys, so the domain is fixed before launch. Cloudflare
-  Pages also lets us set real HTTP security headers (`_headers`), instead of the `<meta>` policy
+  Pages also lets the site set real HTTP security headers (`_headers`), instead of the `<meta>` policy
   GitHub Pages forces.
 - **The page runs third-party code.** near-connect is vendored at commit `f2fc970` of the
   `passkeys-20261104` branch, because no release has the WebAuthn bridge yet. Its review and the
   check that its build matches its source are in `web/vendor/near-connect/VENDORED.md`. The
   executor is `passkey-executor.js` at `798e9e5`, rebuilt byte for byte from source and served from
-  our own origin (`web/vendor/PASSKEY-EXECUTOR.md`).
+  the site's own origin (`web/vendor/PASSKEY-EXECUTOR.md`).
 - **Only the passkey wallet can use WebAuthn.** The vendored near-connect runs
-  `navigator.credentials` in our page for any wallet whose manifest grants `webauthn`, with
+  `navigator.credentials` in the site's page for any wallet whose manifest grants `webauthn`, with
   options that wallet chooses. Only the passkey entry has it, and no offered wallet has the
   `walletConnect` or `keepAlive` permissions this build widened (`web/src/wallet/passkey.test.ts`).
   near-connect would also register wallets from a `debug-wallets` storage entry. Its storage

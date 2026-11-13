@@ -18,12 +18,12 @@ decisions signed inside NEAR AI's TEE, with the receipt recorded in each trade: 
 money without getting the keys to it.
 Also entered in Unstoppable DeFi and Agent Economy ([Tracks](#tracks)).
 
-To prove it, we published the agent's key with a real NEAR bounty on it: the canary is an AI
+To prove it, I published the agent's key with a real NEAR bounty on it: the canary is an AI
 agent's vault on NEAR mainnet holding 0.99761 NEAR, and its key is in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
 contract, and the contract refuses every one. Nothing has left the canary since it was set up on
-2026-11-11. On 2026-11-13 our attack run signed 13 transactions with the published key, every way
-out we could think of. All 13 failed and nothing moved: 12 were rejected by the policy, and 1 failed
+2026-11-11. On 2026-11-13 my attack run signed 13 transactions with the published key, every way
+out I could think of. All 13 failed and nothing moved: 12 were rejected by the policy, and 1 failed
 before it on malformed arguments ([the run](CANARY.md#attempts-so-far)); the balance was still
 997610000000000000000000 yoctoNEAR at block 224,333,239. Watch every attempt live on the board at
 **[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)**, or try one yourself in
@@ -533,7 +533,7 @@ or a transaction signature from recorded mainnet and testnet data in `web/src/te
 
 ## Bring your own agent
 
-Intatto isn't tied to our agent: any agent that can sign a NEAR transaction can trade through a
+Intatto isn't tied to my agent: any agent that can sign a NEAR transaction can trade through a
 vault, within the owner's policy. The owner registers the agent's account with
 `set_agent(agent_id, policy)`; its function-call key may then call only these vault methods:
 

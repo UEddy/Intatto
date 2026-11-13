@@ -149,7 +149,7 @@ near account list-keys demo-agent.intatto-dev.testnet network-config testnet now
 ```
 
 The worst anyone can do with it is pay the merchant, within the caps, until the 0.5 NEAR gas
-allowance runs out. The merchant account is ours.
+allowance runs out. The merchant account is mine.
 
 ## Setup (operator only)
 

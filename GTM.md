@@ -2,7 +2,7 @@
 
 Status on 2026-11-13: live on NEAR mainnet (`vault.intatto.near`, `intents.intatto.near`), one
 public canary, fee collection proven on mainnet, no outside users yet. This plan says who the first
-users are, how they find Intatto, what it costs them, and what we measure. Every number below that
+users are, how they find Intatto, what it costs them, and what I measure. Every number below that
 describes the product today links to a transaction or a file; everything else is a target and says
 so.
 
@@ -101,7 +101,7 @@ key, which is the risk Intatto exists to remove.
 | Next | More Rhea pairs and intent pairs, chosen by liquidity; a reference agent on the Agent Market | Listed |
 | Next | Fund a vault from any chain through NEAR Intents 1Click (distribution item 6) | A vault funded from another chain on mainnet, its transactions published |
 
-## What we measure
+## What I measure
 
 | Metric | Why |
 |---|---|
