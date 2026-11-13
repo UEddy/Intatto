@@ -21,8 +21,9 @@ To prove it, we published the agent's key with a real NEAR bounty on it: the can
 agent's vault on NEAR mainnet holding 0.99761 NEAR, and its key is in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
 contract, and the contract refuses every one. Nothing has left the canary since it was set up on
-2026-11-11 (balance still 997610000000000000000000 yoctoNEAR at block 224,114,110, and nobody has
-signed with the key yet). Watch every attempt live on the board at
+2026-11-11. On 2026-11-13 our attack run signed 13 transactions with the published key, every way
+out we could think of, and the vault refused all 13 ([the run](CANARY.md#attempts-so-far)); the
+balance was still 997610000000000000000000 yoctoNEAR at block 224,333,239. Watch every attempt live on the board at
 **[intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)**, or try one yourself in
 [Try it](#try-it). A second canary has run on testnet since 2026-11-06, also untouched (0.9974
 NEAR). The bounty is small because one person funds it. The amount does not change the test: the
@@ -97,7 +98,7 @@ and an optional time lock on the owner's own withdrawals.
 | | Mainnet | Testnet |
 |---|---|---|
 | Vault contract with the 10 bps swap fee | **Live**: `vault.intatto.near`, the reproducible build of `6cfa90e` | **Live**: `vault-v2.intatto-dev.testnet`, a local build of the fee code |
-| Public canary (published agent key) | **Live** since 2026-11-11: 0.99761 NEAR, locked until 2026-11-20, no attempts yet | **Live** since 2026-11-06: 0.9974 NEAR on `vault-v1` (no fee), locked until 2026-12-06, no attempts yet |
+| Public canary (published agent key) | **Live** since 2026-11-11: 0.99761 NEAR, locked until 2026-11-20; 13 attempts with the published key on 2026-11-13, all refused ([the attack run](CANARY.md#attempts-so-far), [board](https://intatto.pages.dev/?network=mainnet)) | **Live** since 2026-11-06: 0.9974 NEAR on `vault-v1` (no fee), locked until 2026-12-06, no attempts yet |
 | Agent swaps through Rhea (Ref V1), within on-chain limits | **Live**: [smoke test](#mainnet-smoke-test-2026-11-11) 18/18 on 2026-11-11 | **Live** on vault-v1 and vault-v2 |
 | Agent swaps through NEAR Intents, signed by the MPC network | **Live**: `intents.intatto.near`, [one swap settled](#first-intent-swap-2026-11-11) on 2026-11-11 | Not available (mainnet only) |
 | Prompt-injection demo | **Run** on 2026-11-12 on `demo.intatto.near`'s vault ([results](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)); its key was private and has been deleted | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |

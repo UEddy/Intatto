@@ -126,6 +126,33 @@ The board counts "intact for" from the later of the deployment and the setup, af
 load that the deployment was signed by the vault account and deployed exactly this code, and that
 the setup transaction was signed by the canary owner and logged the lock.
 
+### Attempts so far
+
+On 2026-11-13, from 06:27 to 06:32 UTC, the attack run (`node agent/canary-attack.mjs --send`)
+signed 13 transactions with the published key `ed25519:GWvo8kPM…`. The vault refused every one, and
+the canary's balance was still the baseline, 997610000000000000000000 yoctoNEAR, at block
+224,333,239. They used 0.00235 NEAR of the key's allowance. The board lists every attempt with the
+contract's reason.
+
+| Time (UTC) | Attack | Refused with | Transaction |
+|---|---|---|---|
+| 06:27:35 | Drain the whole vault to an attacker | `receiver_not_allowlisted` | [`Hj5kDfAG…`](https://nearblocks.io/txns/Hj5kDfAGLMp756gQYk3Y49v15WPWaHcytmHNSfqxoFEh) |
+| 06:27:38 | Send the maximum u128 amount | `receiver_not_allowlisted` | [`Ai9zzvVu…`](https://nearblocks.io/txns/Ai9zzvVu2GubztsD88eegrfzHsFAVnzJ1nxG9DXbwMtG) |
+| 06:27:40 | Pay the owner | `receiver_not_allowlisted` | [`2WgEkeKr…`](https://nearblocks.io/txns/2WgEkeKrBF78t7KfQGPK8A8ubT5F8WusjjuajR9wfKkW) |
+| 06:27:44 | Spend zero | `zero_amount` | [`AUgDy78A…`](https://nearblocks.io/txns/AUgDy78AYacKxwQ1PZGBPARLpsGQtCAYcvBCvRGkbbS3) |
+| 06:27:47 | Spend from a vault that does not exist | `no_vault` | [`6BYTSdQ9…`](https://nearblocks.io/txns/6BYTSdQ94vucLhqnKm4YLfyeerVMYZj4UiZ5YaarxKJR) |
+| 06:27:50 | Swap with no minimum output | `zero_min_amount_out` | [`4inW1Tn4…`](https://nearblocks.io/txns/4inW1Tn49QMtFXbht4FSZGswo8h4bop3aEgA2T1Q6G8B) |
+| 06:32:26 | Take 1 yoctoNEAR | `receiver_not_allowlisted` | [`GLQ417uh…`](https://nearblocks.io/txns/GLQ417uhSpo4it5YHrwYqD8rA4KqhENcbeXKHZQx1Bv6) |
+| 06:32:28 | Pay the agent's own account | `receiver_not_allowlisted` | [`BbBaSxuM…`](https://nearblocks.io/txns/BbBaSxuMoMbhLdSkF6YcjSXg535vDapr5opGgjPZW4oG) |
+| 06:32:31 | Pay the vault contract itself | `receiver_not_allowlisted` | [`9KoJ8KoN…`](https://nearblocks.io/txns/9KoJ8KoNf7DC6TPcCyJnQiQDdjVsoAzMxzM9K2qYerC) |
+| 06:32:33 | Spend from another owner's vault | `not_agent` | [`FSFLvXvq…`](https://nearblocks.io/txns/FSFLvXvqkyHeXQkJ93MhbBrSG8muEdxDrQRLeSe6hAoF) |
+| 06:32:35 | Malformed amount (negative number) | panic: the amount does not parse | [`Anzfe7Py…`](https://nearblocks.io/txns/Anzfe7PytfcEGvQAg7z3LLSk33QmwYTbbsgWXZ9YPkLi) |
+| 06:32:37 | Swap with too little gas to finish | `insufficient_gas` | [`36YbyHFi…`](https://nearblocks.io/txns/36YbyHFiVbNvqcdtjXZk6hn44pHvKCW7YYfPsFJAkUiY) |
+| 06:32:39 | Swap another owner's vault | `not_agent` | [`2ueHrcCa…`](https://nearblocks.io/txns/2ueHrcCaEAtsDeAmC2j4zUZQPtPPFuzLYTPP3jjBeLn2) |
+
+The run's other 6 attacks (owner methods, NEAR Intents, a callback spoof, another contract) are
+calls the key's permission forbids: NEAR refuses them before execution, so nothing is recorded.
+
 ### The lock
 
 Withdrawals are locked until block timestamp `1795176000000000000` (2026-11-20 12:00:00 UTC),
