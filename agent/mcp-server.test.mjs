@@ -130,6 +130,20 @@ test("check_swap suggests a tight minimum when none is given", async () => {
   assert.equal(r.min_amount_out_used, "3980");
 });
 
+test("with no minimum given and no quote, the check reports the missing quote, not a zero minimum", async () => {
+  const { c, chain } = ctx();
+  const view = chain.view;
+  chain.view = async (a, m, args) => (m === "get_return" ? Promise.reject(new Error("pool has no such token")) : view(a, m, args));
+  const r = body(await call(c, "intatto_check_swap", { pool_id: 7, token_in: W, token_out: U, amount_in: "1000" }));
+  assert.equal(r.verdict, "block");
+  assert.equal(r.min_amount_out_used, null);
+  assert.ok(r.reasons.some((x) => x.code === "quote_failed"));
+  assert.ok(!r.reasons.some((x) => x.code === "zero_min_amount_out"));
+  const s = body(await call(c, "intatto_swap", { pool_id: 7, token_in: W, token_out: U, amount_in: "1000" }));
+  assert.equal(s.sent, false);
+  assert.equal(chain.sent.length, 0);
+});
+
 test("swap: dry run by default, refuses blocks and unacknowledged warnings, sends only when allowed", async () => {
   const dry = ctx();
   const d = body(await call(dry.c, "intatto_swap", { pool_id: 7, token_in: W, token_out: U, amount_in: "1000" }));

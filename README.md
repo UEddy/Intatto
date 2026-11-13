@@ -339,7 +339,7 @@ The web app's and the demo agent's tests run separately. Run each line from the 
 
 ```bash
 (cd web && npm ci && npm test)      # offline: 198 unit tests in 25 files (vitest), 2026-11-13
-node --test agent/*.test.mjs        # offline, after the line above: 48 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server
+node --test agent/*.test.mjs        # offline, after the line above: 49 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server
 (cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```
 

@@ -162,7 +162,14 @@ async function checkSwap(chain, cfg, args, publicKey) {
   const facts = await gatherSwapFacts(chain, { ...p, minAmountOut: p.minAmountOut ?? "1" });
   let minAmountOut = p.minAmountOut;
   if (minAmountOut === undefined) {
-    minAmountOut = assessSwap({ ...facts, minAmountOut: "1" }).suggestedMinOut ?? "0";
+    // The check's own suggestion. With no quote there is none; the check is then run with a
+    // placeholder of 1 so that it reports the real reason (no quote) rather than blaming a
+    // minimum the caller never gave, and the result says no minimum was used.
+    const suggested = assessSwap({ ...facts, minAmountOut: "1" }).suggestedMinOut;
+    if (suggested === null) {
+      return { params: { ...p, minAmountOut: null }, result: assessSwap({ ...facts, minAmountOut: "1" }) };
+    }
+    minAmountOut = suggested;
   }
   const result = assessSwap({ ...facts, minAmountOut });
   return { params: { ...p, minAmountOut }, result };
