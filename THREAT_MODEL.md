@@ -196,8 +196,10 @@ exchange beyond rejected calls.
   `vault.intatto.near`, kept offline, the key on `intents.intatto.near` (see the intents path
   below), and the testnet accounts' keys. Whoever holds one can deploy any code to that vault
   account, including code that sends every owner's funds anywhere, or delete the account. The
-  mainnet keys are kept so the hackathon deployment's funds stay recoverable, and are removed
-  after an external audit (README, "After the hackathon"). See the limitations below.
+  mainnet keys are kept on purpose until an external audit: without one, a bug in the unaudited
+  code (in the withdraw path, or the lostfound case below) could never be fixed and the funds it
+  affected would be stuck for good. Owners do not need these keys to withdraw. They are removed
+  after the audit (README, "After the hackathon"). See the limitations below.
 
 ## Chain Signatures intents path (live on mainnet)
 

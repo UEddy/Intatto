@@ -66,6 +66,18 @@ trust the operator's custody of those keys:
 - Both keys will be removed after an external audit ([After the hackathon](#after-the-hackathon)),
   which makes the code permanent.
 
+### Why the upgrade keys stay until the audit
+
+This is a deliberate choice, not an oversight. The
+contract has not been audited. Without an upgrade key, a bug found later could never be fixed, and
+any funds it affected would be stuck for good: a flaw in the withdraw path, or the exchange's
+"lostfound" edge case ([THREAT_MODEL.md](THREAT_MODEL.md#known-limitations)), which only a code
+upgrade can recover. Keeping the key keeps every owner's money recoverable while the code is
+unaudited. The cost is trust in the operator, and that is what the board measures: any new code
+shows as **CODE CHANGED** within 10 seconds. Owners do not need this key to get their money out;
+they withdraw through the contract with their own accounts' keys. Once an external audit is done,
+both keys are removed and the code can never change again.
+
 The repository has four parts: the vault contract (`src/`), including agent swaps through NEAR
 Intents signed by the MPC network ([CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)); a web app with an
 owner console and the public canary board (`web/`); the agents (`agent/`): the prompt-injection
@@ -669,8 +681,9 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   [run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828);
   [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh) deploys nothing else. `intents.intatto.near`
   runs the reproducible build of commit `fc23fbc` (`HRkrMN8o…`, run 43063218549).
-- The deployer keeps a full-access key on both vault accounts, so the funds in this hackathon
-  deployment stay recoverable. That key can replace the code. For the canary's vault, the board's
+- The deployer keeps a full-access key on both vault accounts on purpose, so that a bug in the
+  unaudited code can be fixed and no owner's funds are ever stuck
+  ([why](#why-the-upgrade-keys-stay-until-the-audit)). That key can replace the code. For the canary's vault, the board's
   integrity check shows any change within 10 seconds ([CANARY.md](CANARY.md)). Both keys are
   removed after an external audit ([After the hackathon](#after-the-hackathon)).
 - The NEAR Intents path has settled one swap on mainnet. Its limits and trust assumptions (the MPC

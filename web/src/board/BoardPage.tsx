@@ -388,7 +388,7 @@ export function BoardPage() {
           <div>
             <h3 className="statement-title">The deployer keeps the upgrade key.</h3>
             <p>
-              So the funds in this hackathon deployment stay recoverable if something goes wrong. It also means the contract's code can change. If it does, its code hash
+              The contract isn't audited yet. Without this key, a bug found later could never be fixed and any funds it touched would be stuck for good, so it stays until the audit. Owners don't need it to withdraw; they use their own keys. It also means the contract's code can change. If it does, its code hash
               changes, and the integrity check above shows <strong>CODE CHANGED</strong> within {BOARD_POLL_MS / 1000} seconds. Judge the vault by the code that is
               running, not by what anyone says. The key is kept offline and will be removed after an external audit, which makes the code permanent.
             </p>
