@@ -11,10 +11,12 @@ import { useChainNow } from "../ui/useNow";
 import { AgentKeyCard } from "./AgentKeyCard";
 import { AttemptLog, canarySubject, demoSubject } from "./AttemptLog";
 import { Faq } from "./Faq";
+import { HeroProof, type ProofTarget } from "./HeroProof";
 import { HeroStack, SealFace } from "./HeroStack";
 import { HowItWorks } from "./HowItWorks";
 import { IntegrityCheck } from "./IntegrityCheck";
 import { IntentsPanel } from "./IntentsPanel";
+import { JudgeWalkthrough } from "./JudgeWalkthrough";
 import { RulesPanel } from "./RulesPanel";
 import { TryItSnippet } from "./TryItSnippet";
 import { BOARD_POLL_MS, useBoard } from "./useBoard";
@@ -96,10 +98,13 @@ export function BoardPage() {
   const keyFc = keyPerm && keyPerm !== "FullAccess" ? keyPerm.FunctionCall : null;
   const keyScoped = keyFc !== null && keyFc.receiver_id === b.vaultId && keyFc.method_names.every((m) => m === "agent_spend" || m === "agent_swap");
 
-  const openTry = () => {
-    setTab("try");
+  const openTab = (id: TabId) => {
+    setTab(id);
     tryRef.current?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
   };
+  const openTry = () => openTab("try");
+  // The hash is the router's (#/vault), so the hero's proof cells scroll rather than link.
+  const jump = (id: ProofTarget) => document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
 
   const tickerItems: ReactNode[] = [
     <>
@@ -145,30 +150,34 @@ export function BoardPage() {
             <em>{state.seal === "broken" ? "The seal is broken." : "The money is still here."}</em>
           </h1>
           <p className="hero-what">
-            Intatto is a NEAR vault that gives an AI agent its own trading account: the agent trades through Rhea and NEAR Intents within limits the contract enforces, and can never withdraw.{" "}
-            {config.networkId === "mainnet" ? "To prove it, we published the agent's key with a real NEAR bounty on it." : "To prove it, we published the agent's key with a bounty on it, here in testnet NEAR."}
+            Intatto gives an AI agent its own trading account on NEAR. It trades within limits the contract enforces, and it can never withdraw.{" "}
+            <span className="hero-what-proof">
+              {config.networkId === "mainnet" ? "We published this agent's key with real NEAR on it. Anyone can sign with it." : "We published this agent's key with testnet NEAR on it. Anyone can sign with it."}
+            </span>
           </p>
-          <p className="lede">
-            Anyone can sign with that key. The vault contract's policy lets it move nothing, and this page shows, live from the chain, whether that is still true.
-          </p>
-          <div className="hero-status" aria-live="polite">
-            {state.seal === "unknown" ? (
-              <Skeleton size="l" />
-            ) : state.seal === "broken" ? (
-              <>
-                <Badge tone="alert">Broken</Badge>
-                <span>{state.breaks.join(" ")}</span>
-              </>
-            ) : (
-              <>
-                {frozen ? <Badge tone="frost">Frozen</Badge> : <Badge tone="ok">Intact</Badge>}
-                <span>
-                  {frozen ? "Frozen by its owner. " : ""}Balance at or above the {formatNear(baselineYocto, FIGURE)} NEAR baseline
-                  {vaultSource ? <> as of block <span className="mono">{formatInt(vaultSource.blockHeight)}</span></> : null}.
-                </span>
-              </>
-            )}
-          </div>
+          <HeroProof
+            seal={sealVariant}
+            bountyText={bountyText}
+            status={
+              state.seal === "unknown" ? (
+                "Reading the vault…"
+              ) : state.seal === "broken" ? (
+                state.breaks.join(" ")
+              ) : (
+                <>
+                  {frozen ? "Frozen by its owner. " : ""}At or above the {formatNear(baselineYocto, FIGURE)} NEAR baseline
+                  {vaultSource ? <>, block <span className="mono">{formatInt(vaultSource.blockHeight)}</span></> : null}.
+                </>
+              )
+            }
+            intactNs={unbrokenNs}
+            runEnded={state.runEnded}
+            missingText={missingYocto !== null ? formatNear(missingYocto, { maxFraction: 4 }) : null}
+            attempts={attempts ? { count: attempts.length, more: b.attempts.data?.more === true, through: attempts.filter((x) => x.outcome.kind === "succeeded").length } : null}
+            attemptsFailed={b.attempts.isError}
+            integrity={integrity}
+            onJump={jump}
+          />
           <div className="hero-actions">
             <button type="button" className="btn btn--ink" onClick={openTry}>
               Try to break it <Icon name="arrow" size={16} />
@@ -231,6 +240,12 @@ export function BoardPage() {
         <aside className="notice notice--warn" role="note">
           <strong>Setup changed.</strong> {state.warnings.join(" ")}
         </aside>
+      )}
+
+      {config.networkId === "mainnet" && (
+        <Section id="judge-title" lead="Judge it in 60 seconds." rest="Every claim, one click from the chain.">
+          <JudgeWalkthrough onJump={jump} onShowKey={() => openTab("key")} />
+        </Section>
       )}
 
       <Section id="how-title" lead="How it works." rest="Three steps, and the contract does the rest.">
@@ -373,7 +388,7 @@ export function BoardPage() {
           <div>
             <h3 className="statement-title">The deployer keeps the upgrade key.</h3>
             <p>
-              So the funds in this hackathon deployment stay recoverable if something goes wrong. It also means the contract's code can change. If it does, its code hash
+              The contract isn't audited yet. Without this key, a bug found later could never be fixed and any funds it touched would be stuck for good, so it stays until the audit. Owners don't need it to withdraw; they use their own keys. It also means the contract's code can change. If it does, its code hash
               changes, and the integrity check above shows <strong>CODE CHANGED</strong> within {BOARD_POLL_MS / 1000} seconds. Judge the vault by the code that is
               running, not by what anyone says. The key is kept offline and will be removed after an external audit, which makes the code permanent.
             </p>

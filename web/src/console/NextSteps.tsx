@@ -22,9 +22,22 @@ export function addKeyCommand(agentId: string | null, vaultId: string, network: 
  * agent. It signs nothing; the command is for the agent account's own near CLI. Read-only (someone
  * else's vault), it speaks of "the agent" instead of "your agent".
  */
-export function NextSteps({ vault, vaultId, network, repoUrl, readOnly }: { vault: VaultView; vaultId: string; network: NetworkId; repoUrl: string; readOnly: boolean }) {
+/**
+ * The command that adds the Intatto MCP server to Claude Code, so an AI agent can check and make
+ * vault swaps from any MCP client. It runs from a clone of the repo; the key file stays local.
+ */
+export function mcpCommand(ownerId: string | null, agentId: string | null, vaultId: string, network: NetworkId): string {
+  return [
+    `claude mcp add --transport stdio intatto --env INTATTO_NETWORK=${network} --env INTATTO_VAULT_ID=${vaultId} \\`,
+    `  --env INTATTO_OWNER_ID=${ownerId ?? "<owner-account>"} --env INTATTO_AGENT_ID=${agentId ?? "<agent-account>"} \\`,
+    `  --env INTATTO_AGENT_KEY_FILE=<path-to-agent-key.json> -- node ./Intatto/agent/mcp-server.mjs`,
+  ].join("\n");
+}
+
+export function NextSteps({ vault, vaultId, network, repoUrl, readOnly, ownerId = null }: { vault: VaultView; vaultId: string; network: NetworkId; repoUrl: string; readOnly: boolean; ownerId?: string | null }) {
   const who = readOnly ? "the" : "your";
   const command = addKeyCommand(vault.agent_id ?? null, vaultId, network);
+  const mcp = mcpCommand(ownerId, vault.agent_id ?? null, vaultId, network);
   return (
     <Panel id="next" mark="What happens next" title="Three steps to a working agent">
       <ol className="next-steps">
@@ -66,6 +79,18 @@ export function NextSteps({ vault, vaultId, network, repoUrl, readOnly }: { vaul
             </a>
             .
           </p>
+          <p>
+            Or give an AI assistant the vault as tools: the MCP server in <span className="mono">agent/mcp-server.mjs</span> checks every swap before it signs (allow,
+            warn or block) and sends nothing until you allow trades. For Claude Code:
+          </p>
+          <div className="snippet">
+            <pre className="mono" tabIndex={0} aria-label="Command to add the Intatto MCP server">
+              {mcp}
+            </pre>
+            <div className="snippet-copy">
+              <CopyButton text={mcp} label="Copy MCP command" />
+            </div>
+          </div>
         </li>
       </ol>
       <p className="next-why">

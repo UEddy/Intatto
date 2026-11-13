@@ -50,7 +50,7 @@ export function Faq({ networkId, baselineNear, lockText, rpcHost, rulesUrl }: { 
     [
       "What if the contract's code changes?",
       <>
-        The deployer keeps an upgrade key, so it can. A new deployment changes the code hash: the integrity check shows <strong>CODE CHANGED</strong> within 10
+        It can: the deployer keeps an upgrade key until an external audit, so that a bug can be fixed instead of leaving funds stuck. A new deployment changes the code hash: the integrity check shows <strong>CODE CHANGED</strong> within 10
         seconds and the current run ends. That is not a break, because a run only tests the code deployed while it ran.
       </>,
     ],

@@ -13,7 +13,7 @@ test("link preview tags are in the served HTML, with absolute URLs and a 1200x63
 
   expect(tag("property", "og:title")).toBe("Intatto: the agent can trade. It can't withdraw.");
   const description = tag("property", "og:description");
-  expect(description).toBe("A NEAR vault where your AI agent trades within limits the contract enforces and can never withdraw. Its key is public: take the money if you can.");
+  expect(description).toBe("Your AI agent's own trading account on NEAR: spending limits the contract enforces, no way to withdraw. Its key is public: take the money if you can.");
   expect(description!.length, "under 160 characters").toBeLessThan(160);
   expect(tag("name", "description")).toBe(description);
   expect(tag("name", "twitter:description")).toBe(description);

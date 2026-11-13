@@ -850,3 +850,121 @@
     list-style-position: inside;
   }
 }
+
+/* ---------- setup checklist ---------- */
+
+.setup {
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+  padding: 16px 18px 8px;
+  margin-bottom: 20px;
+}
+.setup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.setup-title {
+  font-family: var(--font-display);
+  font-size: clamp(20px, 2.2vw, 26px);
+  line-height: 1.15;
+}
+.setup-count {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.setup-bar {
+  height: 4px;
+  margin: 12px 0 6px;
+  border-radius: 2px;
+  background: var(--paper-sunk);
+  overflow: hidden;
+}
+.setup-bar span {
+  display: block;
+  height: 100%;
+  background: var(--verdigris);
+  transition: width 240ms ease;
+}
+.setup-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.setup-step + .setup-step {
+  border-top: 1px solid var(--rule);
+}
+.setup-btn {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 0;
+  cursor: pointer;
+}
+.setup-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.setup-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--rule-strong);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.setup-text {
+  display: grid;
+  gap: 2px;
+  padding-top: 3px;
+}
+.setup-step-title {
+  font-weight: 500;
+}
+.setup-optional {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.setup-detail {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.setup-step--done .setup-mark {
+  border-color: var(--verdigris);
+  background: var(--verdigris);
+  color: var(--paper);
+}
+.setup-step--done .setup-step-title {
+  color: var(--ink-3);
+}
+.setup-step--next .setup-mark {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+.setup-step--next .setup-step-title::after {
+  content: "  Next";
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-left: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .setup-bar span {
+    transition: none;
+  }
+}

@@ -8,6 +8,15 @@ Author: [UEddy](https://github.com/UEddy)
 
 **The agent's key is public. Take the money if you can.**
 
+The key is public on mainnet with real NEAR behind it, the code running the vault is checked live
+against its reproducible build, and an AI assistant can trade through it with one command
+([INTEGRATE.md](INTEGRATE.md)). How it reaches its first users: [GTM.md](GTM.md).
+
+**Track: AI Security & Defense.** Spending limits and a policy engine enforced by the contract, a
+sandboxed wallet the agent can trade from but never withdraw from, NEAR function-call keys, and AI
+decisions with TEE attestation receipts: an AI agent gets money without getting the keys to it.
+Also entered in Unstoppable DeFi and Agent Economy ([Tracks](#tracks)).
+
 To prove it, we published the agent's key with a real NEAR bounty on it: the canary is an AI
 agent's vault on NEAR mainnet holding 0.99761 NEAR, and its key is in [CANARY.md](CANARY.md). Sign with it, pick any receiver and any amount, call
 `agent_spend` or `agent_swap` as often as you like: the transactions go through the vault
@@ -19,6 +28,16 @@ signed with the key yet). Watch every attempt live on the board at
 NEAR). The bounty is small because one person funds it. The amount does not change the test: the
 contract applies the same checks to every call, so the policy that refuses these 0.99761 NEAR
 refuses any balance.
+
+## Judge it in 60 seconds
+
+1. **The bounty and the public key.** Open [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet). The panel at the top is read live from the chain: the canary's balance, how long it has held, every attempt with the published key, and whether the running code matches the published build. The private key is in [CANARY.md](CANARY.md#mainnet).
+2. **What a refusal looks like.** The agent's calls refused on mainnet: [over the per-trade cap](https://nearblocks.io/txns/8o7EGQoMWfxUzeST7cTzA63J5MzvxB5ZiWk4NENa8XHU), [a pool not allowed](https://nearblocks.io/txns/G5d3Fu838aDw5SSpRvh694TpHLKLg6Vk4LVZRJzssekc), [slippage too loose](https://nearblocks.io/txns/CEpq15YceDiwqHWtpUszmZH8LegBoyyZzgrdJ8HRaEck), and a prompt-injected agent [trying to drain the vault](https://nearblocks.io/txns/FNkp2gprgvRs49L6wskMo8JcaYwpoqk2T3YVjGa6oqtw).
+3. **A trade that went through, then the owner's withdrawal.** A Rhea [swap within the limits](https://nearblocks.io/txns/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8), the owner [withdrawing the proceeds](https://nearblocks.io/txns/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW), and a NEAR Intents swap [settled](https://nearblocks.io/txns/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) above the owner's price floor.
+4. **The freeze.** The owner [freezes the vault](https://nearblocks.io/txns/6YRqjJXZcNuyeHHSnAeMoURtT6vHfG44VpGJ34uDBCk2) in one call, and the agent's next trade is [refused](https://nearblocks.io/txns/7bm6uGYGGJG3hJnuJQYoFfxBckCp6Qasvs5fVHzSW3Li).
+5. **The code is the published code.** The board's integrity check compares `vault.intatto.near`'s code hash with the [reproducible build](#what-is-deployed) every 10 seconds.
+
+**Two ways the agent trades.** The *Rhea path* swaps directly through Rhea pools, checked against the owner's caps, pool allowlist and a slippage bound set by the exchange's own quote. The *NEAR Intents path* has the vault's intents signed by the NEAR MPC network, only for pairs the owner allows and never below the owner's price floor.
 
 Today most trading bots hold your private key. In September 2024, attackers exploited a flaw in the Telegram trading bot Banana Gun and drained about $3 million from 11 users' bot wallets; because the bot held the keys, every transfer was a valid signed transaction that nothing on chain could refuse. The team refunded the users from its treasury.[^banana-gun] Intatto removes the key from the bot: the agent signs only calls the vault's policy allows, and the money stays in a contract it cannot empty.
 
@@ -47,6 +66,18 @@ trust the operator's custody of those keys:
 - Both keys will be removed after an external audit ([After the hackathon](#after-the-hackathon)),
   which makes the code permanent.
 
+### Why the upgrade keys stay until the audit
+
+This is a deliberate choice, not an oversight. The
+contract has not been audited. Without an upgrade key, a bug found later could never be fixed, and
+any funds it affected would be stuck for good: a flaw in the withdraw path, or the exchange's
+"lostfound" edge case ([THREAT_MODEL.md](THREAT_MODEL.md#known-limitations)), which only a code
+upgrade can recover. Keeping the key keeps every owner's money recoverable while the code is
+unaudited. The cost is trust in the operator, and that is what the board measures: any new code
+shows as **CODE CHANGED** within 10 seconds. Owners do not need this key to get their money out;
+they withdraw through the contract with their own accounts' keys. Once an external audit is done,
+both keys are removed and the code can never change again.
+
 The repository has four parts: the vault contract (`src/`), including agent swaps through NEAR
 Intents signed by the MPC network ([CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)); a web app with an
 owner console and the public canary board (`web/`); the agents (`agent/`): the prompt-injection
@@ -69,7 +100,7 @@ and an optional time lock on the owner's own withdrawals.
 | Public canary (published agent key) | **Live** since 2026-11-11: 0.99761 NEAR, locked until 2026-11-20, no attempts yet | **Live** since 2026-11-06: 0.9974 NEAR on `vault-v1` (no fee), locked until 2026-12-06, no attempts yet |
 | Agent swaps through Rhea (Ref V1), within on-chain limits | **Live**: [smoke test](#mainnet-smoke-test-2026-11-11) 18/18 on 2026-11-11 | **Live** on vault-v1 and vault-v2 |
 | Agent swaps through NEAR Intents, signed by the MPC network | **Live**: `intents.intatto.near`, [one swap settled](#first-intent-swap-2026-11-11) on 2026-11-11 | Not available (mainnet only) |
-| Prompt-injection demo | Not deployed | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
+| Prompt-injection demo | **Run** on 2026-11-12 on `demo.intatto.near`'s vault ([results](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)); its key was private and has been deleted | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
 | Break-price board and owner console | **Live** at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet), the default | **Live** on the same site (network switch, or `?network=testnet`) |
 | Wallets | Meteor, Intear, HOT, MyNearWallet | Meteor, Intear |
 | Passkey sign-in | **Experimental**: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only. See [THREAT_MODEL.md](THREAT_MODEL.md#passkey-sign-in-mainnet-only-experimental). | Not available (mainnet only) |
@@ -307,8 +338,8 @@ git checkout master
 The web app's and the demo agent's tests run separately. Run each line from the repository root:
 
 ```bash
-(cd web && npm ci && npm test)      # offline: 190 unit tests in 23 files (vitest), 2026-11-12
-node --test agent/*.test.mjs        # offline, after the line above: 29 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts
+(cd web && npm ci && npm test)      # offline: 198 unit tests in 25 files (vitest), 2026-11-13
+node --test agent/*.test.mjs        # offline, after the line above: 49 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server
 (cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```
 
@@ -478,6 +509,18 @@ per `per_in`). It also refuses every agent call while the vault is frozen, and a
 account other than the registered agent. The reference implementation is [agent/](agent/README.md):
 a NEAR transaction signer with no dependencies, the prompt-injection demo, and the intent-swap agent.
 
+### From an AI assistant (MCP), with a check before every swap
+
+[agent/mcp-server.mjs](agent/mcp-server.mjs) gives Claude, ChatGPT, Cursor, Codex or any MCP client
+the vault as four tools: `intatto_vault_status`, `intatto_check_agent_key`, `intatto_check_swap` and
+`intatto_swap`. Before every swap it runs a pre-trade check ([agent/risk-check.mjs](agent/risk-check.mjs))
+that returns allow, warn or block with reasons: every refusal the contract would make, plus what
+the contract does not judge (price impact against a 1% probe of the same pool, a token whose
+account has a full-access key, a signing key that can do more than call the vault). It blocks bad
+swaps before they are signed and sends nothing at all until the server runs with
+`INTATTO_ALLOW_TRADES=1`. Setup, the check's rules and how to use it from your own agent:
+[INTEGRATE.md](INTEGRATE.md).
+
 ## Unit economics
 
 Measured on testnet, where the gas price is 100,000,000 yoctoNEAR per gas unit, the same as on
@@ -541,8 +584,9 @@ canary and the board at [intatto.pages.dev](https://intatto.pages.dev/?network=m
 - **More venues and pairs.** The policy already takes any list of Rhea pools and intent pairs;
   next are more pairs on both paths, chosen by liquidity.
 - **Agents that owners run themselves.** Intatto does not run agents, because running one would
-  mean holding its key. Next is a template an owner deploys on their own infrastructure, built on
-  [agent/](agent/README.md) and the [Bring your own agent](#bring-your-own-agent) interface.
+  mean holding its key. The MCP server already lets an owner's own AI assistant trade through the
+  vault ([INTEGRATE.md](INTEGRATE.md)); next is publishing it to npm and a reference agent on the
+  NEAR AI Agent Market ([GTM.md](GTM.md)).
 - **Passkeys end to end.** Signing transactions with a passkey, tested and documented, before
   passkey wallets are recommended for more than small amounts.
 
@@ -552,15 +596,26 @@ per call.
 
 ## Tracks
 
-- **AI Security & Defense (`security`), primary.** The agent's key is public and the money is
-  still there: the canary invites anyone to drain it with the published key, and the board shows
-  every attempt and the contract's reason for refusing it. On mainnet, an agent that obeyed a prompt
-  injection telling it to drain its vault was refused by the contract every time it tried
-  ([Prompt-injection attack](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)), and
-  the model's trade decisions carry receipts from an attested TEE
-  ([AI decisions, verifiable](#ai-decisions-verifiable)). The deployed code is checked live against
-  its reproducible build, and every trust assumption is written down in
-  [THREAT_MODEL.md](THREAT_MODEL.md).
+- **AI Security & Defense (`security`), primary.** What the track asks for, and where it is here:
+  - *Spending limits and a policy engine:* per-trade and 24-hour caps, a receiver allowlist, pool
+    and pair allowlists, a slippage bound against the exchange's own quote and price floors, all
+    checked by the contract on every agent call ([`src/policy.rs`](src/policy.rs),
+    [What the contract guarantees](#what-the-contract-guarantees-and-where-it-is-checked)).
+  - *A sandboxed wallet:* the vault holds the money; the agent can trade from it and never
+    withdraw, and the owner can freeze it in one call or lock withdrawals until a date.
+  - *Function-call keys:* the agent's key can call only the vault's agent methods and cannot attach
+    a deposit ([exact limits](#the-agents-function-call-key-exact-limits)).
+  - *Scam and risk checks before signing:* the MCP server's pre-trade check returns allow, warn
+    or block for every swap, with reasons: thin or manipulated pools, upgradeable tokens, an unsafe
+    signing key, and every refusal the contract would make ([INTEGRATE.md](INTEGRATE.md)).
+  - *TEE attestation:* the model's trade decisions carry signature receipts from an attested TEE,
+    recorded with each trade ([AI decisions, verifiable](#ai-decisions-verifiable)).
+  - *Adversarial proof:* the canary's agent key is public on mainnet and the board shows every
+    attempt and the contract's reason for refusing it; on mainnet, an agent that obeyed a prompt
+    injection telling it to drain its vault was refused every time it tried
+    ([Prompt-injection attack](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)).
+    The deployed code is checked live against its reproducible build, and every trust assumption
+    is written down in [THREAT_MODEL.md](THREAT_MODEL.md).
 - **Unstoppable DeFi (`defi`).** A vault and a trading agent that settles through NEAR Intents,
   with no custodian of the agent's key: swaps go through Rhea (Ref V1)
   under on-chain pool, pair, cap and slippage rules, the slippage checked against the exchange's
@@ -607,12 +662,14 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
 |---|---|
 | `src/` | The vault contract: `lib.rs` (deposit, withdraw, views), `policy.rs`, `spend.rs`, `swap.rs`, `callbacks.rs`, `tokens.rs`, `ledger.rs`, `lock.rs`, `storage.rs`, `events.rs`, and the NEAR Intents path in `intents.rs` and `intent_swap.rs`; unit tests in `tests.rs` |
 | `tests/` | Sandbox tests, the contract binaries they deploy (`tests/res/`) and the mock MPC signer (`tests/contracts/`) |
-| `agent/` | The prompt-injection demo agent and the intent-swap agent (Node, no npm packages of their own; the AI receipt check uses `web/`'s pinned `@noble` packages) |
+| `agent/` | The prompt-injection demo agent, the intent-swap agent, the MCP server (`mcp-server.mjs`) and the pre-trade check (`risk-check.mjs`) (Node, no npm packages of their own; the AI receipt check uses `web/`'s pinned `@noble` packages) |
 | `web/` | Owner console and canary board (React, Vite) |
 | `scripts/` | Testnet smoke tests and canary setup; mainnet deploy, canary, smoke, intents and teardown scripts, dry run by default and resumable (near-cli-rs) |
 | [THREAT_MODEL.md](THREAT_MODEL.md) | Invariants, trust assumptions, what counts as a canary break |
 | [CANARY.md](CANARY.md) | The public canaries, mainnet and testnet: accounts, keys, baselines, how to try |
 | [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md) | The NEAR Intents path: calls, the mainnet run, its transactions |
+| [INTEGRATE.md](INTEGRATE.md) | Putting an agent on a vault: the MCP server, the pre-trade check, or any signer |
+| [GTM.md](GTM.md) | Go-to-market: first users, distribution, pricing, launch sequence, metrics |
 
 ## Status and known gaps
 
@@ -624,15 +681,16 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   [run 43022039828](https://github.com/UEddy/Intatto/actions/runs/43022039828);
   [scripts/mainnet-deploy.sh](scripts/mainnet-deploy.sh) deploys nothing else. `intents.intatto.near`
   runs the reproducible build of commit `fc23fbc` (`HRkrMN8o…`, run 43063218549).
-- The deployer keeps a full-access key on both vault accounts, so the funds in this hackathon
-  deployment stay recoverable. That key can replace the code. For the canary's vault, the board's
+- The deployer keeps a full-access key on both vault accounts on purpose, so that a bug in the
+  unaudited code can be fixed and no owner's funds are ever stuck
+  ([why](#why-the-upgrade-keys-stay-until-the-audit)). That key can replace the code. For the canary's vault, the board's
   integrity check shows any change within 10 seconds ([CANARY.md](CANARY.md)). Both keys are
   removed after an external audit ([After the hackathon](#after-the-hackathon)).
 - The NEAR Intents path has settled one swap on mainnet. Its limits and trust assumptions (the MPC
   network, `intents.near` governance) are in [THREAT_MODEL.md](THREAT_MODEL.md).
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and both mainnet vaults use reproducible builds.
-- Passkey sign-in (mainnet only): Experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only.
+- Passkey sign-in (mainnet only), experimental: sign-in verified on a phone (2026-11-12); signing transactions with a passkey not yet tested. Unaudited Trezu wallet contract, upgradeable by Trezu; use small amounts only.
 - The mainnet deployment stays live after the hackathon. [scripts/mainnet-teardown.sh](scripts/mainnet-teardown.sh)
   remains in the repository as the operator's way to wind it down safely if ever needed.
 - The web app is hosted at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet)

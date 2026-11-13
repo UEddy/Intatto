@@ -124,8 +124,10 @@ lock therefore means a flaw in the contract, the NEAR runtime or the exchange.
 
 ### The deployer's upgrade key, and the integrity check
 
-The deployer keeps a full-access key on `vault.intatto.near`, so the funds in this hackathon
-deployment stay recoverable. That key can replace the contract's code, and with it any rule above.
+The deployer keeps a full-access key on `vault.intatto.near` on purpose: the contract is not audited yet,
+and without an upgrade key a bug found later could never be fixed, leaving any funds it affected
+stuck for good. Owners withdraw with their own keys, not this one; it is removed after an external
+audit. That key can replace the contract's code, and with it any rule above.
 Everyone using the vault, the canary included, trusts whoever holds it.
 
 So the canary is tied to a code hash. **If vault.intatto.near's code hash changes, the current
@@ -252,8 +254,10 @@ lock therefore means a flaw in the contract, the NEAR runtime or the exchange.
 
 ### The deployer's upgrade key, and the integrity check
 
-The deployer keeps a full-access key on `vault-v1.intatto-dev.testnet`, so the funds in this
-hackathon deployment stay recoverable. That key can replace the contract's code, and with it any
+The deployer keeps a full-access key on `vault-v1.intatto-dev.testnet` on purpose: the contract is not audited yet,
+and without an upgrade key a bug found later could never be fixed, leaving any funds it affected
+stuck for good. Owners withdraw with their own keys, not this one; it is removed after an external
+audit. That key can replace the contract's code, and with it any
 rule above. Everyone using the vault, the canary included, trusts whoever holds it.
 
 So the canary is tied to a code hash. **If vault-v1's code hash changes, the current canary run

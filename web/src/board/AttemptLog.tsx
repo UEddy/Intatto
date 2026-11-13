@@ -12,6 +12,7 @@ import { IndexerDown } from "../ui/IndexerDown";
 import { TokenAmount } from "../ui/TokenAmount";
 import { useArrivals } from "../ui/useArrivals";
 import { useNow } from "../ui/useNow";
+import { MAINNET_TX } from "./JudgeWalkthrough";
 
 type Data = { attempts: Attempt[]; sources: ReadonlySet<ActivitySource["id"]>; more: boolean };
 
@@ -29,7 +30,7 @@ export const demoSubject = (d: DemoConfig): LogSubject => ({ kind: "demo", owner
 export function AttemptLog({ query, subject }: { query: UseQueryResult<Data>; subject: LogSubject }) {
   const canary = subject;
   const titleId = `attempts-title-${subject.kind}`;
-  const { indexer } = useServices();
+  const { indexer, config } = useServices();
   const now = useNow(15_000);
   const data = query.data;
   const arrivals = useArrivals(data?.attempts.map((a) => a.hash));
@@ -70,6 +71,12 @@ export function AttemptLog({ query, subject }: { query: UseQueryResult<Data>; su
             Every transaction signed with <span className="mono">{canary.agentId}</span>'s published key appears here within half a minute, with the reason the vault gave
             for refusing it.
             {subject.kind === "demo" ? <> Run <span className="mono">node agent/injection-demo.mjs --compromised</span> to add some.</> : null}
+            {subject.kind === "canary" && config.networkId === "mainnet" ? (
+              <>
+                {" "}
+                Until then, here is what a refusal looks like: the same vault contract refusing an agent's swap over its cap, <TxLink hash={MAINNET_TX.overCap} />.
+              </>
+            ) : null}
           </p>
         </div>
       ) : (
