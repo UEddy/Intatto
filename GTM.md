@@ -58,6 +58,19 @@ key, which is the risk Intatto exists to remove.
    link (first outside vault, first outside attack refused, audit, key removal).
 5. **Hand onboarding of design partners.** Ten trading-bot builders, set up one by one, in exchange
    for feedback and a public case study.
+6. **Owners from any chain (planned, not built).** An owner whose money is on an EVM chain or
+   Solana today has to bridge before opening a vault. NEAR Intents' 1Click API removes that step: the owner asks for
+   a quote (for example USDC on Base in, wNEAR out, to the owner's NEAR account), gets a deposit
+   address for that quote, and sends from any wallet; solvers swap it and deliver wNEAR, or refund
+   the deposit to an address the owner sets if the swap fails
+   ([1Click API](https://docs.near-intents.org/near-intents/1click-api)). The owner then deposits
+   the wNEAR into the vault as today. Aurora's persistent deposit addresses
+   ([Intents Connect](https://docs.intents.aurora.dev/intents-deposits/persistent-addresses)) could
+   make that address reusable; their docs do not yet confirm a NEAR account as the recipient, so
+   1Click comes first. It is held back on purpose: a page that shows an address to send money to
+   is the most phishing-sensitive screen the product could have, so it ships only after the same
+   mainnet test as every other path into the vault, with a cap and the address re-fetched and
+   checked against 1Click before it is shown. The owner account stays a NEAR account.
 
 ## Pricing
 
@@ -82,6 +95,7 @@ key, which is the risk Intatto exists to remove.
 | Weeks 4 to 8 | External audit of the contract | Audit report published |
 | After the audit | Both upgrade keys removed; the canary's bounty raised; public launch | `list-keys` shows no full-access key on either vault |
 | Next | More Rhea pairs and intent pairs, chosen by liquidity; a reference agent on the Agent Market | Listed |
+| Next | Fund a vault from any chain through NEAR Intents 1Click (distribution item 6) | A vault funded from another chain on mainnet, its transactions published |
 
 ## What we measure
 
@@ -102,8 +116,8 @@ canary's.
 | Partner | Their gain |
 |---|---|
 | Rhea | Agent swap volume through its pools, from agents that would otherwise not be trusted with keys |
-| NEAR Intents | Volume through solvers, signed for the vault by the MPC network |
-| NEAR AI | TEE-attested trade decisions recorded on chain with each trade, as a showcase |
+| NEAR Intents | Volume through solvers, signed for the vault by the MPC network, and later the owners' deposits from other chains through 1Click |
+| NEAR AI | Trade decisions signed inside its TEE, with the receipt recorded on chain with each trade, as a showcase |
 | NEAR AI Agent Market | Agents that can be hired to trade without being handed a wallet key |
 
 ## Risks
@@ -111,6 +125,6 @@ canary's.
 | Risk | Answer |
 |---|---|
 | A contract bug | The public canary, an external audit before keys are removed, and caps that bound what any bug can lose per day |
-| Low trading-agent volume on NEAR | The treasury segment uses the same vault with `agent_spend`; the intents path reaches other chains' assets |
+| Low trading-agent volume on NEAR | The treasury segment uses the same vault with `agent_spend`; the intents path reaches other chains' assets, and funding from any chain (distribution item 6) brings owners whose money is not on NEAR yet |
 | Copies of the spending-limit idea | Intatto's edges are the trading policy (slippage against the exchange's quote, intent price floors, MPC-signed intents) and the proof (public key on mainnet, reproducible build checked live), not the idea of limits |
 | Upgrade keys today | Disclosed in the README and THREAT_MODEL.md, checked live on the board, removed after the audit |

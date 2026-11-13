@@ -14,7 +14,8 @@ against its reproducible build, and an AI assistant can trade through it with on
 
 **Track: AI Security & Defense.** Spending limits and a policy engine enforced by the contract, a
 sandboxed wallet the agent can trade from but never withdraw from, NEAR function-call keys, and AI
-decisions with TEE attestation receipts: an AI agent gets money without getting the keys to it.
+decisions signed inside NEAR AI's TEE, with the receipt recorded in each trade: an AI agent gets
+money without getting the keys to it.
 Also entered in Unstoppable DeFi and Agent Economy ([Tracks](#tracks)).
 
 To prove it, we published the agent's key with a real NEAR bounty on it: the canary is an AI
@@ -35,7 +36,7 @@ refuses any balance.
 
 1. **The bounty and the public key.** Open [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet). The panel at the top is read live from the chain: the canary's balance, how long it has held, every attempt with the published key, and whether the running code matches the published build. The private key is in [CANARY.md](CANARY.md#mainnet).
 2. **What a refusal looks like.** The agent's calls refused on mainnet: [over the per-trade cap](https://nearblocks.io/txns/8o7EGQoMWfxUzeST7cTzA63J5MzvxB5ZiWk4NENa8XHU), [a pool not allowed](https://nearblocks.io/txns/G5d3Fu838aDw5SSpRvh694TpHLKLg6Vk4LVZRJzssekc), [slippage too loose](https://nearblocks.io/txns/CEpq15YceDiwqHWtpUszmZH8LegBoyyZzgrdJ8HRaEck), and a prompt-injected agent [trying to drain the vault](https://nearblocks.io/txns/FNkp2gprgvRs49L6wskMo8JcaYwpoqk2T3YVjGa6oqtw).
-3. **A trade that went through, then the owner's withdrawal.** A Rhea [swap within the limits](https://nearblocks.io/txns/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8), the owner [withdrawing the proceeds](https://nearblocks.io/txns/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW), and a NEAR Intents swap [settled](https://nearblocks.io/txns/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE) above the owner's price floor.
+3. **A trade that went through, then the owner's withdrawal.** A Rhea [swap within the limits](https://nearblocks.io/txns/JAFaEDBhStuPgwgCyNJKU7mQH2K7evjG328zrhudoaC8), the owner [withdrawing the proceeds](https://nearblocks.io/txns/2tqfhEiJm1jqAe6DNDZBFnfzbHZqfnmThVfFmJToFtYW), and two NEAR Intents swaps settled above the owner's price floor: [the first](https://nearblocks.io/txns/73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE), and [one an AI decided](https://nearblocks.io/txns/4LHgQowq1FzuxHa2LhMafjFyLAWDGxhgspfk9pv3D9aZ), with the decision's receipt in its arguments.
 4. **The freeze.** The owner [freezes the vault](https://nearblocks.io/txns/6YRqjJXZcNuyeHHSnAeMoURtT6vHfG44VpGJ34uDBCk2) in one call, and the agent's next trade is [refused](https://nearblocks.io/txns/7bm6uGYGGJG3hJnuJQYoFfxBckCp6Qasvs5fVHzSW3Li).
 5. **The code is the published code.** The board's integrity check compares `vault.intatto.near`'s code hash with the [reproducible build](#what-is-deployed) every 10 seconds.
 
@@ -340,7 +341,7 @@ git checkout master
 The web app's and the demo agent's tests run separately. Run each line from the repository root:
 
 ```bash
-(cd web && npm ci && npm test)      # offline: 205 unit tests in 27 files (vitest), 2026-11-13
+(cd web && npm ci && npm test)      # offline: 206 unit tests in 27 files (vitest), 2026-11-13
 node --test agent/*.test.mjs        # offline, after the line above: 54 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server, the canary attack run
 (cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```
@@ -412,10 +413,11 @@ vault (`an_extra_ai_decision_argument_is_recorded_but_changes_nothing` in
 [tests/chain_signatures.rs](tests/chain_signatures.rs) checks this). The board shows "Verify AI
 decision" on a trade whose arguments hold a receipt that signs exactly those hashes. The link
 opens NEAR AI's Verification Center with the receipt in the URL fragment, which the browser never
-sends to the server. **What this proves:** this response came from this model, running in an
-attested TEE (model, gateway, NVIDIA GPU and Intel TDX attestation, checked by the Verification
-Center), and its request and response hashes are the ones recorded with this trade. **What it
-does not prove:** the agent's own code does not run in a TEE. Nothing shows that the agent sent
+sends to the server. **What this proves:** the request and response hashes recorded with this
+trade were signed by the receipt's signing address. When the Verification Center's hardware checks
+pass (model, gateway, NVIDIA GPU and Intel TDX attestation), they also show that this address
+belongs to this model running in an attested TEE; those checks run live against NEAR AI's
+attestation service, which was failing on 2026-11-13 (below). **What it does not prove:** the agent's own code does not run in a TEE. Nothing shows that the agent sent
 the model honest facts, or that it acted on the answer rather than ignoring it, beyond the trade
 itself. The prompt and the reply stay with the agent, in its run log, and only their hashes are
 public. The vault's policy, not the model, is what limits the trade.
@@ -475,7 +477,9 @@ The full list of invariants and trust assumptions is in [THREAT_MODEL.md](THREAT
 
 ## The agent's function-call key: exact limits
 
-The mainnet canary agent's published key, as read on chain with `view_access_key` (step 3):
+The mainnet canary agent's published key at setup, as read on chain with `view_access_key` (step 3).
+Its allowance is lower now (247647495738506100000000 after the 2026-11-13 attack run), because
+every attempt pays its gas from it:
 
 ```json
 {"FunctionCall": {"allowance": "250000000000000000000000", "method_names": ["agent_spend", "agent_swap"], "receiver_id": "vault.intatto.near"}}
@@ -621,6 +625,9 @@ canary and the board at [intatto.pages.dev](https://intatto.pages.dev/?network=m
   NEAR AI Agent Market ([GTM.md](GTM.md)).
 - **Passkeys end to end.** Signing transactions with a passkey, tested and documented, before
   passkey wallets are recommended for more than small amounts.
+- **Fund a vault from any chain.** An owner whose money is on another chain sends it to a NEAR
+  Intents 1Click deposit address and receives wNEAR to deposit, with no bridge. Planned, not built;
+  why it waits for its own mainnet test: [GTM.md](GTM.md#distribution-cheapest-first).
 
 The 10 bps fee on agent swaps is the revenue model ([Business model](#business-model)): every vault
 pays for its own storage and every caller its own gas, so each new vault costs the operator nothing
@@ -640,8 +647,9 @@ per call.
   - *Scam and risk checks before signing:* the MCP server's pre-trade check returns allow, warn
     or block for every swap, with reasons: thin or manipulated pools, upgradeable tokens, an unsafe
     signing key, and every refusal the contract would make ([INTEGRATE.md](INTEGRATE.md)).
-  - *TEE attestation:* the model's trade decisions carry signature receipts from an attested TEE,
-    recorded with each trade ([AI decisions, verifiable](#ai-decisions-verifiable)).
+  - *TEE attestation:* the model's trade decisions carry signature receipts from NEAR AI's TEE,
+    recorded with each trade; NEAR AI's Verification Center checks the attestation
+    ([AI decisions, verifiable](#ai-decisions-verifiable)).
   - *Adversarial proof:* the canary's agent key is public on mainnet and the board shows every
     attempt and the contract's reason for refusing it; on mainnet, an agent that obeyed a prompt
     injection telling it to drain its vault was refused every time it tried
