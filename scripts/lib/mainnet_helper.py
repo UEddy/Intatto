@@ -19,6 +19,7 @@ file or a short argument (an amount, an account id, a path; never data of unboun
                                          create                       CreateAccount + Transfer +
                                                                       AddKey (full access)
                                          add-fc-key <receiver + method names bytes>
+                                         transfer                     one Transfer
                                        Send fees are the larger of the sir/not-sir values.
     fc-allowance <access key list> <public key>
                                        that key's allowance in yoctoNEAR, or "unlimited"
@@ -158,6 +159,8 @@ def main(cmd, args):
         elif kind == "add-fc-key":
             parts += [fee(action["add_key_cost"]["function_call_cost"]),
                       fee(action["add_key_cost"]["function_call_cost_per_byte"], int(args[2]))]
+        elif kind == "transfer":
+            parts += [fee(action["transfer_cost"])]
         elif kind != "call":
             sys.exit(f"fees: unknown kind {kind}")
         print(sum(p[0] for p in parts), sum(p[1] for p in parts))

@@ -221,3 +221,13 @@ test("the decision's facts are stated exactly: amounts unscaled, rates rounded d
   assert.equal(rate("300000000000000000000000", "1130742", 24, 6), "3.769");
   assert.equal(rate("1000000000000000000000000", "3300000", 24, 6), "3.3");
 });
+
+test("--assume-balance is refused unless it is a dry run, before any key or network is used", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync(process.execPath, [join(here, "intent-swap.mjs"), "--vault", "v.near", "--owner", "o.near", "--agent", "a.near", "--token-in", "wrap.near", "--token-out", "usdt.tether-token.near", "--amount-in", "1", "--assume-balance"], {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH },
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /--assume-balance is for --dry-run only/);
+});

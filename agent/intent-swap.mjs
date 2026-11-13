@@ -18,7 +18,7 @@
 //   6. `settle_intent_swap(intent_id)`: the vault asks intents.near whether the nonce was used and
 //      credits the output (or, after the deadline, refunds the input).
 //
-//   node agent/intent-swap.mjs --vault V --owner O --agent A --token-in T --token-out U --amount-in N [--dry-run]
+//   node agent/intent-swap.mjs --vault V --owner O --agent A --token-in T --token-out U --amount-in N [--dry-run [--assume-balance]]
 //   node agent/intent-swap.mjs --vault V --agent A --settle <intent_id>
 //
 // Secrets, never printed (every log line goes through redact()):
@@ -30,6 +30,8 @@
 //                     NEAR_AI_BASE_URL override the model and the endpoint
 // NEAR_RPC overrides the RPC (default: mainnet FastNEAR). --dry-run stops after the preflight and
 // asks NEAR AI for the decision, then prints the transaction it would send; it signs and sends nothing.
+// --assume-balance (dry run only) checks the rest as if the vault's intents account already held
+// --amount-in, for a plan that deposits it before the swap.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -197,7 +199,7 @@ export function rate(amountIn, amountOut, decimalsIn, decimalsOut) {
 
 function usage(message) {
   if (message) console.error(message);
-  console.error("usage: node agent/intent-swap.mjs --vault V --owner O --agent A --token-in T --token-out U --amount-in N [--min-deadline-ms 120000] [--dry-run]");
+  console.error("usage: node agent/intent-swap.mjs --vault V --owner O --agent A --token-in T --token-out U --amount-in N [--min-deadline-ms 120000] [--dry-run [--assume-balance]]");
   console.error("       node agent/intent-swap.mjs --vault V --agent A --settle <intent_id>");
   process.exit(2);
 }
@@ -214,9 +216,13 @@ async function main() {
       "min-deadline-ms": { type: "string", default: "120000" },
       settle: { type: "string" },
       "dry-run": { type: "boolean", default: false },
+      "assume-balance": { type: "boolean", default: false },
     },
   });
   if (!opts.vault || !opts.agent) usage("--vault and --agent are required");
+  // A dry run that plans the deposit before the swap (scripts/mainnet-ai-swap.sh) checks everything
+  // else as if the vault's intents account already held --amount-in. Never when sending.
+  if (opts["assume-balance"] && !opts["dry-run"]) usage("--assume-balance is for --dry-run only");
   const settleOnly = opts.settle !== undefined;
   if (!settleOnly && !(opts.owner && opts["token-in"] && opts["token-out"] && /^[0-9]+$/.test(opts["amount-in"] ?? ""))) {
     usage("--owner, --token-in, --token-out and an integer --amount-in are required");
@@ -278,7 +284,8 @@ async function main() {
     floor: pair ? `${pair.min_out} per ${pair.per_in}` : null,
     meetsFloor: pair ? meetsFloor(amountIn, quote.amount_out, pair.min_out, pair.per_in) : false,
     intentsBalance: held,
-    enoughBalance: BigInt(held) >= BigInt(amountIn),
+    enoughBalance: BigInt(held) >= BigInt(amountIn) || opts["assume-balance"],
+    ...(opts["assume-balance"] && BigInt(held) < BigInt(amountIn) ? { assumedBalance: `${amountIn} (--assume-balance: the plan deposits it before the swap)` } : {}),
   };
   if (agentKey) {
     const access = await chain.rpc("query", { request_type: "view_access_key", finality: "final", account_id: opts.agent, public_key: keys().publicKey });
