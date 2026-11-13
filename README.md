@@ -637,9 +637,7 @@ Nothing was written before the window.
 - There is no existing product on another chain (Q-002).
 - This is the author's only NEAR Hackathon submission (Q-015).
 
-## Libraries, tools and AI assistance
-
-Built with AI assistance (Claude Code) under the author's direction.
+## Libraries and tools
 
 Contract (Rust, toolchain 1.93.0):
 - [near-sdk](https://crates.io/crates/near-sdk) 5.29.1
