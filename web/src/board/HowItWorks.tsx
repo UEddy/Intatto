@@ -25,7 +25,7 @@ export function HowItWorks() {
             1
           </span>
           <h3 className="how-title">Fund a vault</h3>
-          <p>Deposit NEAR and tokens into the vault contract. Only your account can ever withdraw them.</p>
+          <p>Deposit NEAR and tokens into the vault contract. Through the contract, only your account can withdraw them; the agent's key never can.</p>
         </li>
         <li className="how-step">
           <span className="how-num" aria-hidden="true">
