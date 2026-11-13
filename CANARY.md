@@ -129,12 +129,15 @@ the setup transaction was signed by the canary owner and logged the lock.
 ### Attempts so far
 
 On 2026-11-13, from 06:27 to 06:32 UTC, the attack run (`node agent/canary-attack.mjs --send`)
-signed 13 transactions with the published key `ed25519:GWvo8kPM…`. The vault refused every one, and
+signed 13 transactions with the published key `ed25519:GWvo8kPM…`. All 13 failed and nothing moved:
 the canary's balance was still the baseline, 997610000000000000000000 yoctoNEAR, at block
-224,333,239. They used 0.00235 NEAR of the key's allowance. The board lists every attempt with the
-contract's reason.
+224,333,239. Twelve were rejected by the vault's checks, each with a `spend_rejected` or
+`swap_rejected` event giving the reason below. One, the malformed amount (entry 0011 on the
+board), never reached those checks: its arguments were malformed, so their JSON did not parse and
+the call failed before the policy check, with no event. They used 0.00235 NEAR of the key's allowance. The board lists every attempt the same way,
+"Rejected" with the reason or "Failed · before policy".
 
-| Time (UTC) | Attack | Refused with | Transaction |
+| Time (UTC) | Attack | Outcome (the vault's logged reason) | Transaction |
 |---|---|---|---|
 | 06:27:35 | Drain the whole vault to an attacker | `receiver_not_allowlisted` | [`Hj5kDfAG…`](https://nearblocks.io/txns/Hj5kDfAGLMp756gQYk3Y49v15WPWaHcytmHNSfqxoFEh) |
 | 06:27:38 | Send the maximum u128 amount | `receiver_not_allowlisted` | [`Ai9zzvVu…`](https://nearblocks.io/txns/Ai9zzvVu2GubztsD88eegrfzHsFAVnzJ1nxG9DXbwMtG) |
@@ -146,7 +149,7 @@ contract's reason.
 | 06:32:28 | Pay the agent's own account | `receiver_not_allowlisted` | [`BbBaSxuM…`](https://nearblocks.io/txns/BbBaSxuMoMbhLdSkF6YcjSXg535vDapr5opGgjPZW4oG) |
 | 06:32:31 | Pay the vault contract itself | `receiver_not_allowlisted` | [`9KoJ8KoN…`](https://nearblocks.io/txns/9KoJ8KoNf7DC6TPcCyJnQiQDdjVsoAzMxzM9K2qYerC) |
 | 06:32:33 | Spend from another owner's vault | `not_agent` | [`FSFLvXvq…`](https://nearblocks.io/txns/FSFLvXvqkyHeXQkJ93MhbBrSG8muEdxDrQRLeSe6hAoF) |
-| 06:32:35 | Malformed amount (negative number) | panic: the amount does not parse | [`Anzfe7Py…`](https://nearblocks.io/txns/Anzfe7PytfcEGvQAg7z3LLSk33QmwYTbbsgWXZ9YPkLi) |
+| 06:32:35 | Malformed amount (negative number) | failed before the policy check: malformed arguments (`"-1"` is not a u128, so the JSON did not parse); no event | [`Anzfe7Py…`](https://nearblocks.io/txns/Anzfe7PytfcEGvQAg7z3LLSk33QmwYTbbsgWXZ9YPkLi) |
 | 06:32:37 | Swap with too little gas to finish | `insufficient_gas` | [`36YbyHFi…`](https://nearblocks.io/txns/36YbyHFiVbNvqcdtjXZk6hn44pHvKCW7YYfPsFJAkUiY) |
 | 06:32:39 | Swap another owner's vault | `not_agent` | [`2ueHrcCa…`](https://nearblocks.io/txns/2ueHrcCaEAtsDeAmC2j4zUZQPtPPFuzLYTPP3jjBeLn2) |
 
