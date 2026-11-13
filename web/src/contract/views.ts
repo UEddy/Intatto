@@ -59,8 +59,23 @@ export const FtMetadataSchema = z.object({
 });
 export type FtMetadata = z.infer<typeof FtMetadataSchema>;
 
+// One ft_metadata read per token and Chain for the page load, shared by every reader: the intents
+// panel's check, the token amounts in the attempt log, the console and the activity feed would
+// otherwise each ask for the same token on their own. A failed read is forgotten, so a retry asks again.
+const ftMetadataReads = new WeakMap<Chain, Map<string, Promise<Sourced<FtMetadata>>>>();
+
 export function ftMetadata(chain: Chain, tokenId: string): Promise<Sourced<FtMetadata>> {
-  return chain.view(tokenId, "ft_metadata", {}, FtMetadataSchema);
+  let reads = ftMetadataReads.get(chain);
+  if (!reads) {
+    reads = new Map();
+    ftMetadataReads.set(chain, reads);
+  }
+  const hit = reads.get(tokenId);
+  if (hit) return hit;
+  const read = chain.view(tokenId, "ft_metadata", {}, FtMetadataSchema);
+  reads.set(tokenId, read);
+  read.catch(() => reads.delete(tokenId));
+  return read;
 }
 
 export function ftBalanceOf(chain: Chain, tokenId: string, accountIdValue: string): Promise<Sourced<string>> {

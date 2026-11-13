@@ -340,7 +340,7 @@ git checkout master
 The web app's and the demo agent's tests run separately. Run each line from the repository root:
 
 ```bash
-(cd web && npm ci && npm test)      # offline: 202 unit tests in 26 files (vitest), 2026-11-13
+(cd web && npm ci && npm test)      # offline: 205 unit tests in 27 files (vitest), 2026-11-13
 node --test agent/*.test.mjs        # offline, after the line above: 54 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server, the canary attack run
 (cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```

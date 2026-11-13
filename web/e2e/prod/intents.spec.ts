@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { withoutFastnearRateLimit } from "../rateLimit";
+import { watchFastnearRpc429, withoutFastnearRateLimit } from "../rateLimit";
 
 // The mainnet board's "Agent trades through NEAR Intents" panel, live, under the production CSP.
 // Every figure is read from mainnet: intents.intatto.near's code hash, its keys on intents.near and
@@ -62,7 +62,7 @@ function watch(page: Page) {
     }
     return seen;
   };
-  return { problems, origins, panelReads, immutableReads };
+  return { problems, origins, panelReads, immutableReads, rpc429s: watchFastnearRpc429(page) };
 }
 
 /** NearBlocks' receipt tree for one of the swap's transactions. */
@@ -80,7 +80,7 @@ for (const v of VIEWS) {
   test(`mainnet: the NEAR Intents panel reads its checks from chain (${v.name})`, async ({ page }, info) => {
     await page.setViewportSize(v.viewport);
     await page.emulateMedia({ colorScheme: v.scheme, reducedMotion: "reduce" });
-    const { problems, origins, panelReads, immutableReads } = watch(page);
+    const { problems, origins, panelReads, immutableReads, rpc429s } = watch(page);
     const res = await page.goto("./#/");
     const csp = res!.headers()["content-security-policy"] ?? "";
 
@@ -166,7 +166,7 @@ for (const v of VIEWS) {
     await panel.screenshot({ path: `screenshots/prod-intents-${v.name}.png` });
 
     expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p)), "CSP violations").toEqual([]);
-    expect(withoutFastnearRateLimit(problems, info), "console errors").toEqual([]);
+    expect(withoutFastnearRateLimit(problems, info, rpc429s()), "console errors").toEqual([]);
   });
 }
 
@@ -216,7 +216,7 @@ test("mainnet: with the archival node answering without CORS headers, the swap i
   // Three transactions, each through the archival client's full backoff first.
   test.setTimeout(240_000);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const { problems, origins, immutableReads } = watch(page);
+  const { problems, origins, immutableReads, rpc429s } = watch(page);
   await page.route(/^https:\/\/archival-rpc\.mainnet\.fastnear\.com\//, (route) => route.fulfill({ status: 503, body: "upstream overloaded" }));
   const res = await page.goto("./#/");
   const csp = res!.headers()["content-security-policy"] ?? "";
@@ -239,7 +239,7 @@ test("mainnet: with the archival node answering without CORS headers, the swap i
 
   expect(problems.filter((p) => /Content Security Policy|Refused to/i.test(p)), "CSP violations").toEqual([]);
   // The blocked archival node's own failures are expected here; nothing else.
-  expect(withoutFastnearRateLimit(problems, info).filter((p) => !/^Access to fetch at 'https:\/\/archival-rpc\.mainnet\.fastnear\.com\/' from origin '[^']+' has been blocked by CORS policy/.test(p) && !/^Failed to load resource: (net::ERR_FAILED|the server responded with a status of 503)/.test(p)), "console errors").toEqual([]);
+  expect(withoutFastnearRateLimit(problems, info, rpc429s()).filter((p) => !/^Access to fetch at 'https:\/\/archival-rpc\.mainnet\.fastnear\.com\/' from origin '[^']+' has been blocked by CORS policy/.test(p) && !/^Failed to load resource: (net::ERR_FAILED|the server responded with a status of 503)/.test(p)), "console errors").toEqual([]);
 });
 
 test("testnet: no NEAR Intents panel", async ({ page }) => {
