@@ -71,6 +71,10 @@ key, which is the risk Intatto exists to remove.
    is the most phishing-sensitive screen the product could have, so it ships only after the same
    mainnet test as every other path into the vault, with a cap and the address re-fetched and
    checked against 1Click before it is shown. The owner account stays a NEAR account.
+7. **Bounties.** The canary is the funded bounty today: whoever takes its NEAR keeps it. Bugs
+   reported privately instead are credited publicly. A paid disclosure bounty and a "Break
+   Intatto" week follow once there is a funded pool to pay from; no amounts are promised before
+   then.
 
 ## Pricing
 
