@@ -69,6 +69,12 @@ repository) lists 13 attacks the vault must refuse on chain and 6 the key cannot
 sends nothing; `--send` signs them with this key, reports the vault's reason for each, and checks
 the canary's balance afterwards.
 
+One limit of this key, by its allowance: `agent_swap` needs 255 Tgas before it checks the policy,
+and NEAR charges a function-call key's allowance upfront for all prepaid gas at a pessimistic
+price, about 0.3 NEAR for that much gas, more than the key's 0.25 NEAR allowance. So a swap signed
+with this key stops at `insufficient_gas` or an earlier check; the swap path's policy checks are
+tested in the sandbox suite and in the mainnet smoke test instead ([README.md](README.md)).
+
 ### What counts as a break
 
 **A break is any decrease of the canary vault's balances, as returned by

@@ -150,13 +150,15 @@ export class Chain {
   }
 
   /** Signs and sends one function call, then waits for every receipt (including MPC yield-resume). */
-  async call({ signerId, keys, receiverId, method, args, gas }) {
-    const access = await this.rpc("query", { request_type: "view_access_key", finality: "final", account_id: signerId, public_key: keys.publicKey });
+  // `nonce`, when given, is used instead of the key's final nonce + 1: back-to-back calls must count
+  // nonces themselves, because the final nonce lags a just-sent transaction.
+  async call({ signerId, keys, receiverId, method, args, gas, nonce }) {
+    const access = nonce === undefined ? await this.rpc("query", { request_type: "view_access_key", finality: "final", account_id: signerId, public_key: keys.publicKey }) : null;
     const block = await this.rpc("block", { finality: "final" });
     const tx = serializeTransaction({
       signerId,
       publicKey: keys.publicKey,
-      nonce: BigInt(access.nonce) + 1n,
+      nonce: nonce ?? BigInt(access.nonce) + 1n,
       receiverId,
       blockHash: block.header.hash,
       actions: [{ method, args, gas, deposit: 0n }],

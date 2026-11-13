@@ -18,7 +18,7 @@ test("every on-chain attack uses a method the key may call, with no deposit", ()
     assert.ok(a.expect);
   }
   // Swaps that should reach the policy check get the gas the contract asks for.
-  assert.equal(list.find((a) => a.expect === "pool_not_allowlisted").gas, 300n);
+  assert.ok(list.every((a) => a.gas === 30n)); // the published key cannot afford the 255 Tgas a full swap needs
 });
 
 test("every protocol attack is a method or receiver the key's permission forbids", () => {
