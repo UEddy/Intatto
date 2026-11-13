@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAINNET } from "../config/networks";
+import { FIRST_SWAP_CFG } from "../test/firstIntentSwap";
 import { parseTxOutcome, type TxOutcome } from "../near/chain";
 import signTx from "../test/fixtures/rpc-tx-mainnet-intent-swap.json";
 import executeTx from "../test/fixtures/rpc-tx-mainnet-intent-exec.json";
@@ -17,7 +17,8 @@ import {
   rateScaled,
 } from "./check";
 
-const cfg = MAINNET.intents!;
+// The 2026-11-11 swap, whose transactions the fixtures recorded.
+const cfg = FIRST_SWAP_CFG;
 const sign = parseTxOutcome(signTx.result);
 const execute = parseTxOutcome(executeTx.result);
 const settle = parseTxOutcome(settleTx.result);

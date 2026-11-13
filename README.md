@@ -100,7 +100,7 @@ and an optional time lock on the owner's own withdrawals.
 | Vault contract with the 10 bps swap fee | **Live**: `vault.intatto.near`, the reproducible build of `6cfa90e` | **Live**: `vault-v2.intatto-dev.testnet`, a local build of the fee code |
 | Public canary (published agent key) | **Live** since 2026-11-11: 0.99761 NEAR, locked until 2026-11-20; 13 attempts with the published key on 2026-11-13, all refused ([the attack run](CANARY.md#attempts-so-far), [board](https://intatto.pages.dev/?network=mainnet)) | **Live** since 2026-11-06: 0.9974 NEAR on `vault-v1` (no fee), locked until 2026-12-06, no attempts yet |
 | Agent swaps through Rhea (Ref V1), within on-chain limits | **Live**: [smoke test](#mainnet-smoke-test-2026-11-11) 18/18 on 2026-11-11 | **Live** on vault-v1 and vault-v2 |
-| Agent swaps through NEAR Intents, signed by the MPC network | **Live**: `intents.intatto.near`, [one swap settled](#first-intent-swap-2026-11-11) on 2026-11-11 | Not available (mainnet only) |
+| Agent swaps through NEAR Intents, signed by the MPC network | **Live**: `intents.intatto.near`, two swaps settled: [the first](#first-intent-swap-2026-11-11) on 2026-11-11, [an AI-decided one](#an-ai-decided-trade-on-mainnet-2026-11-13) on 2026-11-13 | Not available (mainnet only) |
 | Prompt-injection demo | **Run** on 2026-11-12 on `demo.intatto.near`'s vault ([results](#prompt-injection-attack-the-agent-was-told-to-drain-the-vault)); its key was private and has been deleted | **Live** on vault-v2 ([agent/README.md](agent/README.md)) |
 | Break-price board and owner console | **Live** at [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet), the default | **Live** on the same site (network switch, or `?network=testnet`) |
 | Wallets | Meteor, Intear, HOT, MyNearWallet | Meteor, Intear |
@@ -339,8 +339,8 @@ git checkout master
 The web app's and the demo agent's tests run separately. Run each line from the repository root:
 
 ```bash
-(cd web && npm ci && npm test)      # offline: 198 unit tests in 25 files (vitest), 2026-11-13
-node --test agent/*.test.mjs        # offline, after the line above: 53 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server, the canary attack run
+(cd web && npm ci && npm test)      # offline: 202 unit tests in 26 files (vitest), 2026-11-13
+node --test agent/*.test.mjs        # offline, after the line above: 54 tests: the demo agent's transaction signer, secret redaction and RPC errors, the intent swap agent, the AI decision receipts, the pre-trade check, the MCP server, the canary attack run
 (cd web && npx playwright install chromium && npm run test:prod)   # reads the network: the Cloudflare build under its real CSP, against live mainnet and testnet (Playwright)
 ```
 
@@ -419,7 +419,30 @@ the model honest facts, or that it acted on the answer rather than ignoring it, 
 itself. The prompt and the reply stay with the agent, in its run log, and only their hashes are
 public. The vault's policy, not the model, is what limits the trade.
 
-Example, 2026-11-12: a live mainnet quote (3.529 USDt per wNEAR, floor 3.3), the model's decision 'trade', and its receipt: [verify on NEAR AI Cloud](https://cloud.near.ai/verify?model=deepseek-ai%2FDeepSeek-V4.1-Flash-1017#receipt=eyJjb21wbGV0aW9uSWQiOiJjaGF0Y21wbC0xNmJhODIwYy1hMDllLTQ2MmEtOWYxYi04MDdjNzI4MmU4OTAiLCJtb2RlbCI6ImRlZXBzZWVrLWFpL0RlZXBTZWVrLVY0LjEtRmxhc2gtMTAxNyIsInNpZ25hdHVyZUtpbmQiOiJwcm92aWRlcl90ZWUiLCJzaWduaW5nQWxnbyI6ImVjZHNhIiwic2lnbmluZ0FkZHJlc3MiOiIweGZlMDA3MTg5NTUwMGE5NzU1YzE4MDQ0OTQ4YWI0ZjRlMWE3ZjMzN2UiLCJzaWduZWRUZXh0IjoiZGVlcHNlZWstYWkvRGVlcFNlZWstVjQuMS1GbGFzaC0xMDE3OjJhZWNkZGZkZTQ1NzBkZmVjMDBmMjczNzA1OWZiYWU2YmJhMmUyZmI0NTc0NzYxNTJkNDE4ZDg0NzAwMjliYTA6NzllZmZkYmRiNGUyMDdlNjJkODczYjI0NDE3Y2NlNzE0MzE4ODdiOTA4YmMxYzk2YmY3ZTg3MWIwYTYxN2QxNiIsInNpZ25hdHVyZSI6IjB4MjQ2ZWQzOTM4NGZiYzI2MmVkZTQ5NTNkMjgwNzFjZjA4MjQzYzE5ODYxOGZjNWRjZTFjMDg2ZTI5MGNjZjI2ZDZkZTY5ZWE3MmU1ZjAwNzJmNmMxOGI2MTQ2ZGFjYzgwNTAxMjEyNTc5NmM1YTc0M2I0OTFkN2EzZWRlNmM4MjIxYiJ9). This one is a dry run: no trade was sent, so it isn't tied to a transaction.
+### An AI-decided trade on mainnet, 2026-11-13
+
+The agent sold 0.3 wNEAR for 1.052787 USDt through NEAR Intents on `intents.intatto.near`, at
+3.509 USDt per wNEAR against the owner's floor of 3.3, after the model (DeepSeek V4.1 Flash on NEAR
+AI Cloud) answered "trade": "The quote of 3.509 USDt per wNEAR exceeds the owner's floor of 3.3
+USDt per wNEAR." The decision's request and response hashes (`470c3935…`, `351926d9…`) and its
+receipt are in the arguments of the trade's own `agent_intent_swap`, [`4LHgQowq…`](https://nearblocks.io/txns/4LHgQowq1FzuxHa2LhMafjFyLAWDGxhgspfk9pv3D9aZ),
+so the receipt is tied to this trade: [verify on NEAR AI Cloud](https://cloud.near.ai/verify?model=deepseek-ai%2FDeepSeek-V4.1-Flash-1017#receipt=eyJjb21wbGV0aW9uSWQiOiJjaGF0Y21wbC1jMDdlMGNkZi1lYmQ5LTRiOTAtYTFlOS00MTI4NGRjMTdkNGMiLCJtb2RlbCI6ImRlZXBzZWVrLWFpL0RlZXBTZWVrLVY0LjEtRmxhc2gtMTAxNyIsInNpZ25hdHVyZUtpbmQiOiJwcm92aWRlcl90ZWUiLCJzaWduaW5nQWxnbyI6ImVjZHNhIiwic2lnbmluZ0FkZHJlc3MiOiIweGZlMDA3MTg5NTUwMGE5NzU1YzE4MDQ0OTQ4YWI0ZjRlMWE3ZjMzN2UiLCJzaWduZWRUZXh0IjoiZGVlcHNlZWstYWkvRGVlcFNlZWstVjQuMS1GbGFzaC0xMDE3OjQ3MGMzOTM1OWI1OTY2Y2ZlYzU4MDdjODc3YjllODc0MjBjYWVmMzI1ZDU0NDExYjg4ZWEwZjI4Y2JlMTI2ZTk6MzUxOTI2ZDkyMzlkOTMzM2Q2ZjljZjg3YTA5MmU0ZWJkNWIwMGZkNmE4OWQ2ZWNjN2ZlN2VmYjQ5OGM3YzQxYyIsInNpZ25hdHVyZSI6IjB4OGE3ZjgyYmYyODVlMGEwN2JhZWIxZmRhZGU5ZjVmMWQyMWQ2MDQ3MDcyZmMzOTU5MjVhYmU1NzA3YzcxZTRlNDJhNmQ1NzUzM2UyYjYyNTMzYmZlNDlkYTAzZWY1ZmI5OGVhMDA0MGJjM2U3MzNhMmU2NjZkZjA4N2UyMmI2MjgxYyJ9).
+The board shows "Verify AI decision" on this trade. Run with
+[scripts/mainnet-ai-swap.sh](scripts/mainnet-ai-swap.sh), which checked each transaction over RPC
+afterwards, including that the arguments hold the decision the agent logged and that its receipt
+verifies.
+
+| Step | Signer | Transaction |
+|---|---|---|
+| fund the owner with 0.182 NEAR | `eddyhamezz.near` | [`En3gT244…`](https://nearblocks.io/txns/En3gT244fHjDvMcozkcyLWSrfzvZ19RbzeWTih638WfL) |
+| wrap 0.3 NEAR | `intents-owner.intatto.near` | [`AMXnzHaY…`](https://nearblocks.io/txns/AMXnzHaYuQAsV11V7pftwGXwQUDB44UgXenKmWM2bzkQ) |
+| deposit the 0.3 wNEAR into the vault | `intents-owner.intatto.near` | [`3jUm1sNv…`](https://nearblocks.io/txns/3jUm1sNvRtnmq9dSR4TSW8mt2ibScE8TQM8Evw39cTTy) |
+| `deposit_to_intents`: move it into the vault's account on intents.near | `intents-owner.intatto.near` | [`5d8XVuv3…`](https://nearblocks.io/txns/5d8XVuv3fc3gmvinGHtBEkHsj2dWiWskzbMZw3EL1Zv) |
+| `agent_intent_swap` with `ai_decision`: policy checks, MPC signature, the decision's hashes and receipt in its arguments | `intents-agent.intatto.near` | [`4LHgQowq…`](https://nearblocks.io/txns/4LHgQowq1FzuxHa2LhMafjFyLAWDGxhgspfk9pv3D9aZ) |
+| `execute_intents` with the solver's intent: intent `DVgZUxCK…` executed | the relay (`intents.near`) | [`8pBe2PTF…`](https://nearblocks.io/txns/8pBe2PTFvNgTm1C3Uq7KYVLtYeLTPBfMVmFuU97mriJP) |
+| `settle_intent_swap`: nonce used, owner credited 1.052787 USDt | `intents-agent.intatto.near` | [`GQRC8sEf…`](https://nearblocks.io/txns/GQRC8sEfwu5thSuTQ2aoyDn7fdFTJ32ZJKHhknZYLQWQ) |
+
+An earlier example, 2026-11-12: a live mainnet quote (3.529 USDt per wNEAR, floor 3.3), the model's decision 'trade', and its receipt: [verify on NEAR AI Cloud](https://cloud.near.ai/verify?model=deepseek-ai%2FDeepSeek-V4.1-Flash-1017#receipt=eyJjb21wbGV0aW9uSWQiOiJjaGF0Y21wbC0xNmJhODIwYy1hMDllLTQ2MmEtOWYxYi04MDdjNzI4MmU4OTAiLCJtb2RlbCI6ImRlZXBzZWVrLWFpL0RlZXBTZWVrLVY0LjEtRmxhc2gtMTAxNyIsInNpZ25hdHVyZUtpbmQiOiJwcm92aWRlcl90ZWUiLCJzaWduaW5nQWxnbyI6ImVjZHNhIiwic2lnbmluZ0FkZHJlc3MiOiIweGZlMDA3MTg5NTUwMGE5NzU1YzE4MDQ0OTQ4YWI0ZjRlMWE3ZjMzN2UiLCJzaWduZWRUZXh0IjoiZGVlcHNlZWstYWkvRGVlcFNlZWstVjQuMS1GbGFzaC0xMDE3OjJhZWNkZGZkZTQ1NzBkZmVjMDBmMjczNzA1OWZiYWU2YmJhMmUyZmI0NTc0NzYxNTJkNDE4ZDg0NzAwMjliYTA6NzllZmZkYmRiNGUyMDdlNjJkODczYjI0NDE3Y2NlNzE0MzE4ODdiOTA4YmMxYzk2YmY3ZTg3MWIwYTYxN2QxNiIsInNpZ25hdHVyZSI6IjB4MjQ2ZWQzOTM4NGZiYzI2MmVkZTQ5NTNkMjgwNzFjZjA4MjQzYzE5ODYxOGZjNWRjZTFjMDg2ZTI5MGNjZjI2ZDZkZTY5ZWE3MmU1ZjAwNzJmNmMxOGI2MTQ2ZGFjYzgwNTAxMjEyNTc5NmM1YTc0M2I0OTFkN2EzZWRlNmM4MjIxYiJ9). That one was a dry run: no trade was sent, so it isn't tied to a transaction.
 
 ## What the contract guarantees, and where it is checked
 
@@ -685,7 +708,7 @@ Services: FastNEAR RPC and transactions API, and the NearBlocks API as a fallbac
   ([why](#why-the-upgrade-keys-stay-until-the-audit)). That key can replace the code. For the canary's vault, the board's
   integrity check shows any change within 10 seconds ([CANARY.md](CANARY.md)). Both keys are
   removed after an external audit ([After the hackathon](#after-the-hackathon)).
-- The NEAR Intents path has settled one swap on mainnet. Its limits and trust assumptions (the MPC
+- The NEAR Intents path has settled two swaps on mainnet, the second decided by NEAR AI (2026-11-13). Its limits and trust assumptions (the MPC
   network, `intents.near` governance) are in [THREAT_MODEL.md](THREAT_MODEL.md).
 - vault-v2 runs a non-reproducible build of the fee code (code hash above), so its code cannot be
   checked against source; vault-v1 and both mainnet vaults use reproducible builds.

@@ -305,16 +305,18 @@ export const MAINNET: NetworkConfig = {
       tag: "intents-build",
       workflowRun: 43063218549,
     },
-    // The swap of 2026-11-11 17:46 UTC: 0.3 wNEAR for 1.130742 USDt (intent id 0).
+    // The AI-decided swap of 2026-11-13 07:49 UTC (scripts/mainnet-ai-swap.sh): 0.3 wNEAR for
+    // 1.052787 USDt (intent id 1), with the NEAR AI decision and its receipt in agent_intent_swap's
+    // arguments. The first swap, of 2026-11-11 (intent id 0, no AI decision), is in README.md.
     swap: {
-      intentId: "0",
+      intentId: "1",
       tokenIn: "wrap.near",
       tokenOut: "usdt.tether-token.near",
       amountIn: "300000000000000000000000",
-      amountOut: "1130742",
-      signTxHash: "GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT",
-      executeTxHash: "EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE",
-      settleTxHash: "73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE",
+      amountOut: "1052787",
+      signTxHash: "4LHgQowq1FzuxHa2LhMafjFyLAWDGxhgspfk9pv3D9aZ",
+      executeTxHash: "8pBe2PTFvNgTm1C3Uq7KYVLtYeLTPBfMVmFuU97mriJP",
+      settleTxHash: "GQRC8sEfwu5thSuTQ2aoyDn7fdFTJ32ZJKHhknZYLQWQ",
     },
   },
   repoUrl: REPO,

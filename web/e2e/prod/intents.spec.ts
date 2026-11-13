@@ -4,10 +4,13 @@ import { withoutFastnearRateLimit } from "../rateLimit";
 // The mainnet board's "Agent trades through NEAR Intents" panel, live, under the production CSP.
 // Every figure is read from mainnet: intents.intatto.near's code hash, its keys on intents.near and
 // v1.signer's derived key, the owner's floor, the account's access keys, and the swap's three
-// final transactions (CHAIN_SIGNATURES.md, "Transactions").
-const SIGN_TX = "GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT";
-const EXECUTE_TX = "EJY7oiU1SE3w9kg94qhwdcsn2zxFWEZ3eykbVnvUCLUE";
-const SETTLE_TX = "73aJTu55356n6QGvcLuj8h5vHy5cY1PGcvGzprM42uKE";
+// final transactions: the AI-decided swap of 2026-11-13 (README.md, "AI decisions, verifiable").
+const SIGN_TX = "4LHgQowq1FzuxHa2LhMafjFyLAWDGxhgspfk9pv3D9aZ";
+const EXECUTE_TX = "8pBe2PTFvNgTm1C3Uq7KYVLtYeLTPBfMVmFuU97mriJP";
+const SETTLE_TX = "GQRC8sEfwu5thSuTQ2aoyDn7fdFTJ32ZJKHhknZYLQWQ";
+// The start of the Verification Center link built from SIGN_TX's ai_decision receipt (model, then
+// the receipt's completion id, chatcmpl-c07e0cdf-...).
+const AI_RECEIPT_PREFIX = "https://cloud.near.ai/verify?model=deepseek-ai%2FDeepSeek-V4.1-Flash-1017#receipt=eyJjb21wbGV0aW9uSWQiOiJjaGF0Y21wbC1jMDdlMGNkZi1";
 const CODE_HASH = "HRkrMN8ohf7CmYUs3o9orCKx7vY1MApuPQ9yrGoTYtdC";
 const INTENTS_KEY = "ed25519:5kYTxFESA4ciqDeFz5j5YqsY2sSC9WN2YN5hBNRpCgWi";
 
@@ -21,7 +24,7 @@ function watch(page: Page) {
   // The panel's own reads: anything about the intents vault or the swap's transactions, by RPC
   // (a JSON body) or from NearBlocks, the fallback for the transactions (a GET of the hash).
   const isPanelRead = (url: string, body: string) =>
-    /intents\.intatto\.near|GbHfV9nq|EJY7oiU1|73aJTu55|"(ft_metadata|derived_public_key|get_intent_policy|public_keys_of)"/.test(body) || NB_TX.test(url);
+    /intents\.intatto\.near|4LHgQowq|8pBe2PTF|GQRC8sEf|"(ft_metadata|derived_public_key|get_intent_policy|public_keys_of)"/.test(body) || NB_TX.test(url);
   const panelReads: string[] = [];
   // The same reads, only those the page got a usable answer to: HTTP 200 with the CORS header and
   // a JSON-RPC result (or NearBlocks' tree). A retry after a failed attempt is expected.
@@ -108,15 +111,17 @@ for (const v of VIEWS) {
 
     // 3. The swap: three transactions verified from the archival node, and the floor as a floor.
     await expect(swap.locator(".badge").first()).toHaveText("Settled", { timeout: 60_000 });
-    await expect(swap.locator(".swap-figure")).toHaveAttribute("aria-label", "0.3 wNEAR for 1.130742 USDt");
+    await expect(swap.locator(".swap-figure")).toHaveAttribute("aria-label", "0.3 wNEAR for 1.052787 USDt");
     await expect(swap.locator(".swap-step .badge", { hasText: "Verified" })).toHaveCount(3);
     for (const hash of [SIGN_TX, EXECUTE_TX, SETTLE_TX]) await expect(swap.locator(`a.txlink[href$="${hash}"]`)).toHaveCount(1);
-    await expect(swap.locator(".swap-step").nth(1)).toContainText("Intent 5aGuMW…wmUi executed");
-    // That swap was made before the agent asked NEAR AI: no receipt in its arguments, so no link
-    // (and no broken one, and no refusal).
-    await expect(swap.getByRole("link", { name: /Verify AI decision/ })).toHaveCount(0);
+    await expect(swap.locator(".swap-step").nth(1)).toContainText("Intent DVgZUx…Ppza executed");
+    // The agent asked NEAR AI before this trade: its receipt is in the trade's arguments, so the
+    // swap links the Verification Center with that receipt (and shows no refusal).
+    const verify = swap.getByRole("link", { name: /Verify AI decision/ });
+    await expect(verify).toHaveCount(1);
+    expect((await verify.getAttribute("href"))?.startsWith(AI_RECEIPT_PREFIX)).toBe(true);
     await expect(swap.locator(".ai-refused")).toHaveCount(0);
-    await expect(swap.locator(".floor-note")).toContainText("3.769 USDt per wNEAR against the owner's floor of 3.3 USDt per wNEAR");
+    await expect(swap.locator(".floor-note")).toContainText("3.509 USDt per wNEAR against the owner's floor of 3.3 USDt per wNEAR");
     await expect(swap.locator(".floor-note")).toContainText("not a target");
 
     // 4. The caveat, from view_access_key_list, linking the threat model.

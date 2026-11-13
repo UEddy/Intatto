@@ -5,11 +5,15 @@
  */
 import { describe, expect, it } from "vitest";
 import { MAINNET } from "../config/networks";
+import { FIRST_SWAP_CFG } from "../test/firstIntentSwap";
 import { Chain } from "../near/chain";
 import { RpcClient } from "../near/rpc";
 import signTx from "../test/fixtures/rpc-tx-mainnet-intent-swap.json";
 import executeTx from "../test/fixtures/rpc-tx-mainnet-intent-exec.json";
 import settleTx from "../test/fixtures/rpc-tx-mainnet-intent-settle.json";
+import aiSignTx from "../test/fixtures/rpc-tx-mainnet-ai-swap.json";
+import aiExecuteTx from "../test/fixtures/rpc-tx-mainnet-ai-exec.json";
+import aiSettleTx from "../test/fixtures/rpc-tx-mainnet-ai-settle.json";
 import nbSignTx from "../test/fixtures/nearblocks-v3-tree-mainnet-intent-swap.json";
 import nbExecuteTx from "../test/fixtures/nearblocks-v3-tree-mainnet-intent-exec.json";
 import nbSettleTx from "../test/fixtures/nearblocks-v3-tree-mainnet-intent-settle.json";
@@ -17,7 +21,8 @@ import { NearBlocksTxs } from "../indexer/nearblocks";
 import { fakeFetch, type Step } from "../test/fakeFetch";
 import { Memo, checkBuild, checkCaveat, checkKey, checkSwapAll, type Reads, type Verdict } from "./check";
 
-const cfg = MAINNET.intents!;
+// The 2026-11-11 swap, whose transactions the fixtures recorded.
+const cfg = FIRST_SWAP_CFG;
 const KEY = "ed25519:5kYTxFESA4ciqDeFz5j5YqsY2sSC9WN2YN5hBNRpCgWi";
 const FULL = "ed25519:B6J5YQj4MdZz2NYu91ybZnJyrhdKAgJGptZxUcQ4WrcA";
 const block = { block_height: 224115640, block_hash: "F4zbyxWCc3GfmY9Ut25EPW3AnbUEw8AJnhf8z2KYP2Gt" };
@@ -38,6 +43,10 @@ const TXS: Record<string, unknown> = {
   [cfg.swap.signTxHash]: signTx.result,
   [cfg.swap.executeTxHash]: executeTx.result,
   [cfg.swap.settleTxHash]: settleTx.result,
+  // The swap the mainnet board shows: the AI-decided one of 2026-11-13.
+  [MAINNET.intents!.swap.signTxHash]: aiSignTx.result,
+  [MAINNET.intents!.swap.executeTxHash]: aiExecuteTx.result,
+  [MAINNET.intents!.swap.settleTxHash]: aiSettleTx.result,
 };
 
 function answer(a: Answers) {
@@ -213,5 +222,13 @@ describe("identical requests within the page load", () => {
     const memo = new Memo();
     expect((await checkSwapAll(reads(networkError, memo).r, cfg)).verdict).toBe("unverified");
     expect((await checkSwapAll(reads({ status: 200, body: answer(MAINNET_ANSWERS()) }, memo).r, cfg)).verdict).toBe("pass");
+  });
+});
+
+describe("the swap the mainnet board shows (AI-decided, 2026-11-13)", () => {
+  it("passes on mainnet's real answers, with the AI receipt found in the trade's arguments", async () => {
+    const v = await checkSwapAll(reads({ status: 200, body: answer(MAINNET_ANSWERS()) }).r, MAINNET.intents!);
+    expect(v.verdict).toBe("pass");
+    expect(v).toMatchObject({ value: { swap: { sign: { ok: true }, execute: { ok: true }, settle: { ok: true }, aiDecision: { kind: "receipt" } } } });
   });
 });
