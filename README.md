@@ -32,6 +32,27 @@ NEAR). The bounty is small because one person funds it. The amount does not chan
 contract applies the same checks to every call, so the policy that refuses these 0.99761 NEAR
 refuses any balance.
 
+## Differentiation
+
+Many projects put spending limits on an agent's wallet. Intatto differs in three ways, each
+shown on mainnet:
+
+- **The agent never holds a key that can sign a trade outside the policy.** On the NEAR Intents
+  path, the vault contract writes the intent itself and the NEAR MPC network signs it for the
+  vault's own account, only for pairs the owner allows and never below the owner's price floor;
+  that signing key exists only as shares across `v1.signer`'s nodes. The agent's own key can only
+  ask the vault ([an intent swap](https://nearblocks.io/txns/GbHfV9nqv8C3xXWCFECWaruJFaQijMhq2GBrKxb1uJjT),
+  [CHAIN_SIGNATURES.md](CHAIN_SIGNATURES.md)).
+- **Its security is a bounty you can try to take, not a claim.** The canary agent's key is public
+  with real NEAR behind it, the board shows every attempt with the contract's reason for refusing
+  it, and the running code is checked against its reproducible build every 10 seconds
+  ([CANARY.md](CANARY.md), [the board](https://intatto.pages.dev/?network=mainnet)).
+- **The AI's decision is tied to the trade it made.** The request and response hashes of the
+  model's answer and its signed receipt are in the trade's own transaction, so anyone can match
+  "the model said trade" to the exact swap
+  ([`4LHgQowq…`](https://nearblocks.io/txns/4LHgQowq1FzuxHa2LhMafjFyLAWDGxhgspfk9pv3D9aZ),
+  [AI decisions, verifiable](#ai-decisions-verifiable)).
+
 ## Judge it in 60 seconds
 
 1. **The bounty and the public key.** Open [intatto.pages.dev](https://intatto.pages.dev/?network=mainnet). The panel at the top is read live from the chain: the canary's balance, how long it has held, every attempt with the published key, and whether the running code matches the published build. The private key is in [CANARY.md](CANARY.md#mainnet).
