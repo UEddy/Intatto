@@ -8,6 +8,7 @@ import { ActionProvider } from "./ActionSheet";
 import { ReadOnlyContext } from "./readOnly";
 import { KillSwitch } from "./KillSwitch";
 import { NextSteps } from "./NextSteps";
+import { SetupProgress } from "./SetupProgress";
 import { PASSKEY_LOCK_ADVICE } from "../wallet/passkey";
 import { DepositPanel, LockPanel, ReclaimPanel, WithdrawPanel } from "./MoneyPanels";
 import { Overview } from "./Overview";
@@ -113,11 +114,16 @@ function ConnectedConsole({ ownerId, vaultId, readOnly = false }: { ownerId: str
         </aside>
       )}
 
+      {/* The owner's setup checklist, read from the chain; gone once the required steps are done. */}
+      {!readOnly && c.vault.isSuccess && (
+        <SetupProgress vault={v ?? null} vaultId={vaultId} lockActive={lock.untilNs !== null && chainNow !== null && lock.untilNs > chainNow} />
+      )}
+
       {/* What happens next: always on a live vault viewed read-only; for the owner, once the vault
           exists and until its agent has been set and has acted. Outside the owner controls, so its
           copy button works read-only too. It signs nothing. */}
       {v && (readOnly || v.agent_id == null || v.recent_spends.length === 0) && (
-        <NextSteps vault={v} vaultId={vaultId} network={config.networkId} repoUrl={config.repoUrl} readOnly={readOnly} />
+        <NextSteps vault={v} vaultId={vaultId} network={config.networkId} repoUrl={config.repoUrl} readOnly={readOnly} ownerId={ownerId} />
       )}
 
       <div className="console-tabs seg" role="tablist" aria-label="Console sections">
