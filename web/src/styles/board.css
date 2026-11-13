@@ -1117,6 +1117,14 @@
   font-size: 13px;
   font-weight: 600;
 }
+/* what the link checks: its own line under the proof row */
+.ai-verify-note {
+  flex-basis: 100%;
+  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
 .ai-refused {
   display: inline-flex;
   flex-wrap: wrap;

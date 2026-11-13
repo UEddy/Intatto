@@ -433,6 +433,13 @@ The board shows "Verify AI decision" on this trade. Run with
 afterwards, including that the arguments hold the decision the agent logged and that its receipt
 verifies.
 
+The agent checks the signature before it trades: NEAR AI's ECDSA signature over
+`model:request_hash:response_hash` recovers to the receipt's signing address, and both hashes are
+in `agent_intent_swap`'s arguments. The agent does not check the TEE attestation itself; the
+Verification Center does, against NEAR AI's live attestation service. On 2026-11-13 that service
+reported `gpu.jwt_verification_failed` for DeepSeek V4.1 Flash for every receipt, including one
+that verified on 2026-11-12.
+
 | Step | Signer | Transaction |
 |---|---|---|
 | fund the owner with 0.182 NEAR | `eddyhamezz.near` | [`En3gT244…`](https://nearblocks.io/txns/En3gT244fHjDvMcozkcyLWSrfzvZ19RbzeWTih638WfL) |

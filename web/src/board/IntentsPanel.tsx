@@ -380,11 +380,18 @@ export function AiDecisionLink({ d }: { d: SwapCheck["aiDecision"] }) {
     );
   }
   return (
-    <a className="ai-verify" href={d.url} target="_blank" rel="noopener noreferrer" title={`${d.model}, signed by ${d.signingAddress}`}>
-      Verify AI decision <Icon name="external" size={12} />
-    </a>
+    <>
+      <a className="ai-verify" href={d.url} target="_blank" rel="noopener noreferrer" title={`${d.model}, signed by ${d.signingAddress}`}>
+        Verify AI decision <Icon name="external" size={12} />
+      </a>
+      <span className="ai-verify-note">{AI_VERIFY_NOTE}</span>
+    </>
   );
 }
+
+/** What the Verification Center link checks, and what it depends on. No date, so it does not go stale. */
+export const AI_VERIFY_NOTE =
+  "Checks NEAR AI's signature over this trade's request and response hashes, which are in the transaction's arguments. The TEE hardware check runs live on NEAR AI's attestation service; if that service is down, it shows as failed while the signature still verifies.";
 
 function Step({
   result,
