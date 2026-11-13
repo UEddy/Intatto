@@ -64,6 +64,11 @@ Change anything: the amount, the receiver, `agent_swap` instead of `agent_spend`
 vaults. Every attempt shows up on the board with the reason the contract gave. Gas comes out of
 the key's allowance; your account only appears as the receiver.
 
+Or run the whole set at once: `node agent/canary-attack.mjs` (Node 22, from a clone of this
+repository) lists 13 attacks the vault must refuse on chain and 6 the key cannot even make, and
+sends nothing; `--send` signs them with this key, reports the vault's reason for each, and checks
+the canary's balance afterwards.
+
 ### What counts as a break
 
 **A break is any decrease of the canary vault's balances, as returned by
